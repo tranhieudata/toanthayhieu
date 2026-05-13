@@ -68,7 +68,22 @@ const createLesson = async (req, res) => {
 // PUT /api/lessons/:id (admin)
 const updateLesson = async (req, res) => {
   try {
-    const lesson = await Lesson.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const { course, title, content, videoUrl, order, duration, isPublished, pdfAttachments } = req.body;
+    
+    if (!course) {
+      return res.status(400).json({ message: 'Khóa học là bắt buộc' });
+    }
+    
+    if (!title) {
+      return res.status(400).json({ message: 'Tiêu đề là bắt buộc' });
+    }
+
+    const lesson = await Lesson.findByIdAndUpdate(
+      req.params.id,
+      { course, title, content, videoUrl, order, duration, isPublished, pdfAttachments },
+      { new: true, runValidators: true }
+    );
+    
     if (!lesson) return res.status(404).json({ message: 'Không tìm thấy bài học' });
     res.json(lesson);
   } catch (err) {

@@ -1,15 +1,18 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import api from '../../api/axios';
 import toast from 'react-hot-toast';
-import { FiArrowLeft, FiSave } from 'react-icons/fi';
+import { FiArrowLeft, FiSave, FiClock } from 'react-icons/fi';
 import RichTextEditor from '../../components/RichTextEditor';
 import PdfUploader from '../../components/PdfUploader';
+
+const AUTO_SAVE_INTERVAL = 30_000; // 30 giây
 
 const emptyLesson = {
   title: '',
   content: '',
   videoUrl: '',
+  course: '',
   order: 0,
   duration: '',
   isPublished: false,
@@ -26,6 +29,14 @@ export default function AdminLessonEditor() {
   const [courseName, setCourseName] = useState('');
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(!!id);
+  const [autoSaving, setAutoSaving] = useState(false);
+  const [lastSaved, setLastSaved] = useState(null);
+  const [draftId, setDraftId] = useState(null); // ID bài học nháp tạo ra khi auto-save bài mới
+
+  const formRef = useRef(form);
+  const draftIdRef = useRef(null);
+  useEffect(() => { formRef.current = form; }, [form]);
+  useEffect(() => { draftIdRef.current = draftId; }, [draftId]);
 
   const isEdit = !!id;
 
@@ -38,6 +49,7 @@ export default function AdminLessonEditor() {
             title: lesson.title || '',
             content: lesson.content || '',
             videoUrl: lesson.videoUrl || '',
+            course: lesson.course?._id || lesson.course || '',
             order: lesson.order ?? 0,
             duration: lesson.duration || '',
             isPublished: lesson.isPublished || false,
@@ -55,18 +67,64 @@ export default function AdminLessonEditor() {
     }
   }, [id, courseId, isEdit]);
 
+  // Auto-save mỗi 30 giây
+  useEffect(() => {
+    const timer = setInterval(async () => {
+      const f = formRef.current;
+      if (!f.title.trim()) return; // Không lưu nháp nếu chưa có tiêu đề
+
+      const courseIdToUse = isEdit ? f.course : courseId;
+      if (!courseIdToUse) return;
+
+      setAutoSaving(true);
+      try {
+        if (isEdit) {
+          // Bài học đang chỉnh sửa → PUT im lặng
+          await api.put(`/lessons/${id}`, f);
+        } else if (draftIdRef.current) {
+          // Đã tạo nháp trước đó → PUT cập nhật nháp
+          await api.put(`/lessons/${draftIdRef.current}`, { ...f, course: courseIdToUse });
+        } else {
+          // Bài học mới → POST tạo nháp lần đầu
+          const res = await api.post('/lessons', { ...f, course: courseIdToUse, isPublished: false });
+          setDraftId(res.data._id);
+        }
+        setLastSaved(new Date());
+      } catch {
+        // Auto-save thất bại, im lặng — không toast để không làm phiền người dùng
+      } finally {
+        setAutoSaving(false);
+      }
+    }, AUTO_SAVE_INTERVAL);
+
+    return () => clearInterval(timer);
+  }, [id, courseId, isEdit]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     try {
+      const courseIdToUse = isEdit ? form.course : courseId;
+      if (!courseIdToUse) {
+        toast.error('Vui lòng chọn khóa học');
+        setLoading(false);
+        return;
+      }
+
+      const submitData = isEdit ? form : { ...form, course: courseIdToUse };
+
       if (isEdit) {
-        await api.put(`/lessons/${id}`, form);
+        await api.put(`/lessons/${id}`, submitData);
         toast.success('Cập nhật bài học thành công');
+      } else if (draftId) {
+        // Bài mới đã được auto-save → PUT nháp với trạng thái cuối cùng
+        await api.put(`/lessons/${draftId}`, submitData);
+        toast.success('Tạo bài học thành công');
       } else {
-        await api.post('/lessons', { ...form, course: courseId });
+        await api.post('/lessons', submitData);
         toast.success('Tạo bài học thành công');
       }
-      navigate('/admin/content');
+      navigate(`/admin/content?course=${courseIdToUse}`);
     } catch (err) {
       toast.error(err.response?.data?.message || 'Lỗi khi lưu bài học');
     } finally {
@@ -87,16 +145,26 @@ export default function AdminLessonEditor() {
       {/* Header */}
       <div className="flex items-center gap-4 mb-6">
         <button
-          onClick={() => navigate('/admin/content')}
+          onClick={() => navigate(`/admin/content?course=${isEdit ? form.course : courseId}`)}
           className="flex items-center gap-2 text-gray-500 hover:text-gray-800 text-sm transition-colors"
         >
           <FiArrowLeft size={16} /> Quay lại
         </button>
-        <div>
+        <div className="flex-1">
           <h1 className="text-xl font-bold text-gray-900">
             {isEdit ? 'Chỉnh sửa bài học' : 'Thêm bài học mới'}
           </h1>
           {courseName && <p className="text-sm text-gray-500 mt-0.5">Khóa học: {courseName}</p>}
+        </div>
+        {/* Auto-save indicator */}
+        <div className="text-xs text-gray-400 flex items-center gap-1 min-w-max">
+          {autoSaving ? (
+            <><span className="inline-block w-2 h-2 rounded-full bg-yellow-400 animate-pulse" /> Đang lưu nháp...</>
+          ) : lastSaved ? (
+            <><FiClock size={12} /> Đã lưu nháp {lastSaved.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</>
+          ) : !isEdit ? (
+            <span className="text-gray-300">Tự động lưu nháp sau 30s</span>
+          ) : null}
         </div>
       </div>
 

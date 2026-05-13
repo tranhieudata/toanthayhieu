@@ -9,9 +9,12 @@ import RegisterPage from './pages/RegisterPage';
 import CoursesPage from './pages/CoursesPage';
 import CourseDetailPage from './pages/CourseDetailPage';
 import LessonPage from './pages/LessonPage';
+import LessonDetailPage from './pages/LessonDetailPage';
 import ExercisePage from './pages/ExercisePage';
 import OAuthSuccess from './pages/OAuthSuccess';
 import DashboardPage from './pages/DashboardPage';
+import ClassesPage from './pages/ClassesPage';
+import ClassDetailPage from './pages/ClassDetailPage';
 
 // Admin pages
 import AdminLayout from './pages/admin/AdminLayout';
@@ -21,7 +24,6 @@ import AdminClasses from './pages/admin/AdminClasses';
 import AdminEnrollments from './pages/admin/AdminEnrollments';
 import AdminContentManager from './pages/admin/AdminContentManager';
 import AdminLessonEditor from './pages/admin/AdminLessonEditor';
-import ClassesPage from './pages/ClassesPage';
 
 const PrivateRoute = ({ children }) => {
   const { user, loading } = useAuth();
@@ -51,6 +53,8 @@ function App() {
           <Route path="/oauth-success" element={<OAuthSuccess />} />
           <Route path="/dashboard" element={<PrivateRoute><DashboardPage /></PrivateRoute>} />
           <Route path="/classes" element={<PrivateRoute><ClassesPage /></PrivateRoute>} />
+          <Route path="/class/:classId" element={<PrivateRoute><ClassDetailPage /></PrivateRoute>} />
+          <Route path="/lesson/:lessonId" element={<PrivateRoute><LessonDetailPage /></PrivateRoute>} />
           <Route path="/lessons/:id" element={<PrivateRoute><LessonPage /></PrivateRoute>} />
           <Route path="/exercises/:id" element={<PrivateRoute><ExercisePage /></PrivateRoute>} />
           <Route path="/admin" element={<AdminRoute><AdminLayout /></AdminRoute>}>

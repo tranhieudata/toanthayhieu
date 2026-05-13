@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '../api/axios';
 import toast from 'react-hot-toast';
 import Navbar from '../components/Navbar';
-import { FiUsers, FiCalendar, FiBookOpen, FiSend } from 'react-icons/fi';
+import { FiUsers, FiCalendar, FiBookOpen, FiSend, FiArrowRight } from 'react-icons/fi';
 
 const STATUS_LABEL = { pending: 'Chờ duyệt', approved: 'Đã vào lớp', rejected: 'Bị từ chối' };
 const STATUS_COLOR = {
@@ -12,6 +13,7 @@ const STATUS_COLOR = {
 };
 
 export default function ClassesPage() {
+  const navigate = useNavigate();
   const [classes, setClasses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [applying, setApplying] = useState(null);
@@ -108,6 +110,13 @@ export default function ClassesPage() {
                     className="btn-secondary w-full flex items-center justify-center gap-2"
                   >
                     <FiSend size={14} /> Đăng ký lại
+                  </button>
+                ) : cls.myEnrollmentStatus === 'approved' ? (
+                  <button
+                    onClick={() => navigate(`/class/${cls._id}`)}
+                    className="btn-primary w-full flex items-center justify-center gap-2"
+                  >
+                    <FiArrowRight size={14} /> Xem lớp học
                   </button>
                 ) : null}
               </div>
