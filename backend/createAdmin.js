@@ -7,8 +7,8 @@ async function createAdmin() {
   await mongoose.connect(process.env.MONGODB_URI);
   console.log('✅ Kết nối MongoDB thành công');
 
-  const email = 'admin@eduonline.com';
-  const password = 'Admin@123456';
+  const email = 'admin@gmail.com';
+  const password = 'admin123';
   const name = 'Admin';
 
   const existing = await User.findOne({ email });
