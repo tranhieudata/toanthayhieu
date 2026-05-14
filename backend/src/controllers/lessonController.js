@@ -1,5 +1,7 @@
 const Lesson = require('../models/Lesson');
 const Course = require('../models/Course');
+const ClassEnrollment = require('../models/ClassEnrollment');
+const Class = require('../models/Class');
 const { hasAccessToCourse } = require('../utils/accessControl');
 
 // GET /api/lessons?course=:courseId  (học sinh - bắt buộc có course)
@@ -21,12 +23,24 @@ const getLessons = async (req, res) => {
     // Học sinh bắt buộc phải có courseId
     if (!req.query.course) return res.status(400).json({ message: 'Vui lòng cung cấp courseId' });
 
-    const access = await hasAccessToCourse(req.user._id, req.query.course);
-    if (!access) {
+    // Tìm lớp học của học sinh cho khóa học này
+    const enrollments = await ClassEnrollment.find({ student: req.user._id, status: 'approved' }).select('class');
+    const classIds = enrollments.map(e => e.class);
+    const studentClass = await Class.findOne({ _id: { $in: classIds }, courses: req.query.course }).select('lessonVisibility');
+
+    if (!studentClass) {
       return res.status(403).json({ message: 'Bạn chưa được duyệt vào lớp học chứa khóa học này' });
     }
 
-    const lessons = await Lesson.find({ course: req.query.course, isPublished: true }).sort({ order: 1 });
+    const visibleIds = studentClass.lessonVisibility
+      .filter(lv => lv.isVisible)
+      .map(lv => lv.lesson);
+
+    const lessons = await Lesson.find({
+      course: req.query.course,
+      isPublished: true,
+      _id: { $in: visibleIds },
+    }).sort({ order: 1 });
     res.json(lessons);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -41,10 +55,19 @@ const getLessonById = async (req, res) => {
 
     const isAdmin = req.user.role === 'admin';
     if (!isAdmin) {
+      if (!lesson.isPublished) {
+        return res.status(403).json({ message: 'Bài học này chưa được mở' });
+      }
       const courseId = lesson.course?._id || lesson.course;
-      const access = await hasAccessToCourse(req.user._id, courseId);
-      if (!access) {
+      const enrollments = await ClassEnrollment.find({ student: req.user._id, status: 'approved' }).select('class');
+      const classIds = enrollments.map(e => e.class);
+      const studentClass = await Class.findOne({ _id: { $in: classIds }, courses: courseId }).select('lessonVisibility');
+      if (!studentClass) {
         return res.status(403).json({ message: 'Bạn chưa được duyệt vào lớp học chứa khóa học này' });
+      }
+      const visEntry = studentClass.lessonVisibility.find(lv => lv.lesson.toString() === req.params.id);
+      if (!visEntry || !visEntry.isVisible) {
+        return res.status(403).json({ message: 'Bài học này chưa được mở cho lớp của bạn' });
       }
     }
 
@@ -102,4 +125,17 @@ const deleteLesson = async (req, res) => {
   }
 };
 
-module.exports = { getLessons, getLessonById, createLesson, updateLesson, deleteLesson };
+// PATCH /api/lessons/:id/toggle (admin) - bật/tắt hiển thị bài học
+const toggleLessonStatus = async (req, res) => {
+  try {
+    const lesson = await Lesson.findById(req.params.id);
+    if (!lesson) return res.status(404).json({ message: 'Không tìm thấy bài học' });
+    lesson.isPublished = !lesson.isPublished;
+    await lesson.save();
+    res.json(lesson);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+module.exports = { getLessons, getLessonById, createLesson, updateLesson, deleteLesson, toggleLessonStatus };

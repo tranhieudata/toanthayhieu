@@ -19,6 +19,10 @@ const classSchema = new mongoose.Schema(
     endDate: { type: Date },
     maxStudents: { type: Number, default: 30 },
     isActive: { type: Boolean, default: true },
+    lessonVisibility: [{
+      lesson: { type: mongoose.Schema.Types.ObjectId, ref: 'Lesson' },
+      isVisible: { type: Boolean, default: false },
+    }],
   },
   { timestamps: true }
 );

@@ -130,4 +130,29 @@ const removeStudentFromClass = async (req, res) => {
   }
 };
 
-module.exports = { getClasses, getClassById, createClass, updateClass, deleteClass, addStudentToClass, removeStudentFromClass };
+// PATCH /api/classes/:id/lessons/:lessonId/toggle (admin)
+const toggleClassLesson = async (req, res) => {
+  try {
+    const cls = await Class.findById(req.params.id);
+    if (!cls) return res.status(404).json({ message: 'Không tìm thấy lớp học' });
+
+    const lessonId = req.params.lessonId.toString();
+    const idx = cls.lessonVisibility.findIndex(lv => lv.lesson.toString() === lessonId);
+
+    let isVisible;
+    if (idx >= 0) {
+      cls.lessonVisibility[idx].isVisible = !cls.lessonVisibility[idx].isVisible;
+      isVisible = cls.lessonVisibility[idx].isVisible;
+    } else {
+      cls.lessonVisibility.push({ lesson: lessonId, isVisible: true });
+      isVisible = true;
+    }
+
+    await cls.save();
+    res.json({ lessonId, isVisible });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+module.exports = { getClasses, getClassById, createClass, updateClass, deleteClass, addStudentToClass, removeStudentFromClass, toggleClassLesson };

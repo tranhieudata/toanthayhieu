@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import api from '../../api/axios';
 import toast from 'react-hot-toast';
-import { FiPlus, FiEdit2, FiTrash2, FiX } from 'react-icons/fi';
+import { FiPlus, FiEdit2, FiTrash2, FiX, FiToggleLeft, FiToggleRight } from 'react-icons/fi';
 
 const emptyForm = { title: '', content: '', videoUrl: '', course: '', order: 0, duration: '', isPublished: false };
 
@@ -43,6 +43,14 @@ export default function AdminLessons() {
     catch { toast.error('Xóa thất bại'); }
   };
 
+  const handleToggle = async (id) => {
+    try {
+      const res = await api.patch(`/lessons/${id}/toggle`);
+      setLessons(prev => prev.map(l => l._id === id ? res.data : l));
+      toast.success(res.data.isPublished ? 'Đã bật hiển thị' : 'Đã tắt hiển thị');
+    } catch { toast.error('Không thể thay đổi trạng thái'); }
+  };
+
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
@@ -71,7 +79,14 @@ export default function AdminLessons() {
                     {l.isPublished ? 'Đã đăng' : 'Nháp'}
                   </span>
                 </td>
-                <td className="px-4 py-3 flex gap-2">
+                <td className="px-4 py-3 flex gap-2 items-center">
+                  <button
+                    onClick={() => handleToggle(l._id)}
+                    title={l.isPublished ? 'Đang bật – Nhấn để tắt' : 'Đang tắt – Nhấn để bật'}
+                    className={l.isPublished ? 'text-green-500 hover:text-green-700 text-lg' : 'text-gray-400 hover:text-gray-600 text-lg'}
+                  >
+                    {l.isPublished ? <FiToggleRight /> : <FiToggleLeft />}
+                  </button>
                   <button onClick={() => openEdit(l)} className="text-blue-600 hover:text-blue-800"><FiEdit2 /></button>
                   <button onClick={() => handleDelete(l._id)} className="text-red-500 hover:text-red-700"><FiTrash2 /></button>
                 </td>

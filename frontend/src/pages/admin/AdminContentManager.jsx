@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../../api/axios';
 import toast from 'react-hot-toast';
-import { FiBook, FiFileText, FiLayers, FiPlus, FiEdit2, FiTrash2, FiX, FiChevronRight, FiArrowLeft, FiDownload, FiEye } from 'react-icons/fi';
+import { FiBook, FiFileText, FiLayers, FiPlus, FiEdit2, FiTrash2, FiX, FiChevronRight, FiArrowLeft, FiDownload, FiEye, FiToggleLeft, FiToggleRight } from 'react-icons/fi';
 import 'katex/dist/katex.min.css';
 import katex from 'katex';
 
@@ -204,6 +204,15 @@ export default function AdminContentManager() {
     }
   };
 
+  const handleToggleLesson = async (e, id) => {
+    e.stopPropagation();
+    try {
+      const res = await api.patch(`/lessons/${id}/toggle`);
+      setLessons(prev => prev.map(l => l._id === id ? res.data : l));
+      toast.success(res.data.isPublished ? 'Đã bật hiển thị' : 'Đã tắt hiển thị');
+    } catch { toast.error('Không thể thay đổi trạng thái'); }
+  };
+
   // Exercise operations
   const openCreateExercise = () => {
     setExerciseForm({ ...emptyExercise, lesson: selectedLesson._id, questions: [{ ...emptyQ, options: ['', '', '', ''] }] });
@@ -402,7 +411,14 @@ export default function AdminContentManager() {
                           <span>📋 {lesson.order} thứ tự</span>
                         </div>
                       </div>
-                      <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex gap-2 items-center">
+                        <button
+                          onClick={e => handleToggleLesson(e, lesson._id)}
+                          title={lesson.isPublished ? 'Đang bật – Nhấn để tắt' : 'Đang tắt – Nhấn để bật'}
+                          className={`p-2 rounded-lg text-xl ${lesson.isPublished ? 'text-green-500 hover:text-green-700 hover:bg-green-50' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'}`}
+                        >
+                          {lesson.isPublished ? <FiToggleRight size={20} /> : <FiToggleLeft size={20} />}
+                        </button>
                         <button
                           onClick={e => { e.stopPropagation(); openEditLesson(lesson); }}
                           className="text-blue-600 hover:text-blue-800 p-2 hover:bg-blue-50 rounded-lg"
