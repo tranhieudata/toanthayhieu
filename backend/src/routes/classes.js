@@ -6,8 +6,8 @@ const {
   addStudentToClass, removeStudentFromClass, toggleClassLesson,
 } = require('../controllers/classController');
 
-router.get('/', protect, getClasses);
-router.get('/:id', protect, getClassById);
+router.get('/', getClasses);
+router.get('/:id', getClassById);
 router.post('/', protect, adminOnly, createClass);
 router.put('/:id', protect, adminOnly, updateClass);
 router.delete('/:id', protect, adminOnly, deleteClass);

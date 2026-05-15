@@ -138,4 +138,39 @@ const cancelEnrollment = async (req, res) => {
   }
 };
 
-module.exports = { applyToClass, getAllEnrollments, getMyClassEnrollments, approveEnrollment, rejectEnrollment, cancelEnrollment };
+// POST /api/class-enrollments/admin-add — admin thêm học sinh vào lớp trực tiếp
+const adminAddStudent = async (req, res) => {
+  try {
+    const { classId, studentId } = req.body;
+    if (!classId || !studentId) return res.status(400).json({ message: 'Thiếu classId hoặc studentId' });
+
+    const cls = await Class.findById(classId);
+    if (!cls) return res.status(404).json({ message: 'Không tìm thấy lớp học' });
+
+    const enrollment = await ClassEnrollment.findOneAndUpdate(
+      { student: studentId, class: classId },
+      { student: studentId, class: classId, status: 'approved', reviewedBy: req.user._id, reviewedAt: new Date(), adminNote: 'Thêm trực tiếp bởi admin' },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+    await Class.findByIdAndUpdate(classId, { $addToSet: { students: studentId } });
+    await enrollment.populate('student', 'name email avatar');
+    res.status(201).json(enrollment);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// POST /api/class-enrollments/admin-remove — admin xóa học sinh khỏi lớp
+const adminRemoveStudent = async (req, res) => {
+  try {
+    const { classId, studentId } = req.body;
+    if (!classId || !studentId) return res.status(400).json({ message: 'Thiếu classId hoặc studentId' });
+    await ClassEnrollment.findOneAndDelete({ student: studentId, class: classId });
+    await Class.findByIdAndUpdate(classId, { $pull: { students: studentId } });
+    res.json({ message: 'Đã xóa học sinh khỏi lớp' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+module.exports = { applyToClass, getAllEnrollments, getMyClassEnrollments, approveEnrollment, rejectEnrollment, cancelEnrollment, adminAddStudent, adminRemoveStudent };

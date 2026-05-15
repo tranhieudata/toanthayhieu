@@ -8,7 +8,7 @@ const generateToken = (id) =>
 // POST /api/auth/register
 const register = async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password, phone } = req.body;
     if (!name || !email || !password)
       return res.status(400).json({ message: 'Vui lòng điền đầy đủ thông tin' });
 
@@ -16,12 +16,12 @@ const register = async (req, res) => {
     if (exists) return res.status(400).json({ message: 'Email đã được sử dụng' });
 
     const hashed = await bcrypt.hash(password, 12);
-    const user = await User.create({ name, email, password: hashed, role: 'student' });
+    const user = await User.create({ name, email, password: hashed, phone: phone || '', role: 'student' });
 
     const token = generateToken(user._id);
     res.status(201).json({
       token,
-      user: { _id: user._id, name: user.name, email: user.email, role: user.role, avatar: user.avatar },
+      user: { _id: user._id, name: user.name, email: user.email, phone: user.phone, role: user.role, avatar: user.avatar },
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -31,9 +31,20 @@ const register = async (req, res) => {
 // POST /api/auth/login
 const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
-    const user = await User.findOne({ email }).select('+password');
-    if (!user) return res.status(400).json({ message: 'Email không tồn tại' });
+    const { email, phone, password } = req.body;
+    if (!password) return res.status(400).json({ message: 'Vui lòng nhập mật khẩu' });
+    
+    let user;
+    if (email) {
+      user = await User.findOne({ email }).select('+password');
+      if (!user) return res.status(400).json({ message: 'Email không tồn tại' });
+    } else if (phone) {
+      user = await User.findOne({ phone }).select('+password');
+      if (!user) return res.status(400).json({ message: 'Số điện thoại không tồn tại' });
+    } else {
+      return res.status(400).json({ message: 'Vui lòng nhập email hoặc số điện thoại' });
+    }
+
     if (!user.password) return res.status(400).json({ message: 'Tài khoản này đăng nhập qua mạng xã hội' });
 
     const isMatch = await bcrypt.compare(password, user.password);
@@ -42,7 +53,7 @@ const login = async (req, res) => {
     const token = generateToken(user._id);
     res.json({
       token,
-      user: { _id: user._id, name: user.name, email: user.email, role: user.role, avatar: user.avatar },
+      user: { _id: user._id, name: user.name, email: user.email, phone: user.phone, role: user.role, avatar: user.avatar },
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -52,7 +63,7 @@ const login = async (req, res) => {
 // GET /api/auth/me
 const getMe = async (req, res) => {
   res.json({
-    user: { _id: req.user._id, name: req.user.name, email: req.user.email, role: req.user.role, avatar: req.user.avatar },
+    user: { _id: req.user._id, name: req.user.name, email: req.user.email, phone: req.user.phone, role: req.user.role, avatar: req.user.avatar },
   });
 };
 

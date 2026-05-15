@@ -4,7 +4,7 @@ const ClassEnrollment = require('../models/ClassEnrollment');
 // GET /api/classes
 const getClasses = async (req, res) => {
   try {
-    const isAdmin = req.user.role === 'admin';
+    const isAdmin = req.user?.role === 'admin';
     const filter = isAdmin ? {} : { isActive: true };
 
     const classes = await Class.find(filter)
@@ -12,8 +12,23 @@ const getClasses = async (req, res) => {
       .populate('teacher', 'name avatar')
       .sort({ createdAt: -1 });
 
+    if (!req.user) {
+      // Public access - return only active classes without enrollment status
+      return res.json(
+        classes.map((cls) => {
+          const obj = cls.toObject();
+          return {
+            ...obj,
+            studentCount: obj.students.length,
+            students: undefined,
+            myEnrollmentStatus: null,
+          };
+        })
+      );
+    }
+
     if (!isAdmin) {
-      // Gắn trạng thái đăng ký của học sinh vào từng lớp
+      // Logged-in student - gắn trạng thái đăng ký của học sinh vào từng lớp
       const myEnrollments = await ClassEnrollment.find({ student: req.user._id }).select('class status');
       const enrollmentMap = {};
       myEnrollments.forEach((e) => { enrollmentMap[e.class.toString()] = e.status; });
@@ -46,10 +61,22 @@ const getClassById = async (req, res) => {
 
     if (!cls) return res.status(404).json({ message: 'Không tìm thấy lớp học' });
 
-    const isAdmin = req.user.role === 'admin';
+    const isAdmin = req.user?.role === 'admin';
     if (isAdmin) {
       await cls.populate('students', 'name email avatar');
       return res.json(cls);
+    }
+
+    const obj = cls.toObject();
+    
+    if (!req.user) {
+      // Public access
+      return res.json({
+        ...obj,
+        studentCount: obj.students.length,
+        students: undefined,
+        myEnrollmentStatus: null,
+      });
     }
 
     const myEnrollment = await ClassEnrollment.findOne({
@@ -57,7 +84,6 @@ const getClassById = async (req, res) => {
       class: req.params.id,
     });
 
-    const obj = cls.toObject();
     res.json({
       ...obj,
       studentCount: obj.students.length,

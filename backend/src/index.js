@@ -5,10 +5,15 @@ const session = require('express-session');
 const MongoStore = require('connect-mongo');
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
 const connectDB = require('./config/db');
 const passport = require('./config/passport');
 
 const app = express();
+
+// Ensure uploads directory exists
+const uploadsDir = path.join(__dirname, '../uploads');
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
 // Connect to MongoDB
 connectDB();
@@ -33,28 +38,49 @@ app.use(passport.initialize());
 app.use(passport.session());
 
 // Configure multer for file upload
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+const ALLOWED_PDF_TYPES   = ['application/pdf'];
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, path.join(__dirname, '../uploads')),
   filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname.replace(/\s+/g, '_')),
 });
-const upload = multer({
+
+const uploadImage = multer({
   storage,
   fileFilter: (req, file, cb) => {
-    const allowed = ['application/pdf', 'image/jpeg', 'image/png', 'image/gif'];
-    if (allowed.includes(file.mimetype)) cb(null, true);
-    else cb(new Error('Invalid file type'));
+    if (ALLOWED_IMAGE_TYPES.includes(file.mimetype)) cb(null, true);
+    else cb(new Error('Chỉ chấp nhận file ảnh (jpg, png, gif, webp)'));
   },
-  limits: { fileSize: 50 * 1024 * 1024 },
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
+});
+
+const uploadPdf = multer({
+  storage,
+  fileFilter: (req, file, cb) => {
+    if (ALLOWED_PDF_TYPES.includes(file.mimetype)) cb(null, true);
+    else cb(new Error('Chỉ chấp nhận file PDF'));
+  },
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB
 });
 
 // Serve uploaded files
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
-// Upload endpoint
-app.post('/api/upload', (req, res, next) => {
-  upload.single('file')(req, res, (err) => {
+// Upload image endpoint (QR, avatar, thumbnail…)
+app.post('/api/upload/image', (req, res) => {
+  uploadImage.single('file')(req, res, (err) => {
     if (err) return res.status(400).json({ message: err.message });
-    if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
+    if (!req.file) return res.status(400).json({ message: 'Không có file được gửi lên' });
+    res.json({ url: `/uploads/${req.file.filename}`, filename: req.file.originalname });
+  });
+});
+
+// Upload PDF endpoint (lesson attachments)
+app.post('/api/upload', (req, res) => {
+  uploadPdf.single('file')(req, res, (err) => {
+    if (err) return res.status(400).json({ message: err.message });
+    if (!req.file) return res.status(400).json({ message: 'Không có file được gửi lên' });
     res.json({ url: `/uploads/${req.file.filename}`, filename: req.file.originalname });
   });
 });
@@ -66,6 +92,8 @@ app.use('/api/exercises', require('./routes/exercises'));
 app.use('/api/classes', require('./routes/classes'));
 app.use('/api/class-enrollments', require('./routes/classEnrollments'));
 app.use('/api/users', require('./routes/users'));
+app.use('/api/tuition', require('./routes/tuition'));
+app.use('/api/settings', require('./routes/settings'));
 
 app.get('/api/health', (req, res) => res.json({ status: 'OK' }));
 

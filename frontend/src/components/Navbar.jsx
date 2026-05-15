@@ -23,10 +23,10 @@ export default function Navbar() {
           </Link>
 
           <div className="hidden md:flex items-center gap-6">
-            <Link to="/courses" className="text-gray-600 hover:text-blue-600 transition-colors">Khóa học</Link>
+            {/* <Link to="/courses" className="text-gray-600 hover:text-blue-600 transition-colors">Khóa học</Link> */}
             <Link to="/classes" className="text-gray-600 hover:text-blue-600 transition-colors">Lớp học</Link>
             {user && (
-              <Link to="/dashboard" className="text-gray-600 hover:text-blue-600 transition-colors">Học của tôi</Link>
+              <Link to="/dashboard" className="text-gray-600 hover:text-blue-600 transition-colors">Lớp học của tôi</Link>
             )}
             {isAdmin && (
               <Link to="/admin" className="text-gray-600 hover:text-blue-600 transition-colors">Quản trị</Link>

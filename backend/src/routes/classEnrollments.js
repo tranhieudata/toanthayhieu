@@ -8,7 +8,13 @@ const {
   approveEnrollment,
   rejectEnrollment,
   cancelEnrollment,
+  adminAddStudent,
+  adminRemoveStudent,
 } = require('../controllers/classEnrollmentController');
+
+// Admin trực tiếp (phải trước /:id)
+router.post('/admin-add', protect, adminOnly, adminAddStudent);
+router.post('/admin-remove', protect, adminOnly, adminRemoveStudent);
 
 // Học sinh
 router.get('/my', protect, getMyClassEnrollments);

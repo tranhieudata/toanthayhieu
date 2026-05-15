@@ -12,6 +12,15 @@ const STATUS_COLOR = {
   rejected: 'bg-red-100 text-red-600',
 };
 
+const DAYS_VN = ['CN', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
+
+function formatSchedules(schedules) {
+  if (!schedules || schedules.length === 0) return 'Chưa có lịch học';
+  return schedules
+    .map(s => `${DAYS_VN[s.dayOfWeek]}: ${s.startTime}–${s.endTime}${s.room ? ` (${s.room})` : ''}`)
+    .join(', ');
+}
+
 export default function ClassesPage() {
   const navigate = useNavigate();
   const [classes, setClasses] = useState([]);
@@ -63,24 +72,43 @@ export default function ClassesPage() {
         ) : classes.length === 0 ? (
           <div className="text-center py-20 text-gray-400">Chưa có lớp học nào</div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 ">
             {classes.map(cls => (
-              <div key={cls._id} className="card hover:shadow-lg transition-shadow">
+              <div key={cls._id} className="card hover:shadow-lg transition-shadow px-2">
                 <div className="flex justify-between items-start mb-3">
                   <h2 className="text-lg font-bold text-gray-900">{cls.name}</h2>
                   {cls.myEnrollmentStatus && (
                     <span className={`text-xs px-2 py-1 rounded-full font-medium ${STATUS_COLOR[cls.myEnrollmentStatus]}`}>
                       {STATUS_LABEL[cls.myEnrollmentStatus]}
                     </span>
+                   
                   )}
                 </div>
                 {cls.description && <p className="text-sm text-gray-500 mb-3 line-clamp-2">{cls.description}</p>}
-
+                
                 <div className="flex flex-wrap gap-3 text-sm text-gray-600 mb-4">
-                  <span className="flex items-center gap-1"><FiUsers size={14} /> {cls.studentCount || 0} học sinh</span>
+                  {/* <span className="flex items-center gap-1"><FiUsers size={14} /> {cls.studentCount || 0} học sinh</span> */}
                   <span className="flex items-center gap-1"><FiBookOpen size={14} /> {cls.courses?.length || 0} khóa học</span>
                   {cls.maxStudents && <span className="flex items-center gap-1"><FiCalendar size={14} /> Tối đa {cls.maxStudents}</span>}
                 </div>
+
+                {/* Schedule */}
+                {cls.schedules && cls.schedules.length > 0 && (
+                  <div className="mb-4 text-sm">
+                    <p className="font-medium text-gray-700 flex items-center gap-1 mb-1.5">
+                      <FiCalendar size={14} /> Lịch học
+                    </p>
+                    <div className="space-y-1 text-gray-600">
+                      {cls.schedules.map((s, i) => (
+                        <div key={i} className="text-xs pl-5">
+                          {DAYS_VN[s.dayOfWeek]}: {s.startTime}–{s.endTime}
+                          {s.room && <span className="text-gray-400 ml-1">(Phòng {s.room})</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Courses in class */}
                 {cls.courses?.length > 0 && (

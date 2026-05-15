@@ -19,6 +19,7 @@ const classSchema = new mongoose.Schema(
     endDate: { type: Date },
     maxStudents: { type: Number, default: 30 },
     isActive: { type: Boolean, default: true },
+    feePerSession: { type: Number, default: 0 },
     lessonVisibility: [{
       lesson: { type: mongoose.Schema.Types.ObjectId, ref: 'Lesson' },
       isVisible: { type: Boolean, default: false },

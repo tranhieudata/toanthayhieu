@@ -1,3 +1,4 @@
+const bcrypt = require('bcryptjs');
 const User = require('../models/User');
 const Enrollment = require('../models/Enrollment');
 
@@ -82,4 +83,51 @@ const getAdminStats = async (req, res) => {
   }
 };
 
-module.exports = { getUsers, getUserById, updateUser, deleteUser, getMyEnrollments, getAdminStats };
+// POST /api/users (admin - tạo học sinh)
+const createStudent = async (req, res) => {
+  try {
+    const { name, email } = req.body;
+    if (!name || !name.trim()) return res.status(400).json({ message: 'Vui lòng nhập tên học sinh' });
+
+    const DEFAULT_PASSWORD = 'toanthayhieu@123';
+
+    let finalEmail = email ? email.trim().toLowerCase() : null;
+    if (!finalEmail) {
+      const slug = name.toLowerCase()
+        .replace(/[àáạảãâầấậẩẫăằắặẳẵ]/g, 'a')
+        .replace(/[èéẹẻẽêềếệểễ]/g, 'e')
+        .replace(/[ìíịỉĩ]/g, 'i')
+        .replace(/[òóọỏõôồốộổỗơờớợởỡ]/g, 'o')
+        .replace(/[ùúụủũưừứựửữ]/g, 'u')
+        .replace(/[ỳýỵỷỹ]/g, 'y')
+        .replace(/đ/g, 'd')
+        .replace(/[^a-z0-9\s]/g, '')
+        .trim()
+        .replace(/\s+/g, '.');
+      finalEmail = `${slug}@toanthayhieu.edu`;
+      let exists = await User.findOne({ email: finalEmail });
+      let counter = 1;
+      while (exists) {
+        finalEmail = `${slug}${counter}@toanthayhieu.edu`;
+        exists = await User.findOne({ email: finalEmail });
+        counter++;
+      }
+    } else {
+      const exists = await User.findOne({ email: finalEmail });
+      if (exists) return res.status(400).json({ message: 'Email đã được sử dụng' });
+    }
+
+    const hashed = await bcrypt.hash(DEFAULT_PASSWORD, 12);
+    const user = await User.create({ name: name.trim(), email: finalEmail, password: hashed, role: 'student' });
+
+    res.status(201).json({
+      user: { _id: user._id, name: user.name, email: user.email, role: user.role, isActive: user.isActive, createdAt: user.createdAt },
+      defaultPassword: DEFAULT_PASSWORD,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+module.exports = { getUsers, getUserById, updateUser, deleteUser, getMyEnrollments, getAdminStats, createStudent };
+

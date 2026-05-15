@@ -6,7 +6,6 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
-import CoursesPage from './pages/CoursesPage';
 import CourseDetailPage from './pages/CourseDetailPage';
 import LessonPage from './pages/LessonPage';
 import LessonDetailPage from './pages/LessonDetailPage';
@@ -23,6 +22,9 @@ import AdminStudents from './pages/admin/AdminStudents';
 import AdminClasses from './pages/admin/AdminClasses';
 import AdminEnrollments from './pages/admin/AdminEnrollments';
 import AdminContentManager from './pages/admin/AdminContentManager';
+import AdminTuition from './pages/admin/AdminTuition';
+import AdminRevenue from './pages/admin/AdminRevenue';
+import AdminSettings from './pages/admin/AdminSettings';
 import AdminLessonEditor from './pages/admin/AdminLessonEditor';
 
 const PrivateRoute = ({ children }) => {
@@ -48,11 +50,10 @@ function App() {
           <Route path="/" element={<HomePage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
-          <Route path="/courses" element={<CoursesPage />} />
+          <Route path="/classes" element={<ClassesPage />} />
           <Route path="/courses/:id" element={<CourseDetailPage />} />
           <Route path="/oauth-success" element={<OAuthSuccess />} />
           <Route path="/dashboard" element={<PrivateRoute><DashboardPage /></PrivateRoute>} />
-          <Route path="/classes" element={<PrivateRoute><ClassesPage /></PrivateRoute>} />
           <Route path="/class/:classId" element={<PrivateRoute><ClassDetailPage /></PrivateRoute>} />
           <Route path="/lesson/:lessonId" element={<PrivateRoute><LessonDetailPage /></PrivateRoute>} />
           <Route path="/lessons/:id" element={<PrivateRoute><LessonPage /></PrivateRoute>} />
@@ -65,6 +66,9 @@ function App() {
             <Route path="students" element={<AdminStudents />} />
             <Route path="classes" element={<AdminClasses />} />
             <Route path="enrollments" element={<AdminEnrollments />} />
+            <Route path="tuition" element={<AdminTuition />} />
+            <Route path="revenue" element={<AdminRevenue />} />
+            <Route path="settings" element={<AdminSettings />} />
           </Route>
         </Routes>
       </BrowserRouter>

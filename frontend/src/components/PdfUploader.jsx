@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { FiUpload, FiX, FiDownload } from 'react-icons/fi';
-import axios from 'axios';
+import api, { getUploadUrl } from '../api/axios';
 
 export default function PdfUploader({ attachments = [], onAttachmentsChange }) {
   const [isUploading, setIsUploading] = useState(false);
@@ -27,9 +27,7 @@ export default function PdfUploader({ attachments = [], onAttachmentsChange }) {
       formData.append('file', file);
 
       try {
-        const res = await axios.post('/api/upload', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
+        const res = await api.post('/upload', formData);
         onAttachmentsChange([...attachments, { url: res.data.url, filename: file.name, uploadedAt: new Date() }]);
       } catch (err) {
         setError('Tải file lên thất bại: ' + (err.response?.data?.message || err.message));
@@ -68,7 +66,7 @@ export default function PdfUploader({ attachments = [], onAttachmentsChange }) {
           <ul className="space-y-2">
             {attachments.map((att, idx) => (
               <li key={idx} className="flex items-center justify-between bg-white p-2 rounded border border-gray-200">
-                <a href={att.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-blue-600 hover:underline text-sm">
+                <a href={getUploadUrl(att.url)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-blue-600 hover:underline text-sm">
                   <FiDownload size={14} />
                   {att.filename}
                 </a>
