@@ -91,7 +91,7 @@ const createLesson = async (req, res) => {
 // PUT /api/lessons/:id (admin)
 const updateLesson = async (req, res) => {
   try {
-    const { course, title, content, videoUrl, order, duration, isPublished, pdfAttachments } = req.body;
+    const { course, title, content, videoUrl, order, duration, isPublished, pdfAttachments, criteria } = req.body;
     
     if (!course) {
       return res.status(400).json({ message: 'Khóa học là bắt buộc' });
@@ -101,9 +101,12 @@ const updateLesson = async (req, res) => {
       return res.status(400).json({ message: 'Tiêu đề là bắt buộc' });
     }
 
+    const updateFields = { course, title, content, videoUrl, order, duration, isPublished, pdfAttachments };
+    if (criteria !== undefined) updateFields.criteria = criteria;
+
     const lesson = await Lesson.findByIdAndUpdate(
       req.params.id,
-      { course, title, content, videoUrl, order, duration, isPublished, pdfAttachments },
+      updateFields,
       { new: true, runValidators: true }
     );
     
@@ -138,4 +141,49 @@ const toggleLessonStatus = async (req, res) => {
   }
 };
 
-module.exports = { getLessons, getLessonById, createLesson, updateLesson, deleteLesson, toggleLessonStatus };
+// POST /api/lessons/:id/criteria  (thêm tiêu chí đánh giá)
+const addCriteria = async (req, res) => {
+  try {
+    const lesson = await Lesson.findById(req.params.id);
+    if (!lesson) return res.status(404).json({ message: 'Không tìm thấy bài học' });
+    const { name, description } = req.body;
+    if (!name?.trim()) return res.status(400).json({ message: 'Tên tiêu chí là bắt buộc' });
+    lesson.criteria.push({ name: name.trim(), description: description || '' });
+    await lesson.save();
+    res.json(lesson.criteria);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// PUT /api/lessons/:id/criteria/:criteriaId  (cập nhật tiêu chí)
+const updateCriteria = async (req, res) => {
+  try {
+    const lesson = await Lesson.findById(req.params.id);
+    if (!lesson) return res.status(404).json({ message: 'Không tìm thấy bài học' });
+    const crit = lesson.criteria.id(req.params.criteriaId);
+    if (!crit) return res.status(404).json({ message: 'Không tìm thấy tiêu chí' });
+    const { name, description } = req.body;
+    if (name?.trim()) crit.name = name.trim();
+    if (description !== undefined) crit.description = description;
+    await lesson.save();
+    res.json(lesson.criteria);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// DELETE /api/lessons/:id/criteria/:criteriaId
+const deleteCriteria = async (req, res) => {
+  try {
+    const lesson = await Lesson.findById(req.params.id);
+    if (!lesson) return res.status(404).json({ message: 'Không tìm thấy bài học' });
+    lesson.criteria = lesson.criteria.filter((c) => c._id.toString() !== req.params.criteriaId);
+    await lesson.save();
+    res.json(lesson.criteria);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+module.exports = { getLessons, getLessonById, createLesson, updateLesson, deleteLesson, toggleLessonStatus, addCriteria, updateCriteria, deleteCriteria };

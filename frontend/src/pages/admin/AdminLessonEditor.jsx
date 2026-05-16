@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import api from '../../api/axios';
 import toast from 'react-hot-toast';
-import { FiArrowLeft, FiSave, FiClock } from 'react-icons/fi';
+import { FiArrowLeft, FiSave, FiClock, FiPlus, FiTrash2, FiEdit2, FiCheck, FiX } from 'react-icons/fi';
 import RichTextEditor from '../../components/RichTextEditor';
 import PdfUploader from '../../components/PdfUploader';
 
@@ -38,6 +38,15 @@ export default function AdminLessonEditor() {
   useEffect(() => { formRef.current = form; }, [form]);
   useEffect(() => { draftIdRef.current = draftId; }, [draftId]);
 
+  // Criteria state
+  const [criteria, setCriteria] = useState([]);
+  const [newCritName, setNewCritName] = useState('');
+  const [newCritDesc, setNewCritDesc] = useState('');
+  const [editCritId, setEditCritId] = useState(null);
+  const [editCritName, setEditCritName] = useState('');
+  const [editCritDesc, setEditCritDesc] = useState('');
+  const [critSaving, setCritSaving] = useState(false);
+
   const isEdit = !!id;
 
   useEffect(() => {
@@ -66,6 +75,13 @@ export default function AdminLessonEditor() {
       api.get(`/courses/${courseId}`).then(r => setCourseName(r.data.title)).catch(() => {});
     }
   }, [id, courseId, isEdit]);
+
+  // Load criteria khi edit
+  useEffect(() => {
+    if (isEdit && id) {
+      api.get(`/lessons/${id}`).then(r => setCriteria(r.data.criteria || [])).catch(() => {});
+    }
+  }, [id, isEdit]);
 
   // Auto-save mỗi 30 giây
   useEffect(() => {
@@ -100,6 +116,64 @@ export default function AdminLessonEditor() {
     return () => clearInterval(timer);
   }, [id, courseId, isEdit]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const handleAddCriteria = async () => {
+    if (!newCritName.trim()) return toast.error('Nhập tên tiêu chí');
+    if (!id) {
+      // Tạo mới: lưu local, gửi cùng lúc khi submit
+      setCriteria(prev => [...prev, { _id: `local_${Date.now()}`, name: newCritName.trim(), description: newCritDesc }]);
+      setNewCritName('');
+      setNewCritDesc('');
+      return;
+    }
+    setCritSaving(true);
+    try {
+      const { data } = await api.post(`/lessons/${id}/criteria`, { name: newCritName.trim(), description: newCritDesc });
+      setCriteria(data);
+      setNewCritName('');
+      setNewCritDesc('');
+      toast.success('Đã thêm tiêu chí');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Lỗi thêm tiêu chí');
+    } finally {
+      setCritSaving(false);
+    }
+  };
+
+  const handleUpdateCriteria = async (critId) => {
+    if (!id) {
+      // Tạo mới: cập nhật local state
+      setCriteria(prev => prev.map(c => c._id === critId ? { ...c, name: editCritName, description: editCritDesc } : c));
+      setEditCritId(null);
+      return;
+    }
+    setCritSaving(true);
+    try {
+      const { data } = await api.put(`/lessons/${id}/criteria/${critId}`, { name: editCritName, description: editCritDesc });
+      setCriteria(data);
+      setEditCritId(null);
+      toast.success('Đã cập nhật tiêu chí');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Lỗi cập nhật');
+    } finally {
+      setCritSaving(false);
+    }
+  };
+
+  const handleDeleteCriteria = async (critId) => {
+    if (!id) {
+      // Tạo mới: xóa khỏi local state
+      setCriteria(prev => prev.filter(c => c._id !== critId));
+      return;
+    }
+    try {
+      const { data } = await api.delete(`/lessons/${id}/criteria/${critId}`);
+      setCriteria(data);
+      toast.success('Đã xóa tiêu chí');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Lỗi xóa tiêu chí');
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -111,7 +185,9 @@ export default function AdminLessonEditor() {
         return;
       }
 
-      const submitData = isEdit ? form : { ...form, course: courseIdToUse };
+      // Khi tạo mới, gửi kèm criteria (đã thu thập local)
+      const criteriaToSend = isEdit ? undefined : criteria.map(({ name, description }) => ({ name, description }));
+      const submitData = isEdit ? form : { ...form, course: courseIdToUse, criteria: criteriaToSend };
 
       if (isEdit) {
         await api.put(`/lessons/${id}`, submitData);
@@ -246,6 +322,85 @@ export default function AdminLessonEditor() {
             onAttachmentsChange={(atts) => setForm(f => ({ ...f, pdfAttachments: atts }))}
           />
         </div>
+
+        {/* Tiêu chí đánh giá */}
+        <div className="card p-6">
+            <h3 className="text-sm font-semibold text-gray-800 mb-4 flex items-center gap-2">
+              <span className="w-5 h-5 rounded bg-purple-100 text-purple-700 flex items-center justify-center text-xs font-bold">✦</span>
+              Tiêu chí đánh giá
+              <span className="text-xs text-gray-400 font-normal">(dùng để tạo đề kiểm tra)</span>
+            </h3>
+
+            {/* List criteria */}
+            {criteria.length === 0 ? (
+              <p className="text-sm text-gray-400 mb-4">Chưa có tiêu chí. Thêm tiêu chí bên dưới.</p>
+            ) : (
+              <div className="space-y-2 mb-4">
+                {criteria.map((c) => (
+                  <div key={c._id} className="border border-gray-200 rounded-lg p-3">
+                    {editCritId === c._id ? (
+                      <div className="space-y-2">
+                        <input
+                          className="input-field text-sm"
+                          value={editCritName}
+                          onChange={e => setEditCritName(e.target.value)}
+                          placeholder="Tên tiêu chí *"
+                        />
+                        <input
+                          className="input-field text-sm"
+                          value={editCritDesc}
+                          onChange={e => setEditCritDesc(e.target.value)}
+                          placeholder="Mô tả (tuỳ chọn)"
+                        />
+                        <div className="flex gap-2">
+                          <button type="button" onClick={() => handleUpdateCriteria(c._id)} disabled={critSaving} className="text-xs bg-green-600 text-white px-3 py-1.5 rounded hover:bg-green-700 flex items-center gap-1"><FiCheck /> Lưu</button>
+                          <button type="button" onClick={() => setEditCritId(null)} className="text-xs text-gray-500 hover:text-gray-800 flex items-center gap-1"><FiX /> Hủy</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <div className="text-sm font-medium text-gray-800">{c.name}</div>
+                          {c.description && <div className="text-xs text-gray-500 mt-0.5">{c.description}</div>}
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button type="button" onClick={() => { setEditCritId(c._id); setEditCritName(c.name); setEditCritDesc(c.description || ''); }} className="text-blue-500 hover:text-blue-700 p-1" title="Sửa"><FiEdit2 size={13} /></button>
+                          <button type="button" onClick={() => handleDeleteCriteria(c._id)} className="text-red-400 hover:text-red-600 p-1" title="Xóa"><FiTrash2 size={13} /></button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Add new criterion */}
+            <div className="border border-dashed border-gray-300 rounded-lg p-3 space-y-2 bg-gray-50">
+              <p className="text-xs text-gray-500 font-medium">Thêm tiêu chí mới</p>
+              <input
+                className="input-field text-sm"
+                value={newCritName}
+                onChange={e => setNewCritName(e.target.value)}
+                placeholder="Tên tiêu chí *"
+                onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleAddCriteria())}
+              />
+              <input
+                className="input-field text-sm"
+                value={newCritDesc}
+                onChange={e => setNewCritDesc(e.target.value)}
+                placeholder="Mô tả (tuỳ chọn)"
+              />
+              <button
+                type="button"
+                onClick={handleAddCriteria}
+                disabled={critSaving || !newCritName.trim()}
+                className="flex items-center gap-1 text-xs bg-purple-600 text-white px-3 py-1.5 rounded hover:bg-purple-700 disabled:opacity-50"
+              >
+                <FiPlus size={12} /> Thêm tiêu chí
+              </button>
+            </div>
+          </div>
+
 
         {/* Actions */}
         <div className="flex gap-3 pb-8">

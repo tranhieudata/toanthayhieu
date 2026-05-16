@@ -250,7 +250,7 @@ export default function AdminTuition() {
               ) : (
                 <>
                   <span className="font-bold text-green-700 text-lg">{formatVND(feePerSession)}</span>
-                  <button onClick={() => setShowFeeEdit(true)} className="text-xs text-blue-600 underline hover:text-blue-800">Sửa</button>
+                  {/* <button onClick={() => setShowFeeEdit(true)} className="text-xs text-blue-600 underline hover:text-blue-800">Sửa</button> */}
                 </>
               )}
             </div>

@@ -1,0 +1,350 @@
+import { useState, useEffect } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import api from '../../api/axios';
+import toast from 'react-hot-toast';
+import { FiArrowLeft, FiSave, FiPlus, FiTrash2 } from 'react-icons/fi';
+
+const LEVELS = ['Nhận biết', 'Thông hiểu', 'Vận dụng cao'];
+
+const defaultLevel = (name) => ({ name, fromQuestion: '', toQuestion: '', totalPoints: '', criteria: [] });
+
+const emptyForm = {
+  title: '',
+  lesson: '',
+  class: '',
+  totalQuestions: '',
+  isTemplate: false,
+  note: '',
+  levels: LEVELS.map(defaultLevel),
+};
+
+export default function AdminExamEditor() {
+  const navigate = useNavigate();
+  const { id } = useParams();
+  const isEdit = !!id;
+
+  const [form, setForm] = useState(emptyForm);
+  const [lessons, setLessons] = useState([]);
+  const [classes, setClasses] = useState([]);
+  const [lessonCriteria, setLessonCriteria] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [fetching, setFetching] = useState(isEdit);
+
+  // Load lists
+  useEffect(() => {
+    api.get('/lessons').then(r => setLessons(r.data || [])).catch(() => {});
+    api.get('/classes').then(r => setClasses(r.data || [])).catch(() => {});
+  }, []);
+
+  // Load exam for edit
+  useEffect(() => {
+    if (!isEdit) return;
+    api.get(`/exams/${id}`)
+      .then(r => {
+        const e = r.data;
+        setForm({
+          title: e.title || '',
+          lesson: e.lesson?._id || e.lesson || '',
+          class: e.class?._id || e.class || '',
+          totalQuestions: e.totalQuestions || '',
+          isTemplate: e.isTemplate || false,
+          note: e.note || '',
+          levels: LEVELS.map(name => {
+            const found = e.levels?.find(l => l.name === name);
+            return found
+              ? { name, fromQuestion: found.fromQuestion, toQuestion: found.toQuestion, totalPoints: found.totalPoints, criteria: found.criteria || [] }
+              : defaultLevel(name);
+          }),
+        });
+        if (e.lesson?._id) loadCriteria(e.lesson._id);
+      })
+      .catch(() => toast.error('Không tải được đề'))
+      .finally(() => setFetching(false));
+  }, [id, isEdit]);
+
+  // Load criteria when lesson changes
+  const loadCriteria = (lessonId) => {
+    if (!lessonId) { setLessonCriteria([]); return; }
+    api.get(`/lessons/${lessonId}`)
+      .then(r => setLessonCriteria(r.data.criteria || []))
+      .catch(() => setLessonCriteria([]));
+  };
+
+  const handleLessonChange = (lessonId) => {
+    setForm(f => ({ ...f, lesson: lessonId, levels: f.levels.map(l => ({ ...l, criteria: [] })) }));
+    loadCriteria(lessonId);
+  };
+
+  const updateLevel = (idx, field, value) => {
+    setForm(f => {
+      const levels = [...f.levels];
+      levels[idx] = { ...levels[idx], [field]: value };
+      return { ...f, levels };
+    });
+  };
+
+  const toggleCriterion = (levelIdx, critId) => {
+    setForm(f => {
+      const levels = [...f.levels];
+      const level = { ...levels[levelIdx] };
+      const crits = level.criteria.includes(critId)
+        ? level.criteria.filter(c => c !== critId)
+        : [...level.criteria, critId];
+      level.criteria = crits;
+      levels[levelIdx] = level;
+      return { ...f, levels };
+    });
+  };
+
+  const totalPoints = form.levels.reduce((s, l) => s + (Number(l.totalPoints) || 0), 0);
+  const totalQuestionsCovered = form.levels.reduce((max, l) => Math.max(max, Number(l.toQuestion) || 0), 0);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    // Validate
+    if (!form.title.trim()) return toast.error('Nhập tiêu đề đề kiểm tra');
+    if (!form.totalQuestions || Number(form.totalQuestions) < 1) return toast.error('Nhập số câu hỏi');
+    const levels = form.levels.filter(l => l.fromQuestion && l.toQuestion && l.totalPoints);
+    if (levels.length === 0) return toast.error('Thiết lập ít nhất một mức độ câu hỏi');
+
+    setLoading(true);
+    try {
+      const payload = {
+        ...form,
+        totalQuestions: Number(form.totalQuestions),
+        levels: form.levels
+          .filter(l => l.fromQuestion && l.toQuestion && l.totalPoints)
+          .map(l => ({
+            name: l.name,
+            fromQuestion: Number(l.fromQuestion),
+            toQuestion: Number(l.toQuestion),
+            totalPoints: Number(l.totalPoints),
+            criteria: l.criteria,
+          })),
+        lesson: form.lesson || undefined,
+        class: form.class || undefined,
+      };
+
+      if (isEdit) {
+        await api.put(`/exams/${id}`, payload);
+        toast.success('Đã cập nhật đề kiểm tra');
+      } else {
+        await api.post('/exams', payload);
+        toast.success('Đã tạo đề kiểm tra');
+      }
+      navigate('/admin/exams');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Lỗi lưu đề');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (fetching) return (
+    <div className="flex items-center justify-center h-64">
+      <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
+    </div>
+  );
+
+  return (
+    <div className="max-w-4xl mx-auto space-y-6">
+      {/* Header */}
+      <div className="flex items-center gap-4">
+        <button onClick={() => navigate('/admin/exams')} className="flex items-center gap-2 text-gray-500 hover:text-gray-800 text-sm">
+          <FiArrowLeft size={16} /> Quay lại
+        </button>
+        <h1 className="text-xl font-bold text-gray-900">{isEdit ? 'Chỉnh sửa đề kiểm tra' : 'Tạo đề kiểm tra mới'}</h1>
+      </div>
+
+      <form onSubmit={handleSubmit} className="space-y-6">
+        {/* Basic info */}
+        <div className="bg-white rounded-xl shadow-sm p-6 space-y-4">
+          <h2 className="font-semibold text-gray-800">Thông tin đề</h2>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Tiêu đề đề *</label>
+            <input
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="VD: Kiểm tra 15 phút - Chương 1"
+              value={form.title}
+              onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
+              required
+            />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Chủ đề / Bài học</label>
+              <select
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={form.lesson}
+                onChange={e => handleLessonChange(e.target.value)}
+              >
+                <option value="">-- Chọn bài học --</option>
+                {lessons.map(l => (
+                  <option key={l._id} value={l._id}>{l.title}</option>
+                ))}
+              </select>
+              {form.lesson && lessonCriteria.length === 0 && (
+                <p className="text-xs text-yellow-600 mt-1">Bài học này chưa có tiêu chí đánh giá</p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Lớp</label>
+              <select
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={form.class}
+                onChange={e => setForm(f => ({ ...f, class: e.target.value }))}
+              >
+                <option value="">-- Không gắn lớp (ngân hàng đề) --</option>
+                {classes.map(c => (
+                  <option key={c._id} value={c._id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Tổng số câu hỏi *</label>
+              <input
+                type="number"
+                min="1"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="VD: 10"
+                value={form.totalQuestions}
+                onChange={e => setForm(f => ({ ...f, totalQuestions: e.target.value }))}
+                required
+              />
+            </div>
+            <div className="flex items-end pb-1">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.isTemplate}
+                  onChange={e => setForm(f => ({ ...f, isTemplate: e.target.checked }))}
+                  className="w-4 h-4"
+                />
+                <span className="text-sm font-medium text-gray-700">Lưu vào ngân hàng đề</span>
+              </label>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Ghi chú</label>
+            <input
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Ghi chú thêm (tuỳ chọn)"
+              value={form.note}
+              onChange={e => setForm(f => ({ ...f, note: e.target.value }))}
+            />
+          </div>
+        </div>
+
+        {/* Levels */}
+        <div className="bg-white rounded-xl shadow-sm p-6 space-y-5">
+          <div className="flex items-center justify-between">
+            <h2 className="font-semibold text-gray-800">Phân loại mức độ câu hỏi</h2>
+            <div className="text-sm text-gray-500">Tổng điểm: <span className="font-bold text-blue-700">{totalPoints}</span></div>
+          </div>
+
+          {form.levels.map((level, idx) => (
+            <div
+              key={level.name}
+              className={`border rounded-xl p-4 space-y-3 ${idx === 0 ? 'border-green-200 bg-green-50' : idx === 1 ? 'border-blue-200 bg-blue-50' : 'border-orange-200 bg-orange-50'}`}
+            >
+              <div className="flex items-center justify-between">
+                <h3 className={`font-semibold text-sm ${idx === 0 ? 'text-green-800' : idx === 1 ? 'text-blue-800' : 'text-orange-800'}`}>
+                  {level.name}
+                </h3>
+                {level.fromQuestion && level.toQuestion && (
+                  <span className="text-xs text-gray-500">{Number(level.toQuestion) - Number(level.fromQuestion) + 1} câu</span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">Từ câu</label>
+                  <input
+                    type="number" min="1" max={form.totalQuestions || 999}
+                    className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    placeholder="VD: 1"
+                    value={level.fromQuestion}
+                    onChange={e => updateLevel(idx, 'fromQuestion', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">Đến câu</label>
+                  <input
+                    type="number" min="1" max={form.totalQuestions || 999}
+                    className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    placeholder="VD: 2"
+                    value={level.toQuestion}
+                    onChange={e => updateLevel(idx, 'toQuestion', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">Tổng điểm mức này</label>
+                  <input
+                    type="number" min="0" step="0.5"
+                    className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    placeholder="VD: 5"
+                    value={level.totalPoints}
+                    onChange={e => updateLevel(idx, 'totalPoints', e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* Criteria selection */}
+              {lessonCriteria.length > 0 && (
+                <div>
+                  <label className="block text-xs text-gray-600 mb-2">Tiêu chí đánh giá mức này:</label>
+                  <div className="flex flex-wrap gap-2">
+                    {lessonCriteria.map(c => (
+                      <button
+                        key={c._id}
+                        type="button"
+                        onClick={() => toggleCriterion(idx, c._id)}
+                        className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                          level.criteria.includes(c._id)
+                            ? 'bg-purple-600 text-white border-purple-600'
+                            : 'bg-white text-gray-600 border-gray-300 hover:border-purple-400'
+                        }`}
+                      >
+                        {c.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+
+          {/* Summary */}
+          {form.totalQuestions && (
+            <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-600 space-y-1">
+              <p>📋 Tổng câu bao phủ: {totalQuestionsCovered} / {form.totalQuestions} câu</p>
+              <p>💯 Tổng điểm: {totalPoints}</p>
+            </div>
+          )}
+        </div>
+
+        {/* Submit */}
+        <div className="flex gap-3 pb-8">
+          <button type="button" onClick={() => navigate('/admin/exams')} className="flex-1 border border-gray-300 text-gray-600 px-4 py-2.5 rounded-lg hover:bg-gray-50 text-sm font-medium">
+            Hủy
+          </button>
+          <button
+            type="submit"
+            disabled={loading}
+            className="flex-1 flex items-center justify-center gap-2 bg-blue-600 text-white px-4 py-2.5 rounded-lg hover:bg-blue-700 disabled:opacity-60 text-sm font-medium"
+          >
+            <FiSave size={15} />
+            {loading ? 'Đang lưu...' : isEdit ? 'Cập nhật đề' : 'Tạo đề'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}

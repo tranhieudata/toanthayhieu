@@ -11,6 +11,10 @@ const lessonSchema = new mongoose.Schema(
     isPublished: { type: Boolean, default: false },
     attachments: [{ name: String, url: String }],
     pdfAttachments: [{ url: String, filename: String, uploadedAt: { type: Date, default: Date.now } }],
+    criteria: [{
+      name: { type: String, required: true, trim: true },
+      description: { type: String, default: '' },
+    }],
   },
   { timestamps: true }
 );

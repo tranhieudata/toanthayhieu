@@ -26,6 +26,9 @@ import AdminTuition from './pages/admin/AdminTuition';
 import AdminRevenue from './pages/admin/AdminRevenue';
 import AdminSettings from './pages/admin/AdminSettings';
 import AdminLessonEditor from './pages/admin/AdminLessonEditor';
+import AdminExams from './pages/admin/AdminExams';
+import AdminExamEditor from './pages/admin/AdminExamEditor';
+import AdminExamGrade from './pages/admin/AdminExamGrade';
 
 const PrivateRoute = ({ children }) => {
   const { user, loading } = useAuth();
@@ -66,6 +69,10 @@ function App() {
             <Route path="students" element={<AdminStudents />} />
             <Route path="classes" element={<AdminClasses />} />
             <Route path="enrollments" element={<AdminEnrollments />} />
+            <Route path="exams" element={<AdminExams />} />
+            <Route path="exams/new" element={<AdminExamEditor />} />
+            <Route path="exams/:id/edit" element={<AdminExamEditor />} />
+            <Route path="exams/:id/grade" element={<AdminExamGrade />} />
             <Route path="tuition" element={<AdminTuition />} />
             <Route path="revenue" element={<AdminRevenue />} />
             <Route path="settings" element={<AdminSettings />} />
