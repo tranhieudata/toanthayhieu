@@ -86,6 +86,7 @@ export default function AdminTuition() {
         (record.studentAdjustments || []).forEach((a) => {
           adjMap[a.student._id || a.student] = a;
         });
+        
         setStudentAdjustments(
           (cls.students || []).map((s) => {
             const sid = s._id || s;
@@ -222,7 +223,9 @@ export default function AdminTuition() {
       </div>
 
       {classData && (
+        
         <>
+       
           {/* Class info + fee per session */}
           <div className="bg-white rounded-xl shadow-sm p-6 space-y-4">
             <div className="flex items-center justify-between">
@@ -234,7 +237,7 @@ export default function AdminTuition() {
                   ? classData.schedules.map((s) => `${DAY_NAMES[s.dayOfWeek]} ${s.startTime || ''}`).join(', ')
                   : 'Chưa có lịch'}
               </span>
-              <span className="flex items-center gap-1"><FiUsers /> Sĩ số: {classData.students?.length || 0} học sinh</span>
+              <span className="flex items-center gap-1"><FiUsers /> Sĩ số: {studentAdjustments.length || 0} học sinh</span>
             </div>
             <div className="flex items-center gap-3">
               <span className="text-sm font-medium text-gray-700">Học phí / buổi:</span>
@@ -304,6 +307,7 @@ export default function AdminTuition() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
+                   
                     {studentAdjustments.map((adj, idx) => {
                       const actualSessions = Math.max(0, effectiveSessions - adj.absentSessions + adj.extraSessions);
                       const fee = actualSessions * feePerSession;

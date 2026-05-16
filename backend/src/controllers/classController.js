@@ -55,15 +55,22 @@ const getClasses = async (req, res) => {
 // GET /api/classes/:id
 const getClassById = async (req, res) => {
   try {
-    const cls = await Class.findById(req.params.id)
+    const isAdmin = req.user?.role === 'admin';
+    
+    let query = Class.findById(req.params.id)
       .populate('courses', 'title thumbnail category level totalLessons')
       .populate('teacher', 'name avatar');
+    
+    // Populate students only for admin
+    if (isAdmin) {
+      query = query.populate('students', 'name email avatar');
+    }
+
+    const cls = await query;
 
     if (!cls) return res.status(404).json({ message: 'Không tìm thấy lớp học' });
 
-    const isAdmin = req.user?.role === 'admin';
     if (isAdmin) {
-      await cls.populate('students', 'name email avatar');
       return res.json(cls);
     }
 

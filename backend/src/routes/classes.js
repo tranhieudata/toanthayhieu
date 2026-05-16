@@ -1,13 +1,13 @@
 const express = require('express');
 const router = express.Router();
-const { protect, adminOnly } = require('../middleware/auth');
+const { protect, adminOnly, optionalProtect } = require('../middleware/auth');
 const {
   getClasses, getClassById, createClass, updateClass, deleteClass,
   addStudentToClass, removeStudentFromClass, toggleClassLesson,
 } = require('../controllers/classController');
 
-router.get('/', getClasses);
-router.get('/:id', getClassById);
+router.get('/', optionalProtect, getClasses);
+router.get('/:id', optionalProtect, getClassById);
 router.post('/', protect, adminOnly, createClass);
 router.put('/:id', protect, adminOnly, updateClass);
 router.delete('/:id', protect, adminOnly, deleteClass);

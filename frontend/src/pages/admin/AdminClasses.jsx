@@ -512,7 +512,8 @@ export default function AdminClasses() {
             </div>
             <p className="text-sm text-gray-500 mb-3">{cls.description}</p>
             <div className="flex items-center gap-2 text-sm text-gray-600 mb-3">
-              <FiUsers /> <span>{cls.students?.length || 0}/{cls.maxStudents} học sinh</span>
+              
+              <FiUsers /> <span>{cls.studentCount || 0}/{cls.maxStudents} học sinh</span>
             </div>
             {cls.schedules?.length > 0 && (
               <div className="text-xs text-gray-500 mb-3">
