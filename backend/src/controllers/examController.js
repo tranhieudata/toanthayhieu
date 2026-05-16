@@ -2,6 +2,7 @@ const Exam = require('../models/Exam');
 const ExamResult = require('../models/ExamResult');
 const Lesson = require('../models/Lesson');
 const Class = require('../models/Class');
+const ClassEnrollment = require('../models/ClassEnrollment');
 
 // Tự động sinh nhận xét dựa trên điểm từng mức độ
 function generateAutoFeedback(exam, scores) {
@@ -168,4 +169,99 @@ const getStudentResult = async (req, res) => {
   }
 };
 
-module.exports = { getExams, getExamById, createExam, updateExam, deleteExam, getExamResults, saveExamResult, getStudentResult };
+// POST /api/exams/student/:id/submit - học sinh nộp ảnh bài làm
+const submitExamImages = async (req, res) => {
+  try {
+    const { imageUrls } = req.body;
+    if (!Array.isArray(imageUrls) || imageUrls.length === 0)
+      return res.status(400).json({ message: 'Không có ảnh được gửi lên' });
+
+    const exam = await Exam.findById(req.params.id);
+    if (!exam) return res.status(404).json({ message: 'Không tìm thấy đề kiểm tra' });
+
+    if (exam.class) {
+      const enrollment = await ClassEnrollment.findOne({
+        student: req.user._id,
+        class: exam.class,
+        status: 'approved',
+      });
+      if (!enrollment) return res.status(403).json({ message: 'Bạn không có quyền nộp bài này' });
+    }
+
+    const images = imageUrls.map(url => ({ url, uploadedAt: new Date() }));
+
+    let result = await ExamResult.findOne({ exam: req.params.id, student: req.user._id });
+    if (result) {
+      result.submissionImages = images;
+      result.submittedAt = new Date();
+      if (result.status !== 'graded') result.status = 'pending';
+      await result.save();
+    } else {
+      result = await ExamResult.create({
+        exam: req.params.id,
+        student: req.user._id,
+        class: exam.class,
+        submissionImages: images,
+        submittedAt: new Date(),
+        status: 'pending',
+      });
+    }
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+};
+
+// GET /api/exams/student - học sinh xem danh sách đề của lớp mình
+const getStudentExams = async (req, res) => {
+  try {
+    const enrollments = await ClassEnrollment.find({ student: req.user._id, status: 'approved' }).select('class');
+    const classIds = enrollments.map(e => e.class);
+
+    const exams = await Exam.find({ class: { $in: classIds } })
+      .populate('lesson', 'title')
+      .populate('class', 'name')
+      .sort({ createdAt: -1 })
+      .select('-content'); // không gửi nội dung ở danh sách
+
+    const examIds = exams.map(e => e._id);
+    const results = await ExamResult.find({ exam: { $in: examIds }, student: req.user._id }).select('exam totalScore maxScore status');
+    const resultMap = {};
+    results.forEach(r => { resultMap[r.exam.toString()] = r; });
+
+    const data = exams.map(e => ({
+      ...e.toObject(),
+      myResult: resultMap[e._id.toString()] || null,
+    }));
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// GET /api/exams/student/:id - học sinh xem chi tiết đề + điểm
+const getStudentExamDetail = async (req, res) => {
+  try {
+    const exam = await Exam.findById(req.params.id)
+      .populate('lesson', 'title')
+      .populate('class', 'name');
+    if (!exam) return res.status(404).json({ message: 'Không tìm thấy đề kiểm tra' });
+
+    // Kiểm tra học sinh thuộc lớp này
+    if (exam.class) {
+      const enrollment = await ClassEnrollment.findOne({
+        student: req.user._id,
+        class: exam.class._id || exam.class,
+        status: 'approved',
+      });
+      if (!enrollment) return res.status(403).json({ message: 'Bạn không có quyền xem đề này' });
+    }
+
+    const result = await ExamResult.findOne({ exam: exam._id, student: req.user._id });
+    res.json({ ...exam.toObject(), myResult: result || null });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+module.exports = { getExams, getExamById, createExam, updateExam, deleteExam, getExamResults, saveExamResult, getStudentResult, getStudentExams, getStudentExamDetail, submitExamImages };

@@ -11,6 +11,7 @@ const levelSchema = new mongoose.Schema({
 const examSchema = new mongoose.Schema(
   {
     title: { type: String, required: true, trim: true },
+    content: { type: String, default: '' }, // Nội dung đề (HTML + LaTeX)
     lesson: { type: mongoose.Schema.Types.ObjectId, ref: 'Lesson' },
     class: { type: mongoose.Schema.Types.ObjectId, ref: 'Class' },
     totalQuestions: { type: Number, required: true, min: 1 },

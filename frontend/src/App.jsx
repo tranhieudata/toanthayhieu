@@ -29,6 +29,8 @@ import AdminLessonEditor from './pages/admin/AdminLessonEditor';
 import AdminExams from './pages/admin/AdminExams';
 import AdminExamEditor from './pages/admin/AdminExamEditor';
 import AdminExamGrade from './pages/admin/AdminExamGrade';
+import StudentExamsPage from './pages/StudentExamsPage';
+import StudentExamDetailPage from './pages/StudentExamDetailPage';
 
 const PrivateRoute = ({ children }) => {
   const { user, loading } = useAuth();
@@ -61,6 +63,8 @@ function App() {
           <Route path="/lesson/:lessonId" element={<PrivateRoute><LessonDetailPage /></PrivateRoute>} />
           <Route path="/lessons/:id" element={<PrivateRoute><LessonPage /></PrivateRoute>} />
           <Route path="/exercises/:id" element={<PrivateRoute><ExercisePage /></PrivateRoute>} />
+          <Route path="/exams" element={<PrivateRoute><StudentExamsPage /></PrivateRoute>} />
+          <Route path="/exams/:id" element={<PrivateRoute><StudentExamDetailPage /></PrivateRoute>} />
           <Route path="/admin" element={<AdminRoute><AdminLayout /></AdminRoute>}>
             <Route index element={<AdminDashboard />} />
             <Route path="content" element={<AdminContentManager />} />

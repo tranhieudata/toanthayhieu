@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import api from '../../api/axios';
+import api, { getUploadUrl } from '../../api/axios';
 import toast from 'react-hot-toast';
 import { FiArrowLeft, FiSave, FiUser, FiCheckCircle, FiClock, FiInfo } from 'react-icons/fi';
 
@@ -196,20 +196,41 @@ export default function AdminExamGrade() {
           ) : (
             <>
               {/* Student info */}
-              <div className="bg-white rounded-xl shadow-sm p-4 flex items-center justify-between">
-                <div>
-                  <div className="font-semibold text-gray-900">{selectedStudent.name}</div>
-                  <div className="text-sm text-gray-500">{selectedStudent.email}</div>
+              <div className="bg-white rounded-xl shadow-sm p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="font-semibold text-gray-900">{selectedStudent.name}</div>
+                    <div className="text-sm text-gray-500">{selectedStudent.email}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-2xl font-bold text-blue-700">{totalScore.toFixed(2)}</div>
+                    <div className="text-xs text-gray-500">/ {maxScore} điểm</div>
+                    {maxScore > 0 && (
+                      <div className={`text-xs font-medium mt-0.5 ${(totalScore/maxScore) >= 0.8 ? 'text-green-600' : (totalScore/maxScore) >= 0.5 ? 'text-yellow-600' : 'text-red-500'}`}>
+                        {((totalScore / maxScore) * 100).toFixed(0)}%
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div className="text-right">
-                  <div className="text-2xl font-bold text-blue-700">{totalScore.toFixed(2)}</div>
-                  <div className="text-xs text-gray-500">/ {maxScore} điểm</div>
-                  {maxScore > 0 && (
-                    <div className={`text-xs font-medium mt-0.5 ${(totalScore/maxScore) >= 0.8 ? 'text-green-600' : (totalScore/maxScore) >= 0.5 ? 'text-yellow-600' : 'text-red-500'}`}>
-                      {((totalScore / maxScore) * 100).toFixed(0)}%
+                {/* Ảnh bài làm học sinh */}
+                {results[selectedStudent._id]?.submissionImages?.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-gray-100">
+                    <p className="text-xs text-gray-500 mb-2 font-medium">
+                      Bài làm học sinh ({results[selectedStudent._id].submissionImages.length} ảnh):
+                    </p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {results[selectedStudent._id].submissionImages.map((img, i) => (
+                        <a key={i} href={getUploadUrl(img.url)} target="_blank" rel="noopener noreferrer">
+                          <img
+                            src={getUploadUrl(img.url)}
+                            alt={`Bài làm ${i + 1}`}
+                            className="w-full h-28 object-cover rounded-lg border border-gray-200 hover:opacity-90 transition-opacity"
+                          />
+                        </a>
+                      ))}
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
 
               {/* Per-question scoring grouped by level */}

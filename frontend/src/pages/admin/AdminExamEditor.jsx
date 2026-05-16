@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import api from '../../api/axios';
 import toast from 'react-hot-toast';
 import { FiArrowLeft, FiSave, FiPlus, FiTrash2 } from 'react-icons/fi';
+import RichTextEditor from '../../components/RichTextEditor';
 
 const LEVELS = ['Nhận biết', 'Thông hiểu', 'Vận dụng cao'];
 
@@ -10,6 +11,7 @@ const defaultLevel = (name) => ({ name, fromQuestion: '', toQuestion: '', totalP
 
 const emptyForm = {
   title: '',
+  content: '',
   lesson: '',
   class: '',
   totalQuestions: '',
@@ -44,6 +46,7 @@ export default function AdminExamEditor() {
         const e = r.data;
         setForm({
           title: e.title || '',
+          content: e.content || '',
           lesson: e.lesson?._id || e.lesson || '',
           class: e.class?._id || e.class || '',
           totalQuestions: e.totalQuestions || '',
@@ -242,6 +245,17 @@ export default function AdminExamEditor() {
           </div>
         </div>
 
+        {/* Nội dung đề */}
+        <div className="bg-white rounded-xl shadow-sm p-6 space-y-3">
+          <h2 className="font-semibold text-gray-800">Nội dung đề kiểm tra</h2>
+          <p className="text-xs text-gray-500">Soạn đề bài, câu hỏi, hình vẽ. Hỗ trợ công thức toán LaTeX.</p>
+          <RichTextEditor
+            value={form.content}
+            onChange={(html) => setForm(f => ({ ...f, content: html }))}
+            placeholder="Nhập nội dung đề kiểm tra. Dùng nút ƒx để chèn công thức toán..."
+          />
+        </div>
+
         {/* Levels */}
         <div className="bg-white rounded-xl shadow-sm p-6 space-y-5">
           <div className="flex items-center justify-between">
@@ -297,9 +311,15 @@ export default function AdminExamEditor() {
               </div>
 
               {/* Criteria selection */}
-              {lessonCriteria.length > 0 && (
-                <div>
-                  <label className="block text-xs text-gray-600 mb-2">Tiêu chí đánh giá mức này:</label>
+              <div>
+                <label className={`block text-xs font-medium mb-2 ${idx === 0 ? 'text-green-700' : idx === 1 ? 'text-blue-700' : 'text-orange-700'}`}>
+                  Tiêu chí đánh giá cho mức này:
+                </label>
+                {!form.lesson ? (
+                  <p className="text-xs text-gray-400 italic">Chọn bài học để thêm tiêu chí</p>
+                ) : lessonCriteria.length === 0 ? (
+                  <p className="text-xs text-yellow-600 italic">Bài học chưa có tiêu chí đánh giá</p>
+                ) : (
                   <div className="flex flex-wrap gap-2">
                     {lessonCriteria.map(c => (
                       <button
@@ -316,8 +336,11 @@ export default function AdminExamEditor() {
                       </button>
                     ))}
                   </div>
-                </div>
-              )}
+                )}
+                {level.criteria.length > 0 && (
+                  <p className="text-xs text-purple-600 mt-1">{level.criteria.length} tiêu chí đã chọn</p>
+                )}
+              </div>
             </div>
           ))}
 
