@@ -36,76 +36,84 @@ passport.use(
   })
 );
 
-// Google Strategy
-passport.use(
-  new GoogleStrategy(
-    {
-      clientID: process.env.GOOGLE_CLIENT_ID,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      callbackURL: process.env.GOOGLE_CALLBACK_URL,
-    },
-    async (accessToken, refreshToken, profile, done) => {
-      try {
-        let user = await User.findOne({ googleId: profile.id });
-        if (!user) {
-          user = await User.findOne({ email: profile.emails[0].value });
-          if (user) {
-            user.googleId = profile.id;
-            await user.save();
-          } else {
-            user = await User.create({
-              googleId: profile.id,
-              name: profile.displayName,
-              email: profile.emails[0].value,
-              avatar: profile.photos[0]?.value,
-              role: 'student',
-            });
+// Google Strategy (only if credentials are configured)
+const googleClientId = process.env.GOOGLE_CLIENT_ID;
+const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET;
+if (googleClientId && googleClientSecret && !googleClientId.startsWith('your_')) {
+  passport.use(
+    new GoogleStrategy(
+      {
+        clientID: googleClientId,
+        clientSecret: googleClientSecret,
+        callbackURL: process.env.GOOGLE_CALLBACK_URL,
+      },
+      async (accessToken, refreshToken, profile, done) => {
+        try {
+          let user = await User.findOne({ googleId: profile.id });
+          if (!user) {
+            user = await User.findOne({ email: profile.emails[0].value });
+            if (user) {
+              user.googleId = profile.id;
+              await user.save();
+            } else {
+              user = await User.create({
+                googleId: profile.id,
+                name: profile.displayName,
+                email: profile.emails[0].value,
+                avatar: profile.photos[0]?.value,
+                role: 'student',
+              });
+            }
           }
+          return done(null, user);
+        } catch (err) {
+          return done(err, null);
         }
-        return done(null, user);
-      } catch (err) {
-        return done(err, null);
       }
-    }
-  )
-);
+    )
+  );
+}
 
-// Facebook Strategy
-passport.use(
-  new FacebookStrategy(
-    {
-      clientID: process.env.FACEBOOK_APP_ID,
-      clientSecret: process.env.FACEBOOK_APP_SECRET,
-      callbackURL: process.env.FACEBOOK_CALLBACK_URL,
-      profileFields: ['id', 'emails', 'name', 'picture.type(large)'],
-    },
-    async (accessToken, refreshToken, profile, done) => {
-      try {
-        let user = await User.findOne({ facebookId: profile.id });
-        if (!user) {
-          const email = profile.emails?.[0]?.value;
-          if (email) {
-            user = await User.findOne({ email });
+// Facebook Strategy (only if credentials are configured)
+const facebookAppId = process.env.FACEBOOK_APP_ID;
+const facebookAppSecret = process.env.FACEBOOK_APP_SECRET;
+if (facebookAppId && facebookAppSecret && !facebookAppId.startsWith('your_')) {
+  passport.use(
+    new FacebookStrategy(
+      {
+        clientID: facebookAppId,
+        clientSecret: facebookAppSecret,
+        callbackURL: process.env.FACEBOOK_CALLBACK_URL,
+        profileFields: ['id', 'emails', 'name', 'picture.type(large)'],
+      },
+      async (accessToken, refreshToken, profile, done) => {
+        try {
+          let user = await User.findOne({ facebookId: profile.id });
+          if (!user) {
+            const email = profile.emails?.[0]?.value;
+            if (email) {
+              user = await User.findOne({ email });
+            }
+            if (user) {
+              user.facebookId = profile.id;
+              await user.save();
+            } else {
+              user = await User.create({
+                facebookId: profile.id,
+                name: `${profile.name.givenName} ${profile.name.familyName}`,
+                email: profile.emails?.[0]?.value || `fb_${profile.id}@placeholder.com`,
+                avatar: profile.photos?.[0]?.value,
+                role: 'student',
+              });
+            }
           }
-          if (user) {
-            user.facebookId = profile.id;
-            await user.save();
-          } else {
-            user = await User.create({
-              facebookId: profile.id,
-              name: `${profile.name.givenName} ${profile.name.familyName}`,
-              email: profile.emails?.[0]?.value || `fb_${profile.id}@placeholder.com`,
-              avatar: profile.photos?.[0]?.value,
-              role: 'student',
-            });
-          }
+          return done(null, user);
+        } catch (err) {
+          return done(err, null);
         }
-        return done(null, user);
-      } catch (err) {
-        return done(err, null);
       }
-    }
-  )
-);
+    )
+  );
+}
 
 module.exports = passport;
