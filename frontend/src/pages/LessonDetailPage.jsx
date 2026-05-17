@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../api/axios';
 import toast from 'react-hot-toast';
@@ -7,6 +7,64 @@ import { FiArrowLeft, FiFileText, FiCheckCircle, FiClock, FiLock, FiMenu, FiX } 
 import 'katex/dist/katex.min.css';
 import 'quill/dist/quill.snow.css';
 import katex from 'katex';
+
+// Xử lý LaTeX đồng bộ trước khi render (tránh race condition với setTimeout)
+function processLatexContent(html) {
+  if (!html) return '';
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const body = doc.body;
+    const ownerDoc = body.ownerDocument;
+
+    // Bước 1: Re-render ql-formula từ data-value
+    body.querySelectorAll('.ql-formula').forEach(span => {
+      const formula = span.getAttribute('data-value');
+      if (!formula) return;
+      try { span.innerHTML = katex.renderToString(formula.trim(), { throwOnError: false }); } catch {}
+    });
+
+    // Bước 2: Walk text nodes tìm $...$ / $$...$$
+    const walker = ownerDoc.createTreeWalker(body, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        let el = node.parentElement;
+        while (el && el !== body) {
+          if (el.classList.contains('ql-formula') || el.classList.contains('katex') || el.classList.contains('katex-display'))
+            return NodeFilter.FILTER_REJECT;
+          el = el.parentElement;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    });
+
+    const textNodes = [];
+    let node;
+    while ((node = walker.nextNode())) {
+      if (/\$/.test(node.textContent)) textNodes.push(node);
+    }
+
+    textNodes.forEach(textNode => {
+      const text = textNode.textContent;
+      if (!/\$/.test(text)) return;
+      const rendered = text
+        .replace(/\$\$([^$]+?)\$\$/g, (m, f) => {
+          try { return katex.renderToString(f.trim(), { displayMode: true, throwOnError: false }); } catch { return m; }
+        })
+        .replace(/\$([^$\n]+?)\$/g, (m, f) => {
+          if (!f.trim()) return m;
+          try { return katex.renderToString(f.trim(), { throwOnError: false }); } catch { return m; }
+        });
+      if (rendered !== text) {
+        const span = ownerDoc.createElement('span');
+        span.innerHTML = rendered;
+        textNode.parentNode.replaceChild(span, textNode);
+      }
+    });
+
+    return body.innerHTML;
+  } catch {
+    return html;
+  }
+}
 
 export default function LessonDetailPage() {
   const { lessonId } = useParams();
@@ -40,88 +98,8 @@ export default function LessonDetailPage() {
     loadLesson();
   }, [lessonId, navigate]);
 
-  // Render LaTeX trong content sau khi DOM được mount
-  useEffect(() => {
-    if (!lesson?.content) return;
-    // Dùng setTimeout để đảm bảo dangerouslySetInnerHTML đã render xong
-    const timer = setTimeout(() => {
-      try { renderLaTeXInContent(); } catch (e) { console.error(e); }
-    }, 50);
-    return () => clearTimeout(timer);
-  }, [lesson]);
-
-  // Xử lý LaTeX bằng TreeWalker - chỉ chạm vào text nodes, không phá HTML tags
-  const renderLaTeXInContent = () => {
-    const rootEl = document.querySelector('.lesson-content');
-    if (!rootEl) return;
-
-    // 1. Re-render mọi ql-formula từ data-value (tránh lỗi khi KaTeX chưa render)
-    rootEl.querySelectorAll('.ql-formula').forEach(span => {
-      const formula = span.getAttribute('data-value');
-      if (!formula) return;
-      try {
-        span.innerHTML = katex.renderToString(formula.trim(), { throwOnError: false });
-      } catch {}
-    });
-
-    // 2. Walk text nodes tìm $...$ / $$...$$ trong phần còn lại
-    const contentEl = rootEl.querySelector('.ql-editor') || rootEl;
-
-    // Thu thập tất cả text nodes, bỏ qua nodes trong ql-formula / katex đã render
-    const walker = document.createTreeWalker(
-      contentEl,
-      NodeFilter.SHOW_TEXT,
-      {
-        acceptNode(node) {
-          let el = node.parentElement;
-          while (el && el !== contentEl) {
-            if (
-              el.classList.contains('ql-formula') ||
-              el.classList.contains('katex') ||
-              el.classList.contains('katex-display')
-            ) {
-              return NodeFilter.FILTER_REJECT;
-            }
-            el = el.parentElement;
-          }
-          return NodeFilter.FILTER_ACCEPT;
-        },
-      }
-    );
-
-    const textNodes = [];
-    let node;
-    while ((node = walker.nextNode())) {
-      if (/\$/.test(node.textContent)) textNodes.push(node);
-    }
-
-    textNodes.forEach(textNode => {
-      const text = textNode.textContent;
-      if (!/\$/.test(text)) return;
-
-      // Xử lý $$ trước rồi mới $
-      let html = text
-        .replace(/\$\$([^$]+?)\$\$/g, (match, formula) => {
-          try {
-            return katex.renderToString(formula.trim(), { displayMode: true, throwOnError: false });
-          } catch { return match; }
-        })
-        .replace(/\$([^$\n]+?)\$/g, (match, formula) => {
-          // Bỏ qua nếu formula trống hoặc chỉ có khoảng trắng
-          if (!formula.trim()) return match;
-          try {
-            return katex.renderToString(formula.trim(), { throwOnError: false });
-          } catch { return match; }
-        });
-
-      // Chỉ thay thế nếu thực sự có thay đổi
-      if (html !== text) {
-        const span = document.createElement('span');
-        span.innerHTML = html;
-        textNode.parentNode.replaceChild(span, textNode);
-      }
-    });
-  };
+  // Xử lý LaTeX đồng bộ bằng useMemo (không cần setTimeout, tránh race condition)
+  const processedContent = useMemo(() => processLatexContent(lesson?.content), [lesson?.content]);
 
   if (loading) {
     return (
@@ -263,7 +241,7 @@ export default function LessonDetailPage() {
               <div className="lesson-content mb-8">
                 <div
                   className="ql-editor"
-                  dangerouslySetInnerHTML={{ __html: lesson.content }}
+                  dangerouslySetInnerHTML={{ __html: processedContent }}
                 />
               </div>
             )}

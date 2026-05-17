@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../api/axios';
@@ -6,8 +6,67 @@ import Navbar from '../components/Navbar';
 import toast from 'react-hot-toast';
 import { FiArrowLeft, FiCheckCircle, FiClock, FiAward, FiCamera, FiX, FiUpload, FiImage, FiLock, FiBookOpen, FiChevronDown, FiChevronUp } from 'react-icons/fi';
 import 'katex/dist/katex.min.css';
+import 'quill/dist/quill.snow.css';
 import katex from 'katex';
 import { getUploadUrl } from '../api/axios';
+
+// Xử lý LaTeX đồng bộ trước khi render (tránh race condition với setTimeout)
+function processLatexContent(html) {
+  if (!html) return '';
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const body = doc.body;
+    const ownerDoc = body.ownerDocument;
+
+    // Bước 1: Re-render ql-formula từ data-value
+    body.querySelectorAll('.ql-formula').forEach(span => {
+      const formula = span.getAttribute('data-value');
+      if (!formula) return;
+      try { span.innerHTML = katex.renderToString(formula.trim(), { throwOnError: false }); } catch {}
+    });
+
+    // Bước 2: Walk text nodes tìm $...$ / $$...$$
+    const walker = ownerDoc.createTreeWalker(body, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        let el = node.parentElement;
+        while (el && el !== body) {
+          if (el.classList.contains('ql-formula') || el.classList.contains('katex') || el.classList.contains('katex-display'))
+            return NodeFilter.FILTER_REJECT;
+          el = el.parentElement;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    });
+
+    const textNodes = [];
+    let node;
+    while ((node = walker.nextNode())) {
+      if (/\$/.test(node.textContent)) textNodes.push(node);
+    }
+
+    textNodes.forEach(textNode => {
+      const text = textNode.textContent;
+      if (!/\$/.test(text)) return;
+      const rendered = text
+        .replace(/\$\$([^$]+?)\$\$/g, (m, f) => {
+          try { return katex.renderToString(f.trim(), { displayMode: true, throwOnError: false }); } catch { return m; }
+        })
+        .replace(/\$([^$\n]+?)\$/g, (m, f) => {
+          if (!f.trim()) return m;
+          try { return katex.renderToString(f.trim(), { throwOnError: false }); } catch { return m; }
+        });
+      if (rendered !== text) {
+        const span = ownerDoc.createElement('span');
+        span.innerHTML = rendered;
+        textNode.parentNode.replaceChild(span, textNode);
+      }
+    });
+
+    return body.innerHTML;
+  } catch {
+    return html;
+  }
+}
 
 const compressAndWatermark = (file, studentName, maxWidth = 1000, quality = 0.78) =>
   new Promise((resolve) => {
@@ -167,66 +226,8 @@ export default function StudentExamDetailPage() {
       .catch(() => {});
   }, [id]);
 
-  // Render LaTeX sau khi content mount
-  useEffect(() => {
-    if (!exam?.content) return;
-    const timer = setTimeout(() => {
-      try { renderLaTeX(); } catch (e) { console.error(e); }
-    }, 50);
-    return () => clearTimeout(timer);
-  }, [exam]);
-
-  const renderLaTeX = () => {
-    const rootEl = document.querySelector('.exam-content');
-    if (!rootEl) return;
-
-    // 1. Re-render mọi ql-formula từ data-value (tránh lỗi phiên bản KaTeX không khớp)
-    rootEl.querySelectorAll('.ql-formula').forEach(span => {
-      const formula = span.getAttribute('data-value');
-      if (!formula) return;
-      try {
-        span.innerHTML = katex.renderToString(formula.trim(), { throwOnError: false });
-      } catch {}
-    });
-
-    // 2. Walk text nodes tìm $...$ / $$...$$ trong phần còn lại
-    const editorEl = rootEl.querySelector('.ql-editor') || rootEl;
-    const walker = document.createTreeWalker(editorEl, NodeFilter.SHOW_TEXT, {
-      acceptNode(node) {
-        let el = node.parentElement;
-        while (el && el !== editorEl) {
-          if (el.classList.contains('ql-formula') || el.classList.contains('katex') || el.classList.contains('katex-display'))
-            return NodeFilter.FILTER_REJECT;
-          el = el.parentElement;
-        }
-        return NodeFilter.FILTER_ACCEPT;
-      },
-    });
-
-    const textNodes = [];
-    let node;
-    while ((node = walker.nextNode())) {
-      if (/\$/.test(node.textContent)) textNodes.push(node);
-    }
-
-    textNodes.forEach(textNode => {
-      const text = textNode.textContent;
-      if (!/\$/.test(text)) return;
-      const html = text
-        .replace(/\$\$([^$]+?)\$\$/g, (match, f) => {
-          try { return katex.renderToString(f.trim(), { displayMode: true, throwOnError: false }); } catch { return match; }
-        })
-        .replace(/\$([^$\n]+?)\$/g, (match, f) => {
-          if (!f.trim()) return match;
-          try { return katex.renderToString(f.trim(), { throwOnError: false }); } catch { return match; }
-        });
-      if (html !== text) {
-        const span = document.createElement('span');
-        span.innerHTML = html;
-        textNode.parentNode.replaceChild(span, textNode);
-      }
-    });
-  };
+  // Xử lý LaTeX đồng bộ bằng useMemo (không cần setTimeout, tránh race condition)
+  const processedExamContent = useMemo(() => processLatexContent(exam?.content), [exam?.content]);
 
   const handlePickImages = async (e) => {
     const files = Array.from(e.target.files || []);
@@ -537,7 +538,7 @@ export default function StudentExamDetailPage() {
             <div className="exam-content">
               <div
                 className="ql-editor"
-                dangerouslySetInnerHTML={{ __html: exam.content }}
+                dangerouslySetInnerHTML={{ __html: processedExamContent }}
               />
             </div>
           </div>
