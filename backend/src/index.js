@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') });
 const express = require('express');
 const cors = require('cors');
 const session = require('express-session');
@@ -8,6 +8,8 @@ const path = require('path');
 const fs = require('fs');
 const connectDB = require('./config/db');
 const passport = require('./config/passport');
+
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/toanthayhieu';
 
 const app = express();
 
@@ -30,7 +32,7 @@ app.use(session({
   secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
-  store: MongoStore.create({ mongoUrl: process.env.MONGODB_URI }),
+  store: MongoStore.create({ mongoUrl: MONGODB_URI }),
   cookie: { maxAge: 7 * 24 * 60 * 60 * 1000 },
 }));
 
