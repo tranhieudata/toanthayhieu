@@ -18,6 +18,7 @@ const examResultSchema = new mongoose.Schema(
     gradedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     gradedAt: { type: Date },
     status: { type: String, enum: ['pending', 'graded'], default: 'pending' },
+    practiceExercises: { type: String, default: '' }, // JSON string: { exercises: [{level, questions:[{q,hint}]}] }
     submissionImages: [{ url: { type: String }, uploadedAt: { type: Date, default: Date.now } }],
     submittedAt: { type: Date },
   },

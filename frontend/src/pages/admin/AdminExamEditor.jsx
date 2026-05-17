@@ -5,65 +5,111 @@ import toast from 'react-hot-toast';
 import { FiArrowLeft, FiSave, FiPlus, FiTrash2 } from 'react-icons/fi';
 import RichTextEditor from '../../components/RichTextEditor';
 
-const LEVELS = ['Nhận biết', 'Thông hiểu', 'Vận dụng cao'];
-
 const defaultLevel = (name) => ({ name, fromQuestion: '', toQuestion: '', totalPoints: '', criteria: [] });
 
-const emptyForm = {
-  title: '',
-  content: '',
-  lesson: '',
-  class: '',
-  totalQuestions: '',
-  isTemplate: false,
-  note: '',
-  levels: LEVELS.map(defaultLevel),
-};
+// Chuyển Date (UTC) thành giá trị local cho input datetime-local
+function toLocalDatetimeInput(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 export default function AdminExamEditor() {
   const navigate = useNavigate();
   const { id } = useParams();
   const isEdit = !!id;
 
-  const [form, setForm] = useState(emptyForm);
+  const [levelOptions, setLevelOptions] = useState([]);
+  const [form, setForm] = useState({
+    title: '',
+    content: '',
+    lesson: '',
+    class: '',
+    level: '',
+    totalQuestions: '',
+    isTemplate: false,
+    note: '',
+    startDate: '',
+    endDate: '',
+    levels: [],
+  });
   const [lessons, setLessons] = useState([]);
   const [classes, setClasses] = useState([]);
+  const [classLevels, setClassLevels] = useState([]);
   const [lessonCriteria, setLessonCriteria] = useState([]);
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(isEdit);
 
-  // Load lists
+  // Load lists and difficulty levels
   useEffect(() => {
     api.get('/lessons').then(r => setLessons(r.data || [])).catch(() => {});
     api.get('/classes').then(r => setClasses(r.data || [])).catch(() => {});
+    api.get('/levels').then(r => setClassLevels(r.data || [])).catch(() => {});
+    api.get('/settings')
+      .then(r => {
+        const levels = r.data.difficultyLevels || [];
+        setLevelOptions(levels);
+      })
+      .catch(() => {});
   }, []);
+
+  // Initialize form with difficulty levels for new exams
+  useEffect(() => {
+    if (isEdit || levelOptions.length === 0) return;
+    setForm(f => ({
+      ...f,
+      levels: levelOptions.map(l => defaultLevel(l.name)),
+    }));
+  }, [isEdit, levelOptions]);
 
   // Load exam for edit
   useEffect(() => {
     if (!isEdit) return;
-    api.get(`/exams/${id}`)
-      .then(r => {
-        const e = r.data;
+    const loadExam = async () => {
+      try {
+        const { data: e } = await api.get(`/exams/${id}`);
+        
+        // Build levels from current levelOptions, preserving exam data where it exists
+        const levelsData = levelOptions.length > 0
+          ? levelOptions.map(levelOpt => {
+              const found = e.levels?.find(l => l.name === levelOpt.name);
+              return found
+                ? { 
+                    name: found.name, 
+                    fromQuestion: found.fromQuestion, 
+                    toQuestion: found.toQuestion, 
+                    totalPoints: found.totalPoints, 
+                    criteria: found.criteria || [] 
+                  }
+                : defaultLevel(levelOpt.name);
+            })
+          : e.levels || [];
+
         setForm({
           title: e.title || '',
           content: e.content || '',
           lesson: e.lesson?._id || e.lesson || '',
           class: e.class?._id || e.class || '',
+          level: e.level?._id || e.level || '',
           totalQuestions: e.totalQuestions || '',
           isTemplate: e.isTemplate || false,
           note: e.note || '',
-          levels: LEVELS.map(name => {
-            const found = e.levels?.find(l => l.name === name);
-            return found
-              ? { name, fromQuestion: found.fromQuestion, toQuestion: found.toQuestion, totalPoints: found.totalPoints, criteria: found.criteria || [] }
-              : defaultLevel(name);
-          }),
+          startDate: toLocalDatetimeInput(e.startDate),
+          endDate: toLocalDatetimeInput(e.endDate),
+          levels: levelsData,
         });
+        
         if (e.lesson?._id) loadCriteria(e.lesson._id);
-      })
-      .catch(() => toast.error('Không tải được đề'))
-      .finally(() => setFetching(false));
-  }, [id, isEdit]);
+      } catch {
+        toast.error('Không tải được đề');
+      } finally {
+        setFetching(false);
+      }
+    };
+    
+    loadExam();
+  }, [id, isEdit, levelOptions]);
 
   // Load criteria when lesson changes
   const loadCriteria = (lessonId) => {
@@ -113,8 +159,11 @@ export default function AdminExamEditor() {
     setLoading(true);
     try {
       const payload = {
-        ...form,
+        title: form.title,
+        content: form.content,
         totalQuestions: Number(form.totalQuestions),
+        isTemplate: form.isTemplate,
+        note: form.note,
         levels: form.levels
           .filter(l => l.fromQuestion && l.toQuestion && l.totalPoints)
           .map(l => ({
@@ -124,9 +173,13 @@ export default function AdminExamEditor() {
             totalPoints: Number(l.totalPoints),
             criteria: l.criteria,
           })),
-        lesson: form.lesson || undefined,
-        class: form.class || undefined,
       };
+
+      if (form.lesson) payload.lesson = form.lesson;
+      if (form.class) payload.class = form.class;
+      if (form.level) payload.level = form.level;
+      if (form.startDate) payload.startDate = new Date(form.startDate).toISOString();
+      if (form.endDate) payload.endDate = new Date(form.endDate).toISOString();
 
       if (isEdit) {
         await api.put(`/exams/${id}`, payload);
@@ -194,7 +247,7 @@ export default function AdminExamEditor() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Lớp</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Lớp Học</label>
               <select
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 value={form.class}
@@ -203,6 +256,20 @@ export default function AdminExamEditor() {
                 <option value="">-- Không gắn lớp (ngân hàng đề) --</option>
                 {classes.map(c => (
                   <option key={c._id} value={c._id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Cấp Độ Lớp (Lớp 6, 7, 8...)</label>
+              <select
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={form.level}
+                onChange={e => setForm(f => ({ ...f, level: e.target.value }))}
+              >
+                <option value="">-- Chọn cấp độ lớp --</option>
+                {classLevels.map(l => (
+                  <option key={l._id} value={l._id}>{l.name}</option>
                 ))}
               </select>
             </div>
@@ -243,6 +310,37 @@ export default function AdminExamEditor() {
               onChange={e => setForm(f => ({ ...f, note: e.target.value }))}
             />
           </div>
+
+          {/* Thời gian mở/đóng đề */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-gray-100">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                🕐 Thời gian bắt đầu
+                <span className="text-xs font-normal text-gray-400 ml-1">(để trống = không giới hạn)</span>
+              </label>
+              <input
+                type="datetime-local"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={form.startDate}
+                onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                🕐 Thời gian kết thúc
+                <span className="text-xs font-normal text-gray-400 ml-1">(để trống = không giới hạn)</span>
+              </label>
+              <input
+                type="datetime-local"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={form.endDate}
+                onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))}
+              />
+              {form.startDate && form.endDate && new Date(form.endDate) <= new Date(form.startDate) && (
+                <p className="text-xs text-red-500 mt-1">⚠ Thời gian kết thúc phải sau thời gian bắt đầu</p>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Nội dung đề */}
@@ -263,86 +361,93 @@ export default function AdminExamEditor() {
             <div className="text-sm text-gray-500">Tổng điểm: <span className="font-bold text-blue-700">{totalPoints}</span></div>
           </div>
 
-          {form.levels.map((level, idx) => (
-            <div
-              key={level.name}
-              className={`border rounded-xl p-4 space-y-3 ${idx === 0 ? 'border-green-200 bg-green-50' : idx === 1 ? 'border-blue-200 bg-blue-50' : 'border-orange-200 bg-orange-50'}`}
-            >
-              <div className="flex items-center justify-between">
-                <h3 className={`font-semibold text-sm ${idx === 0 ? 'text-green-800' : idx === 1 ? 'text-blue-800' : 'text-orange-800'}`}>
-                  {level.name}
-                </h3>
-                {level.fromQuestion && level.toQuestion && (
-                  <span className="text-xs text-gray-500">{Number(level.toQuestion) - Number(level.fromQuestion) + 1} câu</span>
-                )}
-              </div>
+          {form.levels.map((level, idx) => {
+            const levelOption = levelOptions.find(lo => lo.name === level.name);
+            const bgClass = levelOption?.bgColor || 'bg-gray-50';
+            const borderClass = bgClass.replace('bg-', 'border-').replace('-100', '-200');
+            const textClass = levelOption?.textColor?.replace('text-', 'text-').replace('-700', '-800') || 'text-gray-800';
 
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs text-gray-600 mb-1">Từ câu</label>
-                  <input
-                    type="number" min="1" max={form.totalQuestions || 999}
-                    className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
-                    placeholder="VD: 1"
-                    value={level.fromQuestion}
-                    onChange={e => updateLevel(idx, 'fromQuestion', e.target.value)}
-                  />
+            return (
+              <div
+                key={level.name}
+                className={`border rounded-xl p-4 space-y-3 ${borderClass} ${bgClass}`}
+              >
+                <div className="flex items-center justify-between">
+                  <h3 className={`font-semibold text-sm ${textClass}`}>
+                    {level.name}
+                  </h3>
+                  {level.fromQuestion && level.toQuestion && (
+                    <span className="text-xs text-gray-500">{Number(level.toQuestion) - Number(level.fromQuestion) + 1} câu</span>
+                  )}
                 </div>
-                <div>
-                  <label className="block text-xs text-gray-600 mb-1">Đến câu</label>
-                  <input
-                    type="number" min="1" max={form.totalQuestions || 999}
-                    className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
-                    placeholder="VD: 2"
-                    value={level.toQuestion}
-                    onChange={e => updateLevel(idx, 'toQuestion', e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-600 mb-1">Tổng điểm mức này</label>
-                  <input
-                    type="number" min="0" step="0.5"
-                    className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
-                    placeholder="VD: 5"
-                    value={level.totalPoints}
-                    onChange={e => updateLevel(idx, 'totalPoints', e.target.value)}
-                  />
-                </div>
-              </div>
 
-              {/* Criteria selection */}
-              <div>
-                <label className={`block text-xs font-medium mb-2 ${idx === 0 ? 'text-green-700' : idx === 1 ? 'text-blue-700' : 'text-orange-700'}`}>
-                  Tiêu chí đánh giá cho mức này:
-                </label>
-                {!form.lesson ? (
-                  <p className="text-xs text-gray-400 italic">Chọn bài học để thêm tiêu chí</p>
-                ) : lessonCriteria.length === 0 ? (
-                  <p className="text-xs text-yellow-600 italic">Bài học chưa có tiêu chí đánh giá</p>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {lessonCriteria.map(c => (
-                      <button
-                        key={c._id}
-                        type="button"
-                        onClick={() => toggleCriterion(idx, c._id)}
-                        className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
-                          level.criteria.includes(c._id)
-                            ? 'bg-purple-600 text-white border-purple-600'
-                            : 'bg-white text-gray-600 border-gray-300 hover:border-purple-400'
-                        }`}
-                      >
-                        {c.name}
-                      </button>
-                    ))}
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Từ câu</label>
+                    <input
+                      type="number" min="1" max={form.totalQuestions || 999}
+                      className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      placeholder="VD: 1"
+                      value={level.fromQuestion}
+                      onChange={e => updateLevel(idx, 'fromQuestion', e.target.value)}
+                    />
                   </div>
-                )}
-                {level.criteria.length > 0 && (
-                  <p className="text-xs text-purple-600 mt-1">{level.criteria.length} tiêu chí đã chọn</p>
-                )}
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Đến câu</label>
+                    <input
+                      type="number" min="1" max={form.totalQuestions || 999}
+                      className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      placeholder="VD: 2"
+                      value={level.toQuestion}
+                      onChange={e => updateLevel(idx, 'toQuestion', e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Tổng điểm mức này</label>
+                    <input
+                      type="number" min="0" step="0.5"
+                      className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      placeholder="VD: 5"
+                      value={level.totalPoints}
+                      onChange={e => updateLevel(idx, 'totalPoints', e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                {/* Criteria selection */}
+                <div>
+                  <label className={`block text-xs font-medium mb-2 ${textClass}`}>
+                    Tiêu chí đánh giá cho mức này:
+                  </label>
+                  {!form.lesson ? (
+                    <p className="text-xs text-gray-400 italic">Chọn bài học để thêm tiêu chí</p>
+                  ) : lessonCriteria.length === 0 ? (
+                    <p className="text-xs text-yellow-600 italic">Bài học chưa có tiêu chí đánh giá</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {lessonCriteria.map(c => (
+                        <button
+                          key={c._id}
+                          type="button"
+                          onClick={() => toggleCriterion(idx, c._id)}
+                          className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                            level.criteria.includes(c._id)
+                              ? 'bg-purple-600 text-white border-purple-600'
+                              : 'bg-white text-gray-600 border-gray-300 hover:border-purple-400'
+                          }`}
+                        >
+                          {c.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {level.criteria.length > 0 && (
+                    <p className="text-xs text-purple-600 mt-1">{level.criteria.length} tiêu chí đã chọn</p>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
 
           {/* Summary */}
           {form.totalQuestions && (

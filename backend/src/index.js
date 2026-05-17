@@ -95,6 +95,7 @@ app.use('/api/users', require('./routes/users'));
 app.use('/api/tuition', require('./routes/tuition'));
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/exams', require('./routes/exams'));
+app.use('/api/levels', require('./routes/levels'));
 
 app.get('/api/health', (req, res) => res.json({ status: 'OK' }));
 

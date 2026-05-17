@@ -14,10 +14,33 @@ const getSettings = async (req, res) => {
 // PUT /api/settings  (admin only)
 const updateSettings = async (req, res) => {
   try {
-    const { schoolName, bankName, bankAccountNumber, bankAccountName, bankQrImageUrl, receiptNote } = req.body;
+    const {
+      schoolName,
+      bankName,
+      bankAccountNumber,
+      bankAccountName,
+      bankQrImageUrl,
+      receiptNote,
+      difficultyLevels,
+    } = req.body;
+
+    const updateData = {
+      schoolName,
+      bankName,
+      bankAccountNumber,
+      bankAccountName,
+      bankQrImageUrl,
+      receiptNote,
+    };
+
+    // Only update difficultyLevels if provided
+    if (difficultyLevels && Array.isArray(difficultyLevels)) {
+      updateData.difficultyLevels = difficultyLevels;
+    }
+
     const settings = await SiteSettings.findOneAndUpdate(
       { key: 'default' },
-      { schoolName, bankName, bankAccountNumber, bankAccountName, bankQrImageUrl, receiptNote },
+      updateData,
       { upsert: true, new: true, runValidators: true }
     );
     res.json(settings);

@@ -9,6 +9,152 @@ import {
   FiPlay, FiLock, FiBook,
 } from 'react-icons/fi';
 
+// ─── Biểu đồ đường tiến độ điểm ────────────────────────────────────────────
+function ProgressLineChart({ data }) {
+  const [hov, setHov] = useState(null);
+
+  const W = 600, H = 220;
+  const pL = 44, pR = 16, pT = 24, pB = 48;
+  const cW = W - pL - pR;
+  const cH = H - pT - pB;
+
+  const n = data.length;
+  const getX = i => n > 1 ? pL + (i / (n - 1)) * cW : pL + cW / 2;
+  const getY = v => pT + cH - (v / 10) * cH;
+  const scoreColor = v => v >= 9 ? '#7c3aed' : v >= 8 ? '#22c55e' : v >= 7 ? '#3b82f6' : v >= 5 ? '#f59e0b' : v >= 4 ? '#f97316' : '#ef4444';
+  const scoreLabel = v => v >= 9 ? 'Xuất sắc' : v >= 8 ? 'Giỏi' : v >= 7 ? 'Khá' : v >= 5 ? 'Trung bình' : v >= 4 ? 'Yếu' : 'Kém';
+
+  const grid = [0, 2.5, 5, 7.5, 10];
+
+  // Tính tọa độ điểm
+  const ptObjs = data.map((d, i) => ({ x: getX(i), y: getY(d.score10) }));
+
+  // Catmull-Rom → cubic bezier, tension 0.35
+  const smoothPath = (pts) => {
+    if (pts.length < 2) return pts.length === 1 ? `M ${pts[0].x},${pts[0].y}` : '';
+    const t = 0.35;
+    let d = `M ${pts[0].x.toFixed(1)},${pts[0].y.toFixed(1)}`;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[Math.max(0, i - 1)];
+      const p1 = pts[i];
+      const p2 = pts[i + 1];
+      const p3 = pts[Math.min(pts.length - 1, i + 2)];
+      const cp1x = p1.x + (p2.x - p0.x) * t;
+      const cp1y = p1.y + (p2.y - p0.y) * t;
+      const cp2x = p2.x - (p3.x - p1.x) * t;
+      const cp2y = p2.y - (p3.y - p1.y) * t;
+      d += ` C ${cp1x.toFixed(1)},${cp1y.toFixed(1)} ${cp2x.toFixed(1)},${cp2y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`;
+    }
+    return d;
+  };
+
+  const linePath = smoothPath(ptObjs);
+  const areaPath = n > 1
+    ? `${linePath} L ${ptObjs[n - 1].x.toFixed(1)},${(pT + cH).toFixed(1)} L ${ptObjs[0].x.toFixed(1)},${(pT + cH).toFixed(1)} Z`
+    : '';
+
+  const fmtD = d => {
+    const p = n => String(n).padStart(2, '0');
+    return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${String(d.getFullYear()).slice(2)}`;
+  };
+  const fmtFull = d => {
+    const p = n => String(n).padStart(2, '0');
+    return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`;
+  };
+
+  if (n === 0) return (
+    <div className="flex flex-col items-center justify-center h-32 text-gray-400 text-sm gap-1">
+      <FiTrendingUp size={28} className="text-gray-300" />
+      Chưa có bài kiểm tra nào được chấm điểm
+    </div>
+  );
+
+  return (
+    <div className="relative w-full">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 'auto', display: 'block' }}>
+        <defs>
+          <linearGradient id="pgGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.25" />
+            <stop offset="100%" stopColor="#3b82f6" stopOpacity="0.02" />
+          </linearGradient>
+          <filter id="pgShadow">
+            <feDropShadow dx="0" dy="2" stdDeviation="2" floodOpacity="0.15" />
+          </filter>
+        </defs>
+
+        {/* Grid + Y labels */}
+        {grid.map(p => (
+          <g key={p}>
+            <line x1={pL} y1={getY(p)} x2={W - pR} y2={getY(p)}
+              stroke={p === 0 ? '#d1d5db' : '#f3f4f6'} strokeWidth={p === 0 ? 1.5 : 1} />
+            <text x={pL - 6} y={getY(p) + 4} textAnchor="end" fontSize="10" fill="#9ca3af">{p}</text>
+          </g>
+        ))}
+
+        {/* Area fill */}
+        {n > 1 && <path d={areaPath} fill="url(#pgGrad)" />}
+
+        {/* Line smooth */}
+        {n > 1 && (
+          <path d={linePath} fill="none" stroke="#3b82f6" strokeWidth="2.5"
+            strokeLinejoin="round" strokeLinecap="round" />
+        )}
+
+        {/* Dots, labels, tooltip */}
+        {data.map((d, i) => {
+          const cx = getX(i), cy = getY(d.score10);
+          const col = scoreColor(d.score10);
+          const isHov = hov === i;
+          const ttW = 160, ttH = 58;
+          let tx = cx - ttW / 2;
+          if (tx < pL) tx = pL;
+          if (tx + ttW > W - pR) tx = W - pR - ttW;
+          const ty = cy - ttH - 12 < pT ? cy + 12 : cy - ttH - 12;
+
+          return (
+            <g key={i} style={{ cursor: 'pointer' }}
+              onMouseEnter={() => setHov(i)} onMouseLeave={() => setHov(null)}>
+              {/* invisible hover area */}
+              <circle cx={cx} cy={cy} r={16} fill="transparent" />
+              {/* dot */}
+              <circle cx={cx} cy={cy} r={isHov ? 7 : 5} fill="white"
+                stroke={col} strokeWidth="2.5"
+                filter={isHov ? 'url(#pgShadow)' : undefined} />
+              {/* x-axis date */}
+              <text x={cx} y={H - 8} textAnchor="middle" fontSize="10" fill="#9ca3af">
+                {fmtD(d.date)}
+              </text>
+              {/* score label above dot (always visible) */}
+              <text x={cx} y={cy - 9} textAnchor="middle" fontSize="10"
+                fontWeight="600" fill={col}>{d.score10}/10</text>
+
+              {/* tooltip on hover */}
+              {isHov && (
+                <g>
+                  <rect x={tx} y={ty} width={ttW} height={ttH} rx="6"
+                    fill="white" filter="url(#pgShadow)" stroke="#e5e7eb" strokeWidth="1" />
+                  <text x={tx + ttW / 2} y={ty + 16} textAnchor="middle"
+                    fontSize="11" fontWeight="bold" fill={col}>
+                    {d.score10}/10 — {scoreLabel(d.score10)}
+                  </text>
+                  <text x={tx + ttW / 2} y={ty + 31} textAnchor="middle"
+                    fontSize="10" fill="#6b7280">
+                    {d.title.length > 22 ? d.title.slice(0, 20) + '…' : d.title}
+                  </text>
+                  <text x={tx + ttW / 2} y={ty + 47} textAnchor="middle"
+                    fontSize="9.5" fill="#9ca3af">
+                    Ngày chấm: {fmtFull(d.date)}
+                  </text>
+                </g>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
 const CLASS_STATUS_LABEL = { pending: 'Chờ duyệt', approved: 'Đã vào lớp', rejected: 'Bị từ chối' };
 const CLASS_STATUS_COLOR = {
   pending: 'bg-yellow-100 text-yellow-700',
@@ -26,6 +172,11 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const [classEnrollments, setClassEnrollments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [exams, setExams] = useState([]);
+  const [chartFilter, setChartFilter] = useState('all'); // 'all' | 'month' | 'range'
+  const [filterMonth, setFilterMonth] = useState('');    // YYYY-MM
+  const [filterFrom, setFilterFrom] = useState('');
+  const [filterTo, setFilterTo] = useState('');
 
   // expandedCourses: { `${classId}_${courseId}`: lessons[] | 'loading' | null }
   const [expandedCourses, setExpandedCourses] = useState({});
@@ -34,7 +185,38 @@ export default function DashboardPage() {
     api.get('/class-enrollments/my')
       .then(res => setClassEnrollments(res.data))
       .finally(() => setLoading(false));
+    api.get('/exams/student')
+      .then(r => setExams(r.data || []))
+      .catch(err => console.error('[Dashboard] exams/student error:', err?.response?.data || err.message));
   }, []);
+
+  // Lấy thời gian tạo từ ObjectId (fallback cho record cũ không có createdAt)
+  const dateFromObjId = id => new Date(parseInt(id.substring(0, 8), 16) * 1000);
+
+  // Dữ liệu biểu đồ tiến độ
+  const chartData = exams
+    .filter(e => e.myResult?.status === 'graded')
+    .map(e => ({
+      date: new Date(e.myResult.gradedAt || e.myResult.createdAt || dateFromObjId(e.myResult._id)),
+      score10: e.myResult.maxScore > 0 ? Math.round((e.myResult.totalScore / e.myResult.maxScore) * 100) / 10 : 0,
+      title: e.title,
+      score: e.myResult.totalScore,
+      maxScore: e.myResult.maxScore,
+    }))
+    .filter(e => !isNaN(e.date.getTime()))
+    .sort((a, b) => a.date - b.date);
+
+  const filteredChartData = chartData.filter(e => {
+    if (chartFilter === 'month' && filterMonth) {
+      const ym = `${e.date.getFullYear()}-${String(e.date.getMonth() + 1).padStart(2, '0')}`;
+      return ym === filterMonth;
+    }
+    if (chartFilter === 'range') {
+      if (filterFrom && e.date < new Date(filterFrom)) return false;
+      if (filterTo && e.date > new Date(filterTo + 'T23:59:59')) return false;
+    }
+    return true;
+  });
 
   const approvedCount = classEnrollments.filter(e => e.status === 'approved').length;
   const totalCourses = classEnrollments
@@ -96,6 +278,48 @@ export default function DashboardPage() {
               </div>
             </div>
           ))}
+        </div>
+
+        {/* Progress Chart */}
+        <div className="bg-white rounded-xl shadow-sm p-5 mb-8">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+              <FiTrendingUp className="text-blue-600" /> Biểu đồ tiến độ điểm kiểm tra
+            </h2>
+            {/* Filter controls */}
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              {[['all', 'Tất cả'], ['month', 'Theo tháng'], ['range', 'Khoảng ngày']].map(([val, label]) => (
+                <button key={val} onClick={() => setChartFilter(val)}
+                  className={`px-3 py-1 rounded-full border text-xs font-medium transition-colors ${
+                    chartFilter === val ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'
+                  }`}>{label}</button>
+              ))}
+              {chartFilter === 'month' && (
+                <input type="month" value={filterMonth} onChange={e => setFilterMonth(e.target.value)}
+                  className="border border-gray-300 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-400" />
+              )}
+              {chartFilter === 'range' && (
+                <div className="flex items-center gap-1">
+                  <input type="date" value={filterFrom} onChange={e => setFilterFrom(e.target.value)}
+                    className="border border-gray-300 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                  <span className="text-gray-400 text-xs">→</span>
+                  <input type="date" value={filterTo} onChange={e => setFilterTo(e.target.value)}
+                    className="border border-gray-300 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                </div>
+              )}
+            </div>
+          </div>
+          <ProgressLineChart data={filteredChartData} />
+          {filteredChartData.length > 0 && (
+            <div className="flex items-center gap-4 mt-3 text-xs text-gray-400 justify-end">
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{background:'#7c3aed'}} /> 9–10 Xuất sắc</span>
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block" /> 8–8.9 Giỏi</span>
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block" /> 7–7.9 Khá</span>
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-yellow-400 inline-block" /> 5–6.9 Trung bình</span>
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{background:'#f97316'}} /> 4–4.9 Yếu</span>
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-red-400 inline-block" /> &lt;4 Kém</span>
+            </div>
+          )}
         </div>
 
         {/* Classes */}

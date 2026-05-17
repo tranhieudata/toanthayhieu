@@ -2,13 +2,28 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../api/axios';
 import toast from 'react-hot-toast';
-import { FiPlus, FiEdit2, FiTrash2, FiBook, FiArchive, FiCalendar, FiLayers } from 'react-icons/fi';
+import { FiPlus, FiEdit2, FiTrash2, FiBook, FiArchive, FiCalendar, FiLayers, FiClock } from 'react-icons/fi';
 
-const LEVEL_COLORS = {
-  'Nhận biết': 'bg-green-100 text-green-700',
-  'Thông hiểu': 'bg-blue-100 text-blue-700',
-  'Vận dụng cao': 'bg-orange-100 text-orange-700',
+function getExamTimeStatus(exam) {
+  const now = new Date();
+  if (exam.startDate && new Date(exam.startDate) > now) return 'upcoming';
+  if (exam.endDate && new Date(exam.endDate) < now) return 'ended';
+  if (exam.startDate || exam.endDate) return 'active';
+  return null; // không giới hạn
+}
+
+const TIME_STATUS = {
+  upcoming: { label: 'Chưa mở', cls: 'bg-yellow-100 text-yellow-700' },
+  active:   { label: 'Đang mở', cls: 'bg-green-100 text-green-700' },
+  ended:    { label: 'Đã đóng', cls: 'bg-red-100 text-red-600' },
 };
+
+function fmtDate(d) {
+  if (!d) return '';
+  const dt = new Date(d);
+  const pad = n => String(n).padStart(2, '0');
+  return `${pad(dt.getDate())}/${pad(dt.getMonth()+1)} ${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+}
 
 export default function AdminExams() {
   const navigate = useNavigate();
@@ -17,7 +32,12 @@ export default function AdminExams() {
   const [filterTemplate, setFilterTemplate] = useState('all'); // 'all' | 'true' | 'false'
   const [classes, setClasses] = useState([]);
   const [filterClass, setFilterClass] = useState('');
+  const [lessons, setLessons] = useState([]);
+  const [filterLesson, setFilterLesson] = useState('');
+  const [classLevels, setClassLevels] = useState([]);
+  const [filterLevel, setFilterLevel] = useState('');
   const [deleting, setDeleting] = useState(null);
+  const [levelColors, setLevelColors] = useState({});
 
   const loadExams = async () => {
     setLoading(true);
@@ -25,6 +45,8 @@ export default function AdminExams() {
       const params = {};
       if (filterTemplate !== 'all') params.isTemplate = filterTemplate;
       if (filterClass) params.classId = filterClass;
+      if (filterLesson) params.lessonId = filterLesson;
+      if (filterLevel) params.levelId = filterLevel;
       const { data } = await api.get('/exams', { params });
       setExams(data);
     } catch {
@@ -36,9 +58,21 @@ export default function AdminExams() {
 
   useEffect(() => {
     api.get('/classes').then(r => setClasses(r.data || [])).catch(() => {});
+    api.get('/lessons').then(r => setLessons(r.data || [])).catch(() => {});
+    api.get('/levels').then(r => setClassLevels(r.data || [])).catch(() => {});
+    // Load difficulty levels colors
+    api.get('/settings')
+      .then(r => {
+        const colorMap = {};
+        (r.data.difficultyLevels || []).forEach(level => {
+          colorMap[level.name] = `${level.bgColor} ${level.textColor}`;
+        });
+        setLevelColors(colorMap);
+      })
+      .catch(() => {});
   }, []);
 
-  useEffect(() => { loadExams(); }, [filterTemplate, filterClass]); // eslint-disable-line
+  useEffect(() => { loadExams(); }, [filterTemplate, filterClass, filterLesson, filterLevel]); // eslint-disable-line
 
   const handleDelete = async (examId) => {
     if (!window.confirm('Xóa đề kiểm tra này? Tất cả kết quả liên quan cũng sẽ bị xóa.')) return;
@@ -85,7 +119,7 @@ export default function AdminExams() {
           </select>
         </div>
         <div>
-          <label className="text-xs text-gray-500 block mb-1">Lớp</label>
+          <label className="text-xs text-gray-500 block mb-1">Lớp Học</label>
           <select
             className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             value={filterClass}
@@ -93,6 +127,28 @@ export default function AdminExams() {
           >
             <option value="">Tất cả lớp</option>
             {classes.map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs text-gray-500 block mb-1">Bài học</label>
+          <select
+            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            value={filterLesson}
+            onChange={e => setFilterLesson(e.target.value)}
+          >
+            <option value="">Tất cả bài học</option>
+            {lessons.map(l => <option key={l._id} value={l._id}>{l.title}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs text-gray-500 block mb-1">Cấp độ Lớp</label>
+          <select
+            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            value={filterLevel}
+            onChange={e => setFilterLevel(e.target.value)}
+          >
+            <option value="">Tất cả cấp độ</option>
+            {classLevels.map(l => <option key={l._id} value={l._id}>{l.name}</option>)}
           </select>
         </div>
         <div className="ml-auto text-sm text-gray-500">{exams.length} đề</div>
@@ -118,9 +174,17 @@ export default function AdminExams() {
                     {exam.isTemplate && (
                       <span className="shrink-0 text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full flex items-center gap-1"><FiArchive size={10} /> Ngân hàng</span>
                     )}
+                    {(() => { const s = getExamTimeStatus(exam); return s ? <span className={`shrink-0 text-xs px-2 py-0.5 rounded-full ${TIME_STATUS[s].cls}`}>{TIME_STATUS[s].label}</span> : null; })()}
                   </div>
                   {exam.lesson && <p className="text-xs text-gray-500 mt-0.5 flex items-center gap-1"><FiBook size={11} /> {exam.lesson.title}</p>}
                   {exam.class && <p className="text-xs text-gray-500 flex items-center gap-1"><FiCalendar size={11} /> {exam.class.name}</p>}
+                  {exam.level && <p className={`text-xs px-2 py-0.5 rounded-full flex items-center gap-1 mt-0.5 ${exam.level.bgColor} ${exam.level.textColor}`}>{exam.level.name}</p>}
+                  {(exam.startDate || exam.endDate) && (
+                    <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
+                      <FiClock size={10} />
+                      {exam.startDate ? fmtDate(exam.startDate) : '∞'} → {exam.endDate ? fmtDate(exam.endDate) : '∞'}
+                    </p>
+                  )}
                 </div>
                 <div className="flex gap-1 shrink-0">
                   <button onClick={() => navigate(`/admin/exams/${exam._id}/edit`)} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded" title="Sửa"><FiEdit2 size={15} /></button>
@@ -131,7 +195,7 @@ export default function AdminExams() {
               {/* Levels */}
               <div className="flex flex-wrap gap-1.5">
                 {exam.levels?.map((l, i) => (
-                  <span key={i} className={`text-xs px-2 py-0.5 rounded-full ${LEVEL_COLORS[l.name] || 'bg-gray-100 text-gray-600'}`}>
+                  <span key={i} className={`text-xs px-2 py-0.5 rounded-full ${levelColors[l.name] || 'bg-gray-100 text-gray-600'}`}>
                     {l.name}: C{l.fromQuestion}–C{l.toQuestion} ({l.totalPoints}đ)
                   </span>
                 ))}

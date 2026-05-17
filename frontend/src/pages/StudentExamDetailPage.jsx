@@ -4,16 +4,10 @@ import { useAuth } from '../context/AuthContext';
 import api from '../api/axios';
 import Navbar from '../components/Navbar';
 import toast from 'react-hot-toast';
-import { FiArrowLeft, FiCheckCircle, FiClock, FiAward, FiCamera, FiX, FiUpload, FiImage } from 'react-icons/fi';
+import { FiArrowLeft, FiCheckCircle, FiClock, FiAward, FiCamera, FiX, FiUpload, FiImage, FiLock, FiBookOpen, FiChevronDown, FiChevronUp } from 'react-icons/fi';
 import 'katex/dist/katex.min.css';
 import katex from 'katex';
 import { getUploadUrl } from '../api/axios';
-
-const LEVEL_COLOR = {
-  'Nhận biết': 'text-green-700 bg-green-50 border-green-200',
-  'Thông hiểu': 'text-blue-700 bg-blue-50 border-blue-200',
-  'Vận dụng cao': 'text-orange-700 bg-orange-50 border-orange-200',
-};
 
 const compressAndWatermark = (file, studentName, maxWidth = 1000, quality = 0.78) =>
   new Promise((resolve) => {
@@ -59,6 +53,89 @@ const compressAndWatermark = (file, studentName, maxWidth = 1000, quality = 0.78
     reader.readAsDataURL(file);
   });
 
+function SharedPracticeSection({ exam, result }) {
+  const [openHints, setOpenHints] = useState({});
+
+  let practiceData = null;
+  try {
+    if (exam?.sharedPractice) practiceData = JSON.parse(exam.sharedPractice);
+  } catch { }
+  if (!practiceData?.exercises?.length) return null;
+
+  // Find which levels this student hasn't maxed
+  const weakLevelNames = new Set();
+  (exam.levels || []).forEach(level => {
+    const levelScores = (result.scores || []).filter(
+      s => s.questionOrder >= level.fromQuestion && s.questionOrder <= level.toQuestion
+    );
+    const earned = levelScores.reduce((sum, s) => sum + (s.score || 0), 0);
+    if (earned < level.totalPoints) weakLevelNames.add(level.name);
+  });
+
+  const relevantExercises = practiceData.exercises.filter(e => weakLevelNames.has(e.level));
+  if (relevantExercises.length === 0) return null;
+
+  const toggleHint = (key) => setOpenHints(prev => ({ ...prev, [key]: !prev[key] }));
+
+  const levelColor = (name) => {
+    const n = name?.toLowerCase() || '';
+    if (n.includes('vận dụng cao')) return { bg: 'bg-purple-50', border: 'border-purple-200', badge: 'bg-purple-100 text-purple-700' };
+    if (n.includes('vận dụng')) return { bg: 'bg-blue-50', border: 'border-blue-200', badge: 'bg-blue-100 text-blue-700' };
+    if (n.includes('thông hiểu')) return { bg: 'bg-yellow-50', border: 'border-yellow-200', badge: 'bg-yellow-100 text-yellow-700' };
+    return { bg: 'bg-green-50', border: 'border-green-200', badge: 'bg-green-100 text-green-700' };
+  };
+
+  return (
+    <div className="bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200 rounded-lg p-5 space-y-4">
+      <div className="flex items-center gap-2">
+        <FiBookOpen className="text-emerald-600 text-lg" />
+        <span className="font-semibold text-emerald-900">Bài tập ôn luyện gợi ý</span>
+        <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-medium">AI tạo</span>
+      </div>
+      <p className="text-xs text-emerald-700 bg-emerald-100 rounded-lg px-3 py-2">
+        Hệ thống AI phân tích kết quả và tạo các câu hỏi tương tự ở những phần em chưa đạt điểm tối đa. Hãy luyện tập để cải thiện!
+      </p>
+      {relevantExercises.map((section, si) => {
+        const colors = levelColor(section.level);
+        return (
+          <div key={si} className={`rounded-xl border ${colors.border} ${colors.bg} overflow-hidden`}>
+            <div className={`px-4 py-2.5 flex items-center gap-2`}>
+              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${colors.badge}`}>{section.level}</span>
+            </div>
+            <div className="px-4 pb-4 space-y-3">
+              {section.questions?.map((q, qi) => {
+                const key = `${si}-${qi}`;
+                const hintOpen = openHints[key];
+                return (
+                  <div key={qi} className="bg-white rounded-lg border border-white/80 shadow-sm p-3">
+                    <p className="text-sm text-gray-800 font-medium">
+                      <span className="text-gray-400 mr-1.5">Câu {qi + 1}.</span>{q.q}
+                    </p>
+                    {q.hint && (
+                      <div className="mt-2">
+                        <button
+                          onClick={() => toggleHint(key)}
+                          className="flex items-center gap-1 text-xs text-teal-600 hover:text-teal-800 font-medium"
+                        >
+                          {hintOpen ? <FiChevronUp size={13} /> : <FiChevronDown size={13} />}
+                          {hintOpen ? 'Ẩn gợi ý' : 'Xem gợi ý'}
+                        </button>
+                        {hintOpen && (
+                          <p className="mt-1.5 text-xs text-teal-700 bg-teal-50 rounded px-2 py-1.5 italic">💡 {q.hint}</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function StudentExamDetailPage() {
   const { id } = useParams();
   const { user } = useAuth();
@@ -68,12 +145,26 @@ export default function StudentExamDetailPage() {
   const [pendingImages, setPendingImages] = useState([]); // { file, previewUrl }
   const [uploading, setUploading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [levelColors, setLevelColors] = useState({}); // { levelName: 'text-... bg-... border-...' }
 
   useEffect(() => {
     api.get(`/exams/student/${id}`)
       .then(r => setExam(r.data))
       .catch(err => setError(err.response?.data?.message || 'Không tải được đề'))
       .finally(() => setLoading(false));
+
+    // Load difficulty levels colors
+    api.get('/settings')
+      .then(r => {
+        const colorMap = {};
+        (r.data.difficultyLevels || []).forEach(level => {
+          // Combine the bgColor and textColor with a border variant
+          const borderClass = level.bgColor?.replace('-100', '-200') || 'border-gray-200';
+          colorMap[level.name] = `${level.textColor} ${level.bgColor} border-${borderClass.replace('border-', '')}`;
+        });
+        setLevelColors(colorMap);
+      })
+      .catch(() => {});
   }, [id]);
 
   // Render LaTeX sau khi content mount
@@ -86,13 +177,24 @@ export default function StudentExamDetailPage() {
   }, [exam]);
 
   const renderLaTeX = () => {
-    const contentEl = document.querySelector('.exam-content .ql-editor');
-    if (!contentEl) return;
+    const rootEl = document.querySelector('.exam-content');
+    if (!rootEl) return;
 
-    const walker = document.createTreeWalker(contentEl, NodeFilter.SHOW_TEXT, {
+    // 1. Re-render mọi ql-formula từ data-value (tránh lỗi phiên bản KaTeX không khớp)
+    rootEl.querySelectorAll('.ql-formula').forEach(span => {
+      const formula = span.getAttribute('data-value');
+      if (!formula) return;
+      try {
+        span.innerHTML = katex.renderToString(formula.trim(), { throwOnError: false });
+      } catch {}
+    });
+
+    // 2. Walk text nodes tìm $...$ / $$...$$ trong phần còn lại
+    const editorEl = rootEl.querySelector('.ql-editor') || rootEl;
+    const walker = document.createTreeWalker(editorEl, NodeFilter.SHOW_TEXT, {
       acceptNode(node) {
         let el = node.parentElement;
-        while (el && el !== contentEl) {
+        while (el && el !== editorEl) {
           if (el.classList.contains('ql-formula') || el.classList.contains('katex') || el.classList.contains('katex-display'))
             return NodeFilter.FILTER_REJECT;
           el = el.parentElement;
@@ -194,6 +296,16 @@ export default function StudentExamDetailPage() {
   const maxScore = exam?.levels?.reduce((s, l) => s + (l.totalPoints || 0), 0) || 0;
   const pct = result && maxScore > 0 ? result.totalScore / maxScore : 0;
 
+  const now = new Date();
+  const examStarted = !exam.startDate || new Date(exam.startDate) <= now;
+  const examEnded = exam.endDate && new Date(exam.endDate) < now;
+
+  const fmtDate = (d) => {
+    const dt = new Date(d);
+    const pad = n => String(n).padStart(2, '0');
+    return `${pad(dt.getDate())}/${pad(dt.getMonth()+1)}/${dt.getFullYear()} ${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
@@ -212,6 +324,23 @@ export default function StudentExamDetailPage() {
           </div>
           {exam.note && <p className="mt-2 text-sm text-gray-500 italic">{exam.note}</p>}
         </div>
+
+        {/* Trạng thái thời gian */}
+        {examEnded && (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3">
+            <FiLock className="text-red-500 text-xl shrink-0" />
+            <div>
+              <p className="text-sm font-semibold text-red-700">Đã hết hạn nộp bài</p>
+              {exam.endDate && <p className="text-xs text-red-500 mt-0.5">Đề đóng lúc {fmtDate(exam.endDate)}</p>}
+            </div>
+          </div>
+        )}
+        {!examEnded && exam.endDate && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center gap-3">
+            <FiClock className="text-amber-500 shrink-0" />
+            <p className="text-sm text-amber-800">Hạn nộp bài: <span className="font-semibold">{fmtDate(exam.endDate)}</span></p>
+          </div>
+        )}
 
         {/* Kết quả nếu đã chấm */}
         {result?.status === 'graded' && (
@@ -247,8 +376,9 @@ export default function StudentExamDetailPage() {
                     s => s.questionOrder >= level.fromQuestion && s.questionOrder <= level.toQuestion
                   );
                   const earned = levelScores.reduce((s, q) => s + (q.score || 0), 0);
+                  const defaultColors = 'bg-gray-50 border-gray-200 text-gray-700';
                   return (
-                    <div key={level.name} className={`rounded-lg border px-3 py-2 text-center text-sm ${LEVEL_COLOR[level.name] || 'bg-gray-50 border-gray-200'}`}>
+                    <div key={level.name} className={`rounded-lg border px-3 py-2 text-center text-sm ${levelColors[level.name] || defaultColors}`}>
                       <div className="font-medium">{level.name}</div>
                       <div className="text-lg font-bold mt-0.5">{earned}<span className="text-xs font-normal opacity-70">/{level.totalPoints}</span></div>
                       <div className="text-xs opacity-70">Câu {level.fromQuestion}–{level.toQuestion}</div>
@@ -258,21 +388,36 @@ export default function StudentExamDetailPage() {
               </div>
             )}
 
-            {/* Nhận xét tự động */}
+            {/* Thông tin về Gemini AI Feedback */}
+            {/* <div className="bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-200 rounded-lg p-4">
+              <p className="text-xs font-semibold text-indigo-900 mb-1">💡 Nhận xét được tạo bởi Gemini AI</p>
+              <p className="text-xs text-indigo-800">Hệ thống sử dụng trí tuệ nhân tạo Gemini để phân tích kết quả kiểm tra của em dựa trên điểm số từng mức độ, giúp cung cấp nhận xét chi tiết và hữu ích.</p>
+            </div> */}
+
+            {/* Nhận xét từ Gemini AI */}
             {result.autoFeedback && (
-              <div className="bg-blue-50 border border-blue-100 rounded-lg p-4">
-                <p className="text-xs font-semibold text-blue-700 mb-2">Nhận xét tự động:</p>
-                <p className="text-sm text-blue-800 whitespace-pre-line">{result.autoFeedback}</p>
+              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-300 rounded-lg p-5 shadow-sm">
+                <p className="text-xs font-bold text-blue-900 mb-1 flex items-center gap-2">
+                  <span className="inline-block px-2 py-1 bg-blue-200 text-blue-900 rounded font-mono text-xs font-bold">ToánThầyHiếu</span>
+                  <span>Nhận Xét Kết Quả</span>
+                </p>
+                <p className="text-sm text-blue-900 whitespace-pre-line leading-relaxed">{result.autoFeedback}</p>
               </div>
             )}
 
             {/* Nhận xét giáo viên */}
             {result.teacherNote && (
-              <div className="bg-purple-50 border border-purple-100 rounded-lg p-4">
-                <p className="text-xs font-semibold text-purple-700 mb-2">Nhận xét của giáo viên:</p>
-                <p className="text-sm text-purple-800 whitespace-pre-line">{result.teacherNote}</p>
+              <div className="bg-gradient-to-br from-purple-50 to-pink-50 border border-purple-300 rounded-lg p-5 shadow-sm">
+                <p className="text-xs font-bold text-purple-900 mb-1 flex items-center gap-2">
+                  <span className="inline-block px-2 py-1 bg-purple-200 text-purple-900 rounded font-mono text-xs font-bold">👨‍🏫</span>
+                  <span>Nhận xét của giáo viên</span>
+                </p>
+                <p className="text-sm text-purple-900 whitespace-pre-line leading-relaxed">{result.teacherNote}</p>
               </div>
             )}
+
+            {/* Bài tập ôn luyện */}
+            <SharedPracticeSection exam={exam} result={result} />
           </div>
         )}
 
@@ -293,11 +438,19 @@ export default function StudentExamDetailPage() {
         )}
 
         {/* Nộp bài bằng ảnh */}
-        <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+        <div className={`bg-white rounded-xl border p-5 space-y-4 ${examEnded ? 'border-red-200 opacity-70' : 'border-gray-200'}`}>
           <h2 className="font-semibold text-gray-800 flex items-center gap-2">
-            <FiCamera className="text-blue-500" /> Nộp bài làm
+            {examEnded ? <FiLock className="text-red-400" /> : <FiCamera className="text-blue-500" />}
+            Nộp bài làm
+            {examEnded && <span className="text-xs font-normal text-red-500 ml-1">— đã đóng</span>}
           </h2>
 
+          {examEnded ? (
+            <div className="text-sm text-red-500 bg-red-50 rounded-lg p-3 flex items-center gap-2">
+              <FiLock size={14} /> Thời gian nộp bài đã kết thúc.
+            </div>
+          ) : (
+            <>
           {/* Ảnh đã nộp trước đó */}
           {result?.submissionImages?.length > 0 && (
             <div>
@@ -372,6 +525,8 @@ export default function StudentExamDetailPage() {
             <div className="flex items-center gap-2 text-green-600 text-sm">
               <FiCheckCircle /> Đã nộp bài thành công!
             </div>
+          )}
+            </>
           )}
         </div>
 

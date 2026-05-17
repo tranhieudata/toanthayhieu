@@ -2,12 +2,25 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../api/axios';
 import Navbar from '../components/Navbar';
-import { FiClipboard, FiCheckCircle, FiClock, FiAward } from 'react-icons/fi';
+import { FiClipboard, FiCheckCircle, FiClock, FiAward, FiLock } from 'react-icons/fi';
 
 const STATUS_CONFIG = {
   graded: { label: 'Đã chấm', color: 'bg-green-100 text-green-700', icon: <FiCheckCircle className="inline mr-1" /> },
   pending: { label: 'Chờ chấm', color: 'bg-yellow-100 text-yellow-700', icon: <FiClock className="inline mr-1" /> },
 };
+
+function getTimeStatus(exam) {
+  const now = new Date();
+  if (exam.startDate && new Date(exam.startDate) > now) return 'upcoming';
+  if (exam.endDate && new Date(exam.endDate) < now) return 'ended';
+  return 'active';
+}
+
+function fmtDate(d) {
+  const dt = new Date(d);
+  const pad = n => String(n).padStart(2, '0');
+  return `${pad(dt.getDate())}/${pad(dt.getMonth()+1)} ${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+}
 
 function ScoreBadge({ result }) {
   if (!result) return <span className="text-xs text-gray-400">Chưa nộp</span>;
@@ -73,25 +86,56 @@ export default function StudentExamsPage() {
                   {classExams.map(exam => {
                     const result = exam.myResult;
                     const statusCfg = result ? STATUS_CONFIG[result.status] || STATUS_CONFIG.pending : null;
+                    const timeStatus = getTimeStatus(exam);
+                    const isUpcoming = timeStatus === 'upcoming';
+                    const isEnded = timeStatus === 'ended';
+                    const CardEl = isUpcoming ? 'div' : Link;
+                    const cardProps = isUpcoming ? {} : { to: `/exams/${exam._id}` };
                     return (
-                      <Link
+                      <CardEl
                         key={exam._id}
-                        to={`/exams/${exam._id}`}
-                        className="block bg-white rounded-xl border border-gray-200 hover:border-blue-300 hover:shadow-sm transition-all p-4"
+                        {...cardProps}
+                        className={`block bg-white rounded-xl border transition-all p-4 ${
+                          isUpcoming
+                            ? 'border-gray-200 opacity-70 cursor-not-allowed'
+                            : isEnded
+                            ? 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
+                            : 'border-gray-200 hover:border-blue-300 hover:shadow-sm'
+                        }`}
                       >
                         <div className="flex items-start justify-between gap-4">
                           <div className="flex-1 min-w-0">
-                            <h3 className="font-semibold text-gray-900 truncate">{exam.title}</h3>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h3 className="font-semibold text-gray-900 truncate">{exam.title}</h3>
+                              {isUpcoming && (
+                                <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                  <FiClock size={10} /> Chưa mở
+                                </span>
+                              )}
+                              {isEnded && (
+                                <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                  <FiLock size={10} /> Đã đóng
+                                </span>
+                              )}
+                            </div>
                             <div className="flex flex-wrap items-center gap-3 mt-1.5 text-xs text-gray-500">
                               {exam.lesson && <span>📚 {exam.lesson.title}</span>}
                               <span>📝 {exam.totalQuestions} câu</span>
                               <span>💯 {exam.levels?.reduce((s, l) => s + (l.totalPoints || 0), 0)} điểm</span>
                             </div>
+                            {(exam.startDate || exam.endDate) && (
+                              <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
+                                <FiClock size={10} />
+                                {isUpcoming && exam.startDate && `Mở lúc: ${fmtDate(exam.startDate)}`}
+                                {isEnded && exam.endDate && `Đã đóng lúc: ${fmtDate(exam.endDate)}`}
+                                {!isUpcoming && !isEnded && exam.endDate && `Hết hạn: ${fmtDate(exam.endDate)}`}
+                              </p>
+                            )}
                             {exam.note && <p className="text-xs text-gray-400 mt-1 italic">{exam.note}</p>}
                           </div>
                           <div className="flex flex-col items-end gap-2 shrink-0">
-                            <ScoreBadge result={result} />
-                            {statusCfg && (
+                            {isUpcoming ? <FiClock className="text-yellow-400 text-lg" /> : <ScoreBadge result={result} />}
+                            {statusCfg && !isUpcoming && (
                               <span className={`text-xs px-2 py-0.5 rounded-full ${statusCfg.color}`}>
                                 {statusCfg.icon}{statusCfg.label}
                               </span>
@@ -112,7 +156,7 @@ export default function StudentExamsPage() {
                             </div>
                           </div>
                         )}
-                      </Link>
+                      </CardEl>
                     );
                   })}
                 </div>
