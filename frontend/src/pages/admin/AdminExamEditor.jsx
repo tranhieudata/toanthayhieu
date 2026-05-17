@@ -25,13 +25,11 @@ export default function AdminExamEditor() {
     title: '',
     content: '',
     lesson: '',
-    class: '',
     level: '',
     totalQuestions: '',
     isTemplate: false,
     note: '',
-    startDate: '',
-    endDate: '',
+    classSchedules: [],
     levels: [],
   });
   const [lessons, setLessons] = useState([]);
@@ -90,13 +88,15 @@ export default function AdminExamEditor() {
           title: e.title || '',
           content: e.content || '',
           lesson: e.lesson?._id || e.lesson || '',
-          class: e.class?._id || e.class || '',
           level: e.level?._id || e.level || '',
           totalQuestions: e.totalQuestions || '',
           isTemplate: e.isTemplate || false,
           note: e.note || '',
-          startDate: toLocalDatetimeInput(e.startDate),
-          endDate: toLocalDatetimeInput(e.endDate),
+          classSchedules: (e.classSchedules || []).map(s => ({
+            class: s.class?._id || s.class || '',
+            startDate: toLocalDatetimeInput(s.startDate),
+            endDate: toLocalDatetimeInput(s.endDate),
+          })),
           levels: levelsData,
         });
         
@@ -173,13 +173,17 @@ export default function AdminExamEditor() {
             totalPoints: Number(l.totalPoints),
             criteria: l.criteria,
           })),
+        classSchedules: form.classSchedules
+          .filter(s => s.class)
+          .map(s => ({
+            class: s.class,
+            startDate: s.startDate ? new Date(s.startDate).toISOString() : null,
+            endDate: s.endDate ? new Date(s.endDate).toISOString() : null,
+          })),
       };
 
       if (form.lesson) payload.lesson = form.lesson;
-      if (form.class) payload.class = form.class;
       if (form.level) payload.level = form.level;
-      if (form.startDate) payload.startDate = new Date(form.startDate).toISOString();
-      if (form.endDate) payload.endDate = new Date(form.endDate).toISOString();
 
       if (isEdit) {
         await api.put(`/exams/${id}`, payload);
@@ -247,20 +251,6 @@ export default function AdminExamEditor() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Lớp Học</label>
-              <select
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={form.class}
-                onChange={e => setForm(f => ({ ...f, class: e.target.value }))}
-              >
-                <option value="">-- Không gắn lớp (ngân hàng đề) --</option>
-                {classes.map(c => (
-                  <option key={c._id} value={c._id}>{c.name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Cấp Độ Lớp (Lớp 6, 7, 8...)</label>
               <select
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -272,6 +262,92 @@ export default function AdminExamEditor() {
                   <option key={l._id} value={l._id}>{l.name}</option>
                 ))}
               </select>
+            </div>
+          </div>
+
+          {/* Giao đề cho lớp học */}
+          <div className="pt-2 border-t border-gray-100">
+            <div className="flex items-center justify-between mb-3">
+              <label className="text-sm font-medium text-gray-700">Giao đề cho lớp học</label>
+              <button
+                type="button"
+                onClick={() => setForm(f => ({ ...f, classSchedules: [...f.classSchedules, { class: '', startDate: '', endDate: '' }] }))}
+                className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 border border-blue-300 px-2 py-1 rounded-lg hover:bg-blue-50"
+              >
+                <FiPlus size={13} /> Thêm lớp
+              </button>
+            </div>
+            {form.classSchedules.length === 0 && (
+              <p className="text-xs text-gray-400 italic">Chưa giao cho lớp nào (ngân hàng đề)</p>
+            )}
+            <div className="space-y-3">
+              {form.classSchedules.map((schedule, idx) => (
+                <div key={idx} className="border border-gray-200 rounded-lg p-3 bg-gray-50 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <select
+                      className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={schedule.class}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setForm(f => {
+                          const cs = [...f.classSchedules];
+                          cs[idx] = { ...cs[idx], class: val };
+                          return { ...f, classSchedules: cs };
+                        });
+                      }}
+                    >
+                      <option value="">-- Chọn lớp --</option>
+                      {classes.map(c => (
+                        <option key={c._id} value={c._id}>{c.name}</option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => setForm(f => ({ ...f, classSchedules: f.classSchedules.filter((_, i) => i !== idx) }))}
+                      className="text-red-400 hover:text-red-600 p-1.5 hover:bg-red-50 rounded"
+                    >
+                      <FiTrash2 size={15} />
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">🕐 Bắt đầu <span className="text-gray-400">(tuỳ chọn)</span></label>
+                      <input
+                        type="datetime-local"
+                        className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={schedule.startDate}
+                        onChange={e => {
+                          const val = e.target.value;
+                          setForm(f => {
+                            const cs = [...f.classSchedules];
+                            cs[idx] = { ...cs[idx], startDate: val };
+                            return { ...f, classSchedules: cs };
+                          });
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">🕐 Kết thúc <span className="text-gray-400">(tuỳ chọn)</span></label>
+                      <input
+                        type="datetime-local"
+                        className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={schedule.endDate}
+                        onChange={e => {
+                          const val = e.target.value;
+                          setForm(f => {
+                            const cs = [...f.classSchedules];
+                            cs[idx] = { ...cs[idx], endDate: val };
+                            return { ...f, classSchedules: cs };
+                          });
+                        }}
+                      />
+                      {schedule.startDate && schedule.endDate && new Date(schedule.endDate) <= new Date(schedule.startDate) && (
+                        <p className="text-xs text-red-500 mt-1">⚠ Kết thúc phải sau bắt đầu</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 
@@ -311,36 +387,7 @@ export default function AdminExamEditor() {
             />
           </div>
 
-          {/* Thời gian mở/đóng đề */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-gray-100">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                🕐 Thời gian bắt đầu
-                <span className="text-xs font-normal text-gray-400 ml-1">(để trống = không giới hạn)</span>
-              </label>
-              <input
-                type="datetime-local"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={form.startDate}
-                onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                🕐 Thời gian kết thúc
-                <span className="text-xs font-normal text-gray-400 ml-1">(để trống = không giới hạn)</span>
-              </label>
-              <input
-                type="datetime-local"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={form.endDate}
-                onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))}
-              />
-              {form.startDate && form.endDate && new Date(form.endDate) <= new Date(form.startDate) && (
-                <p className="text-xs text-red-500 mt-1">⚠ Thời gian kết thúc phải sau thời gian bắt đầu</p>
-              )}
-            </div>
-          </div>
+          {/* Thời gian mở/đóng đề đã chuyển vào từng lớp học ở trên */}
         </div>
 
         {/* Nội dung đề */}

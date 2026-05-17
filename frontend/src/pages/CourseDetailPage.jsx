@@ -3,9 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import api from '../api/axios';
 import Navbar from '../components/Navbar';
 import { useAuth } from '../context/AuthContext';
-import { FiBookOpen, FiClock, FiStar, FiPlay, FiLock, FiCheckCircle, FiAlertCircle } from 'react-icons/fi';
-
-const levelLabel = { beginner: 'Cơ bản', intermediate: 'Trung cấp', advanced: 'Nâng cao' };
+import { FiBookOpen, FiClock, FiPlay, FiLock, FiCheckCircle, FiAlertCircle } from 'react-icons/fi';
 
 export default function CourseDetailPage() {
   const { id } = useParams();
@@ -53,20 +51,18 @@ export default function CourseDetailPage() {
       <div className="bg-gray-900 text-white py-10 px-4">
         <div className="max-w-5xl mx-auto grid md:grid-cols-3 gap-8">
           <div className="md:col-span-2">
-            <span className="bg-blue-600 text-xs px-2 py-1 rounded-full font-medium">{course.category}</span>
+            {course.level && (
+              <span className={`text-xs px-2 py-1 rounded-full font-medium ${course.level.bgColor} ${course.level.textColor}`}>{course.level.name}</span>
+            )}
             <h1 className="text-3xl font-bold mt-3 mb-4">{course.title}</h1>
             <p className="text-gray-300 mb-4">{course.description}</p>
             <div className="flex flex-wrap gap-4 text-sm text-gray-400">
               <span className="flex items-center gap-1"><FiBookOpen /> {course.totalLessons} bài học</span>
               <span className="flex items-center gap-1"><FiClock /> {course.duration || 'Linh hoạt'}</span>
-              <span className="flex items-center gap-1"><FiStar /> {levelLabel[course.level]}</span>
             </div>
           </div>
           <div className="card p-6 text-gray-900">
             <img src={course.thumbnail || 'https://via.placeholder.com/400x220?text=Khóa+học'} alt={course.title} className="rounded-lg mb-4 w-full h-40 object-cover" />
-            <div className="text-2xl font-bold text-blue-600 mb-4">
-              {course.price === 0 ? 'Miễn phí' : `${course.price?.toLocaleString('vi-VN')}đ`}
-            </div>
             {hasAccess ? (
               <div className="flex items-center gap-2 text-green-600 font-semibold">
                 <FiCheckCircle /> Đã được vào lớp học

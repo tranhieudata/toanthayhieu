@@ -3,11 +3,11 @@ import api from '../../api/axios';
 import toast from 'react-hot-toast';
 import { FiPlus, FiEdit2, FiTrash2, FiX } from 'react-icons/fi';
 
-const emptyForm = { title: '', description: '', category: '', level: 'beginner', price: 0, thumbnail: '', duration: '', isPublished: false };
-const categories = ['Toán lớp 6', 'Toán lớp 7', 'Toán lớp 8', 'Toán lớp 9', 'Toán lớp 10', 'Toán lớp 11', 'Toán lớp 12', 'Luyện thi THPT', 'Ôn thi Đại học'];
+const emptyForm = { title: '', description: '', level: '', thumbnail: '', duration: '', isPublished: false };
 
 export default function AdminCourses() {
   const [courses, setCourses] = useState([]);
+  const [levels, setLevels] = useState([]);
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [editId, setEditId] = useState(null);
@@ -15,10 +15,13 @@ export default function AdminCourses() {
 
   const load = () => api.get('/courses/admin/all').then((res) => setCourses(res.data));
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    api.get('/levels').then(r => setLevels(r.data || [])).catch(() => {});
+  }, []);
 
   const openCreate = () => { setForm(emptyForm); setEditId(null); setModal(true); };
-  const openEdit = (c) => { setForm({ title: c.title, description: c.description, category: c.category, level: c.level, price: c.price, thumbnail: c.thumbnail, duration: c.duration, isPublished: c.isPublished }); setEditId(c._id); setModal(true); };
+  const openEdit = (c) => { setForm({ title: c.title, description: c.description, level: c.level?._id || c.level || '', thumbnail: c.thumbnail, duration: c.duration, isPublished: c.isPublished }); setEditId(c._id); setModal(true); };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -48,7 +51,7 @@ export default function AdminCourses() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b">
             <tr>
-              {['Tên khóa học', 'Danh mục', 'Trình độ', 'Giá', 'Trạng thái', 'Thao tác'].map((h) => (
+              {['Tên khóa học', 'Cấp độ lớp', 'Trạng thái', 'Thao tác'].map((h) => (
                 <th key={h} className="text-left px-4 py-3 font-medium text-gray-600">{h}</th>
               ))}
             </tr>
@@ -57,9 +60,11 @@ export default function AdminCourses() {
             {courses.map((c) => (
               <tr key={c._id} className="hover:bg-gray-50">
                 <td className="px-4 py-3 font-medium text-gray-900 max-w-xs truncate">{c.title}</td>
-                <td className="px-4 py-3 text-gray-600">{c.category}</td>
-                <td className="px-4 py-3 text-gray-600">{c.level}</td>
-                <td className="px-4 py-3">{c.price === 0 ? 'Miễn phí' : `${c.price.toLocaleString('vi-VN')}đ`}</td>
+                <td className="px-4 py-3">
+                  {c.level ? (
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${c.level.bgColor} ${c.level.textColor}`}>{c.level.name}</span>
+                  ) : <span className="text-gray-400 text-xs">—</span>}
+                </td>
                 <td className="px-4 py-3">
                   <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${c.isPublished ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
                     {c.isPublished ? 'Đã đăng' : 'Nháp'}
@@ -93,25 +98,11 @@ export default function AdminCourses() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Danh mục *</label>
-                  <select className="input-field" value={form.category} onChange={e => setForm({...form, category: e.target.value})} required>
-                    <option value="">Chọn danh mục</option>
-                    {categories.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Trình độ</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Cấp độ lớp</label>
                   <select className="input-field" value={form.level} onChange={e => setForm({...form, level: e.target.value})}>
-                    <option value="beginner">Cơ bản</option>
-                    <option value="intermediate">Trung cấp</option>
-                    <option value="advanced">Nâng cao</option>
+                    <option value="">-- Chọn cấp độ --</option>
+                    {levels.map(l => <option key={l._id} value={l._id}>{l.name}</option>)}
                   </select>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Giá (đ)</label>
-                  <input type="number" className="input-field" value={form.price} onChange={e => setForm({...form, price: Number(e.target.value)})} min={0} />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Thời lượng</label>

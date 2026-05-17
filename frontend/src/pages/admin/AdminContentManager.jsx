@@ -8,7 +8,7 @@ import katex from 'katex';
 
 const emptyExercise = { title: '', description: '', lesson: '', timeLimit: 30, passingScore: 70, isPublished: false, questions: [] };
 const emptyQ = { question: '', options: ['', '', '', ''], correctAnswer: 0, explanation: '' };
-const emptyCourse = { title: '', description: '', category: '', level: 'beginner', price: 0, thumbnail: '', duration: '', tags: [] };
+const emptyCourse = { title: '', description: '', level: '', thumbnail: '', duration: '', tags: [] };
 
 export default function AdminContentManager() {
   const navigate = useNavigate();
@@ -24,6 +24,7 @@ export default function AdminContentManager() {
   const [courseModal, setCourseModal] = useState(false);
   const [courseForm, setCourseForm] = useState(emptyCourse);
   const [editingCourseId, setEditingCourseId] = useState(null);
+  const [classLevels, setClassLevels] = useState([]);
 
   // Exercise form
   const [exerciseModal, setExerciseModal] = useState(false);
@@ -87,6 +88,11 @@ export default function AdminContentManager() {
     api.get('/courses/admin/all').then(res => setCourses(res.data)).catch(() => setCourses([]));
   };
 
+  // Load levels
+  useEffect(() => {
+    api.get('/levels').then(r => setClassLevels(r.data || [])).catch(() => {});
+  }, []);
+
   // Load courses
   useEffect(() => {
     const returnCourseId = searchParams.get('course');
@@ -133,9 +139,7 @@ export default function AdminContentManager() {
     setCourseForm({
       title: course.title || '',
       description: course.description || '',
-      category: course.category || '',
-      level: course.level || 'beginner',
-      price: course.price || 0,
+      level: course.level?._id || course.level || '',
       thumbnail: course.thumbnail || '',
       duration: course.duration || '',
       tags: course.tags || [],
@@ -303,10 +307,10 @@ export default function AdminContentManager() {
                         <h3 className="text-xl font-bold text-gray-900">{course.title}</h3>
                         <p className="text-gray-600 text-sm mt-1">{course.description}</p>
                         <div className="flex gap-4 mt-3 text-xs text-gray-500">
-                          <span>📁 {course.category}</span>
-                          <span>📊 {course.level}</span>
-                          <span>💰 {course.price.toLocaleString()}đ</span>
-                          <span>⏱️ {course.duration}</span>
+                          {course.level && (
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full font-medium ${course.level.bgColor} ${course.level.textColor}`}>{course.level.name}</span>
+                          )}
+                          <span>⏱️ {course.duration || '—'}</span>
                           <span>{course.isPublished ? '✅ Đã công khai' : '🔒 Nháp'}</span>
                         </div>
                       </div>
@@ -574,40 +578,15 @@ export default function AdminContentManager() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Danh mục *</label>
-                  <input
-                    type="text"
-                    className="input-field"
-                    placeholder="Ví dụ: Toán, Lý, Hóa"
-                    value={courseForm.category}
-                    onChange={e => setCourseForm({ ...courseForm, category: e.target.value })}
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Cấp độ</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Cấp độ lớp</label>
                   <select
                     className="input-field"
                     value={courseForm.level}
                     onChange={e => setCourseForm({ ...courseForm, level: e.target.value })}
                   >
-                    <option value="beginner">Cơ bản</option>
-                    <option value="intermediate">Trung bình</option>
-                    <option value="advanced">Nâng cao</option>
+                    <option value="">-- Chọn cấp độ --</option>
+                    {classLevels.map(l => <option key={l._id} value={l._id}>{l.name}</option>)}
                   </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Giá (VND)</label>
-                  <input
-                    type="number"
-                    className="input-field"
-                    value={courseForm.price}
-                    onChange={e => setCourseForm({ ...courseForm, price: Number(e.target.value) })}
-                    min={0}
-                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Thời lượng (giờ)</label>
