@@ -8,19 +8,24 @@ const levelSchema = new mongoose.Schema({
   criteria: [{ type: mongoose.Schema.Types.ObjectId }], // subdoc _ids from lesson.criteria
 });
 
+// Mỗi lớp học có thể có thời gian mở/đóng riêng
+const classScheduleSchema = new mongoose.Schema({
+  class: { type: mongoose.Schema.Types.ObjectId, ref: 'Class', required: true },
+  startDate: { type: Date, default: null },
+  endDate: { type: Date, default: null },
+}, { _id: false });
+
 const examSchema = new mongoose.Schema(
   {
     title: { type: String, required: true, trim: true },
     content: { type: String, default: '' }, // Nội dung đề (HTML + LaTeX)
     lesson: { type: mongoose.Schema.Types.ObjectId, ref: 'Lesson' },
-    class: { type: mongoose.Schema.Types.ObjectId, ref: 'Class' },
     level: { type: mongoose.Schema.Types.ObjectId, ref: 'Level' }, // Lớp 6, 7, 8, etc.
+    classSchedules: [classScheduleSchema], // Các lớp học được giao đề + thời gian mở/đóng riêng
     totalQuestions: { type: Number, required: true, min: 1 },
     levels: [levelSchema],
     isTemplate: { type: Boolean, default: false }, // true = thuộc ngân hàng đề
     note: { type: String, default: '' },
-    startDate: { type: Date, default: null },  // null = không giới hạn thời gian bắt đầu
-    endDate: { type: Date, default: null },    // null = không giới hạn thời gian kết thúc
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     sharedPractice: { type: String, default: '' }, // JSON: { generatedAt, stats, exercises:[{level, questions:[{q,hint}]}] }
   },

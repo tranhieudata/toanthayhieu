@@ -148,7 +148,7 @@ function extractJSON(text) {
 const getExams = async (req, res) => {
   try {
     const filter = {};
-    if (req.query.classId) filter.class = req.query.classId;
+    if (req.query.classId) filter['classSchedules.class'] = req.query.classId;
     if (req.query.lessonId) filter.lesson = req.query.lessonId;
     if (req.query.levelId) filter.level = req.query.levelId;
     if (req.query.isTemplate === 'true') filter.isTemplate = true;
@@ -156,7 +156,7 @@ const getExams = async (req, res) => {
 
     const exams = await Exam.find(filter)
       .populate('lesson', 'title criteria')
-      .populate('class', 'name')
+      .populate('classSchedules.class', 'name')
       .populate('level', 'name bgColor textColor')
       .populate('createdBy', 'name')
       .sort({ createdAt: -1 });
@@ -171,7 +171,7 @@ const getExamById = async (req, res) => {
   try {
     const exam = await Exam.findById(req.params.id)
       .populate('lesson', 'title criteria')
-      .populate('class', 'name students')
+      .populate('classSchedules.class', 'name students')
       .populate('level', 'name bgColor textColor')
       .populate('createdBy', 'name');
     if (!exam) return res.status(404).json({ message: 'Không tìm thấy đề kiểm tra' });
@@ -184,7 +184,8 @@ const getExamById = async (req, res) => {
 // POST /api/exams
 const createExam = async (req, res) => {
   try {
-    const allowed = ['title', 'content', 'lesson', 'class', 'level', 'totalQuestions', 'isTemplate', 'note', 'startDate', 'endDate', 'levels'];
+    console.log('[createExam] classSchedules received:', JSON.stringify(req.body.classSchedules));
+    const allowed = ['title', 'content', 'lesson', 'level', 'totalQuestions', 'isTemplate', 'note', 'levels', 'classSchedules'];
     const data = {};
     allowed.forEach(field => { if (field in req.body) data[field] = req.body[field]; });
     data.createdBy = req.user._id;
@@ -198,20 +199,23 @@ const createExam = async (req, res) => {
 // PUT /api/exams/:id
 const updateExam = async (req, res) => {
   try {
-    const exam = await Exam.findById(req.params.id);
-    if (!exam) return res.status(404).json({ message: 'Không tìm thấy đề kiểm tra' });
-
-    const allowed = ['title', 'content', 'lesson', 'class', 'level', 'totalQuestions', 'isTemplate', 'note', 'startDate', 'endDate', 'levels'];
+    console.log('[updateExam] classSchedules received:', JSON.stringify(req.body.classSchedules));
+    const allowed = ['title', 'content', 'lesson', 'level', 'totalQuestions', 'isTemplate', 'note', 'levels', 'classSchedules'];
+    const $set = {};
     allowed.forEach(field => {
-      if (field in req.body) exam[field] = req.body[field];
+      if (field in req.body) $set[field] = req.body[field];
     });
 
-    await exam.save();
-    await exam.populate([
-      { path: 'lesson', select: 'title criteria' },
-      { path: 'class', select: 'name' },
-      { path: 'level', select: 'name bgColor textColor' },
-    ]);
+    const exam = await Exam.findByIdAndUpdate(
+      req.params.id,
+      { $set },
+      { new: true, runValidators: false }
+    )
+      .populate('lesson', 'title criteria')
+      .populate('classSchedules.class', 'name')
+      .populate('level', 'name bgColor textColor');
+
+    if (!exam) return res.status(404).json({ message: 'Không tìm thấy đề kiểm tra' });
     res.json(exam);
   } catch (err) {
     res.status(400).json({ message: err.message });
@@ -268,7 +272,11 @@ const saveExamResult = async (req, res) => {
       { exam: req.params.id, student: studentId },
       {
         $set: {
-          class: exam.class,
+          class: (() => {
+            // Tìm lớp học mà học sinh thuộc vào trong danh sách classSchedules
+            const s = (exam.classSchedules || []).find(s => s.class);
+            return s ? s.class : undefined;
+          })(),
           scores: scores || [],
           totalScore,
           maxScore,
@@ -317,20 +325,27 @@ const submitExamImages = async (req, res) => {
     const exam = await Exam.findById(req.params.id);
     if (!exam) return res.status(404).json({ message: 'Không tìm thấy đề kiểm tra' });
 
-    // Kiểm tra thời gian nộp bài
-    const now = new Date();
-    if (exam.startDate && now < exam.startDate)
-      return res.status(403).json({ message: 'Đề kiểm tra chưa mở. Vui lòng chờ đến thời gian bắt đầu.' });
-    if (exam.endDate && now > exam.endDate)
-      return res.status(403).json({ message: 'Đã hết thời gian nộp bài.' });
-
-    if (exam.class) {
+    // Tìm lịch của lớp mà học sinh đã đăng ký
+    let myClassId = null;
+    if (exam.classSchedules && exam.classSchedules.length > 0) {
+      const classIds = exam.classSchedules.map(s => s.class);
       const enrollment = await ClassEnrollment.findOne({
         student: req.user._id,
-        class: exam.class,
+        class: { $in: classIds },
         status: 'approved',
       });
       if (!enrollment) return res.status(403).json({ message: 'Bạn không có quyền nộp bài này' });
+      myClassId = enrollment.class;
+
+      // Kiểm tra thời gian theo lịch của lớp học sinh
+      const schedule = exam.classSchedules.find(s => s.class.toString() === myClassId.toString());
+      if (schedule) {
+        const now = new Date();
+        if (schedule.startDate && now < schedule.startDate)
+          return res.status(403).json({ message: 'Đề kiểm tra chưa mở. Vui lòng chờ đến thời gian bắt đầu.' });
+        if (schedule.endDate && now > schedule.endDate)
+          return res.status(403).json({ message: 'Đã hết thời gian nộp bài.' });
+      }
     }
 
     const images = imageUrls.map(url => ({ url, uploadedAt: new Date() }));
@@ -345,7 +360,7 @@ const submitExamImages = async (req, res) => {
       result = await ExamResult.create({
         exam: req.params.id,
         student: req.user._id,
-        class: exam.class,
+        class: myClassId,
         submissionImages: images,
         submittedAt: new Date(),
         status: 'pending',
@@ -362,11 +377,11 @@ const getStudentExams = async (req, res) => {
   try {
     const enrollments = await ClassEnrollment.find({ student: req.user._id, status: 'approved' }).select('class');
     const classIds = enrollments.map(e => e.class);
-    console.log(`[getStudentExams] student=${req.user._id} approved_classes=${classIds.length}`);
+    
 
-    const exams = await Exam.find({ class: { $in: classIds } })
+    const exams = await Exam.find({ 'classSchedules.class': { $in: classIds } })
       .populate('lesson', 'title')
-      .populate('class', 'name')
+      .populate('classSchedules.class', 'name')
       .sort({ createdAt: -1 })
       .select('-content'); // không gửi nội dung ở danh sách
 
@@ -377,11 +392,21 @@ const getStudentExams = async (req, res) => {
     const resultMap = {};
     results.forEach(r => { resultMap[r.exam.toString()] = r; });
 
-    const data = exams.map(e => ({
-      ...e.toObject(),
-      myResult: resultMap[e._id.toString()] || null,
-    }));
-    console.log(`[getStudentExams] exams=${exams.length} graded=${results.filter(r=>r.status==='graded').length}`);
+    const data = exams.map(e => {
+      const examObj = e.toObject();
+      // Inject lịch của lớp học sinh để frontend hiển thị đúng
+      const mySchedule = examObj.classSchedules?.find(s =>
+        classIds.some(id => id.toString() === (s.class?._id?.toString() || s.class?.toString()))
+      );
+      return {
+        ...examObj,
+        class: mySchedule?.class || null,
+        startDate: mySchedule?.startDate || null,
+        endDate: mySchedule?.endDate || null,
+        myResult: resultMap[e._id.toString()] || null,
+      };
+    });
+    
     res.json(data);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -393,30 +418,38 @@ const getStudentExamDetail = async (req, res) => {
   try {
     const exam = await Exam.findById(req.params.id)
       .populate('lesson', 'title')
-      .populate('class', 'name');
+      .populate('classSchedules.class', 'name');
     if (!exam) return res.status(404).json({ message: 'Không tìm thấy đề kiểm tra' });
 
-    // Kiểm tra thời gian mở đề (chỉ kiểm tra khi chưa có kết quả)
-    const now = new Date();
-    if (exam.startDate && now < exam.startDate) {
-      return res.status(403).json({
-        message: 'Đề kiểm tra chưa mở.',
-        startDate: exam.startDate,
-      });
-    }
+    // Tìm lịch của lớp học sinh
+    const enrollments = await ClassEnrollment.find({ student: req.user._id, status: 'approved' }).select('class');
+    const myClassIds = enrollments.map(e => e.class.toString());
+    const mySchedule = exam.classSchedules?.find(s =>
+      myClassIds.includes(s.class?._id?.toString() || s.class?.toString())
+    );
 
-    // Kiểm tra học sinh thuộc lớp này
-    if (exam.class) {
-      const enrollment = await ClassEnrollment.findOne({
-        student: req.user._id,
-        class: exam.class._id || exam.class,
-        status: 'approved',
-      });
-      if (!enrollment) return res.status(403).json({ message: 'Bạn không có quyền xem đề này' });
+    if (exam.classSchedules?.length > 0 && !mySchedule)
+      return res.status(403).json({ message: 'Bạn không có quyền xem đề này' });
+
+    // Kiểm tra thời gian mở đề theo lịch lớp học sinh
+    if (mySchedule) {
+      const now = new Date();
+      if (mySchedule.startDate && now < new Date(mySchedule.startDate)) {
+        return res.status(403).json({
+          message: 'Đề kiểm tra chưa mở.',
+          startDate: mySchedule.startDate,
+        });
+      }
     }
 
     const result = await ExamResult.findOne({ exam: exam._id, student: req.user._id });
-    res.json({ ...exam.toObject(), myResult: result ? result.toObject() : null });
+    res.json({
+      ...exam.toObject(),
+      class: mySchedule?.class || null,
+      startDate: mySchedule?.startDate || null,
+      endDate: mySchedule?.endDate || null,
+      myResult: result ? result.toObject() : null,
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

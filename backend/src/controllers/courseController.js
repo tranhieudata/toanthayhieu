@@ -4,15 +4,15 @@ const Enrollment = require('../models/Enrollment');
 // GET /api/courses
 const getCourses = async (req, res) => {
   try {
-    const { category, level, search, page = 1, limit = 12 } = req.query;
+    const { level, search, page = 1, limit = 12 } = req.query;
     const filter = { isPublished: true };
-    if (category) filter.category = category;
     if (level) filter.level = level;
     if (search) filter.title = { $regex: search, $options: 'i' };
 
     const total = await Course.countDocuments(filter);
     const courses = await Course.find(filter)
       .populate('instructor', 'name avatar')
+      .populate('level', 'name bgColor textColor')
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(Number(limit));
@@ -26,7 +26,9 @@ const getCourses = async (req, res) => {
 // GET /api/courses/:id
 const getCourseById = async (req, res) => {
   try {
-    const course = await Course.findById(req.params.id).populate('instructor', 'name avatar');
+    const course = await Course.findById(req.params.id)
+      .populate('instructor', 'name avatar')
+      .populate('level', 'name bgColor textColor');
     if (!course) return res.status(404).json({ message: 'Không tìm thấy khóa học' });
     res.json(course);
   } catch (err) {
@@ -80,7 +82,10 @@ const enrollCourse = async (req, res) => {
 // GET /api/courses/all (admin - includes unpublished)
 const getAllCoursesAdmin = async (req, res) => {
   try {
-    const courses = await Course.find().populate('instructor', 'name').sort({ createdAt: -1 });
+    const courses = await Course.find()
+      .populate('instructor', 'name')
+      .populate('level', 'name bgColor textColor')
+      .sort({ createdAt: -1 });
     res.json(courses);
   } catch (err) {
     res.status(500).json({ message: err.message });
