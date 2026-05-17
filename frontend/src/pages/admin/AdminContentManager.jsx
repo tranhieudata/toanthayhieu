@@ -38,8 +38,18 @@ export default function AdminContentManager() {
   useEffect(() => {
     if (!selectedLesson?.content) return;
     const timer = setTimeout(() => {
-      const contentEl = document.querySelector('.admin-lesson-content .ql-editor');
-      if (!contentEl) return;
+      const rootEl = document.querySelector('.admin-lesson-content');
+      if (!rootEl) return;
+
+      // 1. Re-render mọi ql-formula từ data-value
+      rootEl.querySelectorAll('.ql-formula').forEach(span => {
+        const formula = span.getAttribute('data-value');
+        if (!formula) return;
+        try { span.innerHTML = katex.renderToString(formula.trim(), { throwOnError: false }); } catch {}
+      });
+
+      // 2. Walk text nodes tìm $...$ / $$...$$
+      const contentEl = rootEl.querySelector('.ql-editor') || rootEl;
       const walker = document.createTreeWalker(
         contentEl,
         NodeFilter.SHOW_TEXT,

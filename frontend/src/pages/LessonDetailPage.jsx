@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import Navbar from '../components/Navbar';
 import { FiArrowLeft, FiFileText, FiCheckCircle, FiClock, FiLock, FiMenu, FiX } from 'react-icons/fi';
 import 'katex/dist/katex.min.css';
+import 'quill/dist/quill.snow.css';
 import katex from 'katex';
 
 export default function LessonDetailPage() {
@@ -51,8 +52,20 @@ export default function LessonDetailPage() {
 
   // Xử lý LaTeX bằng TreeWalker - chỉ chạm vào text nodes, không phá HTML tags
   const renderLaTeXInContent = () => {
-    const contentEl = document.querySelector('.lesson-content .ql-editor');
-    if (!contentEl) return;
+    const rootEl = document.querySelector('.lesson-content');
+    if (!rootEl) return;
+
+    // 1. Re-render mọi ql-formula từ data-value (tránh lỗi khi KaTeX chưa render)
+    rootEl.querySelectorAll('.ql-formula').forEach(span => {
+      const formula = span.getAttribute('data-value');
+      if (!formula) return;
+      try {
+        span.innerHTML = katex.renderToString(formula.trim(), { throwOnError: false });
+      } catch {}
+    });
+
+    // 2. Walk text nodes tìm $...$ / $$...$$ trong phần còn lại
+    const contentEl = rootEl.querySelector('.ql-editor') || rootEl;
 
     // Thu thập tất cả text nodes, bỏ qua nodes trong ql-formula / katex đã render
     const walker = document.createTreeWalker(
