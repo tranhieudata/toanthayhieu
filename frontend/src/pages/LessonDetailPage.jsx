@@ -7,7 +7,7 @@ import { FiArrowLeft, FiFileText, FiCheckCircle, FiClock, FiLock, FiMenu, FiX } 
 import 'katex/dist/katex.min.css';
 import 'quill/dist/quill.snow.css';
 import katex from 'katex';
-
+import ExercisePage from './ExercisePage';
 // Xử lý LaTeX đồng bộ trước khi render (tránh race condition với setTimeout)
 function processLatexContent(html) {
   if (!html) return '';
@@ -72,6 +72,7 @@ export default function LessonDetailPage() {
   const [searchParams] = useSearchParams();
   const classId = searchParams.get('class');
   const [lesson, setLesson] = useState(null);
+  const [exercises, setExercises] = useState([]);
   const [loading, setLoading] = useState(true);
   const [siblings, setSiblings] = useState([]); // danh sách bài học cùng khóa
   const [sidebarOpen, setSidebarOpen] = useState(false); // mobile sidebar toggle
@@ -87,6 +88,14 @@ export default function LessonDetailPage() {
         if (courseId) {
           const siblingsRes = await api.get(`/lessons?course=${courseId}`);
           setSiblings(siblingsRes.data);
+        }
+
+        // Load bài tập thuộc bài học hiện tại
+        try {
+          const exercisesRes = await api.get(`/exercises?lesson=${lessonId}`);
+          setExercises(exercisesRes.data || []);
+        } catch {
+          setExercises([]);
         }
       } catch (err) {
         toast.error('Không tải được bài học');
@@ -215,10 +224,10 @@ export default function LessonDetailPage() {
             {/* Header */}
             <div className="mb-6 sm:mb-8">
               <h1 className="text-2xl sm:text-4xl font-bold text-gray-900 mb-3">{lesson.title}</h1>
-              <div className="flex flex-wrap gap-6 text-sm text-gray-600">
+              {/* <div className="flex flex-wrap gap-6 text-sm text-gray-600">
                 {lesson.duration && <span>⏱️ {lesson.duration} phút</span>}
                 <span>{lesson.isPublished ? '✅ Đã đăng' : '🔒 Nháp'}</span>
-              </div>
+              </div> */}
             </div>
 
             {/* Video */}
@@ -271,7 +280,19 @@ export default function LessonDetailPage() {
                 </div>
               </div>
             )}
-
+            {/* Bài tập của bài học */}
+            {exercises.length > 0 && (
+              <div className="pt-8 border-t border-gray-200">
+                <h2 className="text-xl font-bold text-gray-900 mb-4">📝 Bài tập</h2>
+                <div className="space-y-8">
+                  {exercises.map((exercise) => (
+                    <div key={exercise._id} className="border border-gray-200 rounded-lg p-4 sm:p-6">
+                      <ExercisePage exerciseId={exercise._id} embedded />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             {/* Prev / Next navigation */}
             {siblings.length > 1 && (() => {
               const currentIdx = siblings.findIndex(s => s._id === lessonId);

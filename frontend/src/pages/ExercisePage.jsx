@@ -5,8 +5,9 @@ import Navbar from '../components/Navbar';
 import toast from 'react-hot-toast';
 import { FiArrowLeft, FiCheckCircle, FiXCircle } from 'react-icons/fi';
 
-export default function ExercisePage() {
-  const { id } = useParams();
+export default function ExercisePage({ exerciseId = null, embedded = false }) {
+  const { id: routeExerciseId } = useParams();
+  const id = exerciseId || routeExerciseId;
   const [exercise, setExercise] = useState(null);
   const [answers, setAnswers] = useState({});
   const [result, setResult] = useState(null);
@@ -14,6 +15,15 @@ export default function ExercisePage() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
+    if (!id) {
+      setExercise(null);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setResult(null);
+    setAnswers({});
     api.get(`/exercises/${id}`).then((res) => setExercise(res.data)).finally(() => setLoading(false));
   }, [id]);
 
@@ -33,19 +43,34 @@ export default function ExercisePage() {
     }
   };
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div></div>;
-  if (!exercise) return <div className="min-h-screen flex items-center justify-center text-gray-500">Không tìm thấy bài tập</div>;
+  if (loading) {
+    return (
+      <div className={`${embedded ? 'py-6' : 'min-h-screen'} flex items-center justify-center`}>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  if (!exercise) {
+    return (
+      <div className={`${embedded ? 'py-2' : 'min-h-screen flex items-center justify-center'} text-gray-500`}>
+        Không tìm thấy bài tập
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen">
-      <Navbar />
-      <div className="max-w-3xl mx-auto px-4 py-8">
-        <Link to={`/courses/${exercise.course?._id}`} className="flex items-center gap-2 text-blue-600 hover:underline mb-6 text-sm">
-          <FiArrowLeft /> Quay lại khóa học
-        </Link>
+    <div className={embedded ? '' : 'min-h-screen'}>
+      {!embedded && <Navbar />}
+      <div className={embedded ? '' : 'max-w-3xl mx-auto px-4 py-8'}>
+        {!embedded && (
+          <Link to={`/courses/${exercise.course?._id}`} className="flex items-center gap-2 text-blue-600 hover:underline mb-6 text-sm">
+            <FiArrowLeft /> Quay lại khóa học
+          </Link>
+        )}
 
-        <div className="card p-6 md:p-8">
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">{exercise.title}</h1>
+        <div className={embedded ? '' : 'card p-6 md:p-8'}>
+          <h1 className={`${embedded ? 'text-xl' : 'text-2xl'} font-bold text-gray-900 mb-2`}>{exercise.title}</h1>
           <p className="text-gray-500 mb-6">{exercise.description} · Thời gian: {exercise.timeLimit} phút · Điểm đạt: {exercise.passingScore}%</p>
 
           {result ? (
