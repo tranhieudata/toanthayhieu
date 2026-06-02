@@ -121,7 +121,15 @@ export default function ClassesPage() {
                     </div>
                   </div>
                 )}
+                {/* tạo nút liên hệ qua zalo để được duyệt vào lớp */}
+                {cls.myEnrollmentStatus !== 'approved' && (
 
+                  <a href="https://zalo.me/0382468988" target="_blank">
+                    <button className="btn-secondary w-full mb-3 flex items-center justify-center gap-2">
+                      <FiSend size={14} /> Liên hệ qua Zalo để duyệt vào lớp
+                    </button>
+                  </a>
+                  )}
                 {/* Action button */}
                 {!cls.myEnrollmentStatus ? (
                   <button
