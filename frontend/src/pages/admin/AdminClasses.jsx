@@ -5,6 +5,19 @@ import { FiPlus, FiEdit2, FiTrash2, FiX, FiUsers, FiArrowLeft, FiToggleLeft, FiT
 
 const days = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
 
+function toLocalDatetimeInput(dateStr) {
+  if (!dateStr) return '';
+  const date = new Date(dateStr);
+  const pad = (value) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function isLessonOpen(setting) {
+  if (!setting) return false;
+  if (setting.isVisible) return true;
+  return !!setting.autoOpenAt && new Date(setting.autoOpenAt) <= new Date();
+}
+
 const emptyForm = {
   name: '', description: '', courses: [], schedules: [],
   startDate: '', endDate: '', maxStudents: 30, isActive: true, feePerSession: 0
@@ -23,11 +36,12 @@ export default function AdminClasses() {
   const [selectedClass, setSelectedClass] = useState(null);
   const [activeTab, setActiveTab] = useState('lessons');
   const [classDetail, setClassDetail] = useState(null);
-  const [classVisibility, setClassVisibility] = useState({}); // lessonId -> bool
+  const [classLessonSettings, setClassLessonSettings] = useState({}); // lessonId -> { isVisible, autoOpenAt }
   const [classLessonsMap, setClassLessonsMap] = useState({}); // courseId -> lessons[]
   const [classEnrollments, setClassEnrollments] = useState([]);
   const [expandedCourses, setExpandedCourses] = useState({});
   const [detailLoading, setDetailLoading] = useState(false);
+  const [lessonScheduleDrafts, setLessonScheduleDrafts] = useState({});
 
   // Add student to class modal
   const [showAddStudent, setShowAddStudent] = useState(false);
@@ -89,7 +103,8 @@ export default function AdminClasses() {
     setSelectedClass(cls);
     setActiveTab('lessons');
     setDetailLoading(true);
-    setClassVisibility({});
+    setClassLessonSettings({});
+    setLessonScheduleDrafts({});
     setClassLessonsMap({});
     setClassEnrollments([]);
     setExpandedCourses({});
@@ -101,11 +116,16 @@ export default function AdminClasses() {
       const detail = detailRes.data;
       setClassDetail(detail);
 
-      const visMap = {};
+      const lessonSettings = {};
+      const scheduleDrafts = {};
       (detail.lessonVisibility || []).forEach(lv => {
-        visMap[(lv.lesson?._id || lv.lesson).toString()] = lv.isVisible;
+        const lessonId = (lv.lesson?._id || lv.lesson).toString();
+        const autoOpenAt = toLocalDatetimeInput(lv.autoOpenAt);
+        lessonSettings[lessonId] = { isVisible: !!lv.isVisible, autoOpenAt };
+        scheduleDrafts[lessonId] = autoOpenAt;
       });
-      setClassVisibility(visMap);
+      setClassLessonSettings(lessonSettings);
+      setLessonScheduleDrafts(scheduleDrafts);
       setClassEnrollments(enrollRes.data.enrollments || []);
 
       const lessonsMap = {};
@@ -127,11 +147,60 @@ export default function AdminClasses() {
 
   const handleToggleClassLesson = async (lessonId) => {
     try {
-      const res = await api.patch(`/classes/${selectedClass._id}/lessons/${lessonId}/toggle`);
-      setClassVisibility(prev => ({ ...prev, [lessonId]: res.data.isVisible }));
-      toast.success(res.data.isVisible ? 'Đã bật bài học cho lớp' : 'Đã tắt bài học cho lớp');
+      const currentSetting = classLessonSettings[lessonId] || { isVisible: false, autoOpenAt: '' };
+      const currentlyOpen = isLessonOpen(currentSetting);
+      const payload = currentlyOpen
+        ? { isVisible: false, ...(currentSetting.autoOpenAt ? { autoOpenAt: null } : {}) }
+        : { isVisible: true };
+      const res = await api.patch(`/classes/${selectedClass._id}/lessons/${lessonId}/toggle`, payload);
+      const autoOpenAt = toLocalDatetimeInput(res.data.autoOpenAt);
+      setClassLessonSettings(prev => ({
+        ...prev,
+        [lessonId]: { isVisible: !!res.data.isVisible, autoOpenAt },
+      }));
+      setLessonScheduleDrafts(prev => ({ ...prev, [lessonId]: autoOpenAt }));
+      toast.success(isLessonOpen({ isVisible: !!res.data.isVisible, autoOpenAt }) ? 'Đã mở bài học cho lớp' : 'Đã tắt bài học cho lớp');
     } catch {
       toast.error('Không thể thay đổi trạng thái');
+    }
+  };
+
+  const handleSaveLessonSchedule = async (lessonId, draftValue) => {
+    try {
+      const scheduleValue = (typeof draftValue === 'string' ? draftValue : lessonScheduleDrafts[lessonId] || '').trim();
+      
+      if (!scheduleValue) {
+        toast.error('Vui lòng chọn giờ tự mở trước khi lưu');
+        return;
+      }
+      
+      if (Number.isNaN(new Date(scheduleValue).getTime())) {
+        toast.error('Giờ tự mở không hợp lệ');
+        return;
+      }
+      
+      const payload = {
+        autoOpenAt: new Date(scheduleValue).toISOString(),
+        isVisible: false,
+      };
+      console.log('[handleSaveLessonSchedule] payload:', payload);
+      const res = await api.patch(`/classes/${selectedClass._id}/lessons/${lessonId}/toggle`, payload);
+      console.log('[handleSaveLessonSchedule] response:', res.data);
+      const autoOpenAt = toLocalDatetimeInput(res.data.autoOpenAt);
+      setClassLessonSettings(prev => ({
+        ...prev,
+        [lessonId]: { isVisible: !!res.data.isVisible, autoOpenAt },
+      }));
+      setLessonScheduleDrafts(prev => ({ ...prev, [lessonId]: autoOpenAt }));
+      
+      if (!res.data.autoOpenAt) {
+        toast.error('Lưu giờ tự mở thất bại - server không lưu được dữ liệu');
+        console.error('[handleSaveLessonSchedule] autoOpenAt is null/undefined after save:', res.data);
+        return;
+      }
+      toast.success('Đã hẹn giờ tự mở bài học');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Không thể lưu lịch tự mở');
     }
   };
 
@@ -236,7 +305,7 @@ export default function AdminClasses() {
                           <FiBook className="text-blue-500" />
                           <span className="font-semibold text-gray-900">{courseTitle}</span>
                           <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
-                            {lessons.filter(l => classVisibility[l._id]).length}/{lessons.length} bài đang bật
+                            {lessons.filter(l => isLessonOpen(classLessonSettings[l._id])).length}/{lessons.length} bài đang bật
                           </span>
                         </div>
                         {isExpanded ? <FiChevronDown /> : <FiChevronRight />}
@@ -246,27 +315,47 @@ export default function AdminClasses() {
                           {lessons.length === 0 ? (
                             <p className="px-4 py-3 text-sm text-gray-500">Khóa học này chưa có bài học nào</p>
                           ) : lessons.map((lesson, idx) => {
-                            const visible = !!classVisibility[lesson._id];
+                            const setting = classLessonSettings[lesson._id] || { isVisible: false, autoOpenAt: '' };
+                            const visible = isLessonOpen(setting);
+                            const autoOpenValue = lessonScheduleDrafts[lesson._id] ?? setting.autoOpenAt;
                             return (
-                              <div key={lesson._id} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50">
+                              <div key={lesson._id} className="flex items-start gap-3 px-4 py-3 hover:bg-gray-50">
                                 <span className="text-sm text-gray-400 w-6">{idx + 1}</span>
                                 <div className="flex-1">
                                   <p className="text-sm font-medium text-gray-900">{lesson.title}</p>
                                   <p className="text-xs text-gray-400">
                                     {lesson.duration ? `${lesson.duration} phút` : ''}
                                     {!lesson.isPublished ? ' · (chưa đăng toàn cục)' : ''}
+                                    {setting.autoOpenAt ? ` · Tự mở lúc ${new Date(setting.autoOpenAt).toLocaleString('vi-VN')}` : ''}
                                   </p>
+                                  <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+                                    <input
+                                      type="datetime-local"
+                                      value={autoOpenValue}
+                                      onChange={(e) => setLessonScheduleDrafts(prev => ({ ...prev, [lesson._id]: e.target.value }))}
+                                      className="w-full sm:w-56 rounded-lg border border-gray-300 px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSaveLessonSchedule(lesson._id, autoOpenValue)}
+                                      className="rounded-lg border border-blue-200 px-3 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-50"
+                                    >
+                                      Lưu giờ tự mở
+                                    </button>
+                                  </div>
                                 </div>
-                                <button
-                                  onClick={() => handleToggleClassLesson(lesson._id)}
-                                  title={visible ? 'Đang bật – Nhấn để tắt cho lớp này' : 'Đang tắt – Nhấn để bật cho lớp này'}
-                                  className={`text-2xl transition-colors ${visible ? 'text-green-500 hover:text-green-700' : 'text-gray-300 hover:text-gray-500'}`}
-                                >
-                                  {visible ? <FiToggleRight /> : <FiToggleLeft />}
-                                </button>
-                                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${visible ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                                  {visible ? 'Bật' : 'Tắt'}
-                                </span>
+                                <div className="flex flex-col items-end gap-2">
+                                  <button
+                                    onClick={() => handleToggleClassLesson(lesson._id)}
+                                    title={visible ? 'Đang bật – Nhấn để tắt cho lớp này' : 'Đang tắt – Nhấn để bật cho lớp này'}
+                                    className={`text-2xl transition-colors ${visible ? 'text-green-500 hover:text-green-700' : 'text-gray-300 hover:text-gray-500'}`}
+                                  >
+                                    {visible ? <FiToggleRight /> : <FiToggleLeft />}
+                                  </button>
+                                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${visible ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                                    {visible ? 'Bật' : 'Tắt'}
+                                  </span>
+                                </div>
                               </div>
                             );
                           })}
@@ -515,7 +604,6 @@ export default function AdminClasses() {
               
               <FiUsers /> <span>{cls.students.length || 0}/{cls.maxStudents} học sinh</span>
             </div>
-            {console.log(cls)}
             {cls.schedules?.length > 0 && (
               <div className="text-xs text-gray-500 mb-3">
                 {cls.schedules.map((s, i) => (

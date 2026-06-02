@@ -23,6 +23,7 @@ const classSchema = new mongoose.Schema(
     lessonVisibility: [{
       lesson: { type: mongoose.Schema.Types.ObjectId, ref: 'Lesson' },
       isVisible: { type: Boolean, default: false },
+      autoOpenAt: { type: Date, default: null },
     }],
   },
   { timestamps: true }

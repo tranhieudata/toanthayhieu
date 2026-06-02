@@ -144,6 +144,17 @@ function extractJSON(text) {
   return text;
 }
 
+function normalizeExamForAdmin(examDoc) {
+  const exam = examDoc.toObject ? examDoc.toObject() : examDoc;
+  const firstSchedule = (exam.classSchedules || []).find((schedule) => schedule.class) || null;
+  return {
+    ...exam,
+    class: firstSchedule?.class || null,
+    startDate: firstSchedule?.startDate || null,
+    endDate: firstSchedule?.endDate || null,
+  };
+}
+
 // GET /api/exams
 const getExams = async (req, res) => {
   try {
@@ -160,7 +171,7 @@ const getExams = async (req, res) => {
       .populate('level', 'name bgColor textColor')
       .populate('createdBy', 'name')
       .sort({ createdAt: -1 });
-    res.json(exams);
+    res.json(exams.map(normalizeExamForAdmin));
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -175,7 +186,7 @@ const getExamById = async (req, res) => {
       .populate('level', 'name bgColor textColor')
       .populate('createdBy', 'name');
     if (!exam) return res.status(404).json({ message: 'Không tìm thấy đề kiểm tra' });
-    res.json(exam);
+    res.json(normalizeExamForAdmin(exam));
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

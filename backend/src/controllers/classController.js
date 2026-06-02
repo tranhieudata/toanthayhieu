@@ -170,19 +170,47 @@ const toggleClassLesson = async (req, res) => {
     if (!cls) return res.status(404).json({ message: 'Không tìm thấy lớp học' });
 
     const lessonId = req.params.lessonId.toString();
-    const idx = cls.lessonVisibility.findIndex(lv => lv.lesson.toString() === lessonId);
+    const { isVisible, autoOpenAt } = req.body || {};
+    
+    
+    let idx = cls.lessonVisibility.findIndex(lv => lv.lesson.toString() === lessonId);
 
-    let isVisible;
-    if (idx >= 0) {
-      cls.lessonVisibility[idx].isVisible = !cls.lessonVisibility[idx].isVisible;
-      isVisible = cls.lessonVisibility[idx].isVisible;
-    } else {
-      cls.lessonVisibility.push({ lesson: lessonId, isVisible: true });
-      isVisible = true;
+    if (idx < 0) {
+      cls.lessonVisibility.push({ lesson: lessonId, isVisible: false, autoOpenAt: null });
+      idx = cls.lessonVisibility.length - 1;
     }
 
-    await cls.save();
-    res.json({ lessonId, isVisible });
+    if (autoOpenAt !== undefined) {
+      if (!autoOpenAt) {
+        cls.lessonVisibility[idx].autoOpenAt = null;
+      } else {
+        const parsedAutoOpenAt = new Date(autoOpenAt);
+        if (Number.isNaN(parsedAutoOpenAt.getTime())) {
+          return res.status(400).json({ message: 'Ngày giờ tự động mở không hợp lệ' });
+        }
+        cls.lessonVisibility[idx].autoOpenAt = parsedAutoOpenAt;
+        console.log(`[toggleClassLesson] Set autoOpenAt=${parsedAutoOpenAt.toISOString()} for lesson ${lessonId}`);
+        // Khi đặt lịch mở, mặc định chuyển về chế độ chờ mở theo giờ.
+        if (typeof isVisible !== 'boolean') {
+          cls.lessonVisibility[idx].isVisible = false;
+        }
+      }
+    }
+
+    if (typeof isVisible === 'boolean') {
+      cls.lessonVisibility[idx].isVisible = isVisible;
+    } else if (autoOpenAt === undefined) {
+      cls.lessonVisibility[idx].isVisible = !cls.lessonVisibility[idx].isVisible;
+    }
+
+    cls.markModified('lessonVisibility');
+    const savedCls = await cls.save();
+    
+    res.json({
+      lessonId,
+      isVisible: savedCls.lessonVisibility[idx].isVisible,
+      autoOpenAt: savedCls.lessonVisibility[idx].autoOpenAt,
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

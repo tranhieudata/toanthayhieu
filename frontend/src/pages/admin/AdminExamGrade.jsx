@@ -363,11 +363,14 @@ export default function AdminExamGrade() {
     const loadAll = async () => {
       try {
         const { data: examData } = await api.get(`/exams/${id}`);
-        setExam(examData);
+        const firstScheduledClass = examData.classSchedules?.find(s => s.class)?.class || null;
+        const examClass = examData.class || firstScheduledClass;
+        setExam({ ...examData, class: examClass || null });
 
         // Load students from class
-        if (examData.class?._id) {
-          const { data: cls } = await api.get(`/classes/${examData.class._id}`);
+        const classId = examClass?._id || examClass;
+        if (classId) {
+          const { data: cls } = await api.get(`/classes/${classId}`);
           setStudents(cls.students || []);
         }
 

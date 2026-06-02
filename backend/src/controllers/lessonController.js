@@ -2,7 +2,92 @@ const Lesson = require('../models/Lesson');
 const Course = require('../models/Course');
 const ClassEnrollment = require('../models/ClassEnrollment');
 const Class = require('../models/Class');
+const Exam = require('../models/Exam');
+const ExamResult = require('../models/ExamResult');
 const { hasAccessToCourse } = require('../utils/accessControl');
+
+function isLessonOpenForClass(lessonSetting, now = new Date()) {
+  if (!lessonSetting) return false;
+  if (lessonSetting.isVisible) return true;
+  if (!lessonSetting.autoOpenAt) return false;
+  return new Date(lessonSetting.autoOpenAt) <= now;
+}
+
+function isPassingExamResult(result) {
+  if (!result || result.status !== 'graded') return false;
+  if (result.maxScore > 0) {
+    return (result.totalScore / result.maxScore) * 10 > 5;
+  }
+  return result.totalScore > 5;
+}
+
+async function getStudentLessonAccess(studentId, courseId) {
+  const enrollments = await ClassEnrollment.find({ student: studentId, status: 'approved' }).select('class');
+  const classIds = enrollments.map((enrollment) => enrollment.class);
+  const studentClass = await Class.findOne({ _id: { $in: classIds }, courses: courseId })
+    .select('lessonVisibility');
+
+  if (!studentClass) {
+    return { error: { status: 403, message: 'Bạn chưa được duyệt vào lớp học chứa khóa học này' } };
+  }
+
+  const lessons = await Lesson.find({ course: courseId, isPublished: true })
+    .select('_id order')
+    .sort({ order: 1, createdAt: 1 });
+
+  const lessonIds = lessons.map((lesson) => lesson._id);
+  const exams = await Exam.find({
+    lesson: { $in: lessonIds },
+    'classSchedules.class': studentClass._id,
+  }).select('_id lesson');
+
+  const examIds = exams.map((exam) => exam._id);
+  const results = examIds.length > 0
+    ? await ExamResult.find({
+        exam: { $in: examIds },
+        student: studentId,
+      }).select('exam totalScore maxScore status')
+    : [];
+
+  const resultMap = new Map(results.map((result) => [result.exam.toString(), result]));
+  const examMapByLesson = exams.reduce((map, exam) => {
+    const lessonId = exam.lesson.toString();
+    if (!map.has(lessonId)) map.set(lessonId, []);
+    map.get(lessonId).push(exam._id.toString());
+    return map;
+  }, new Map());
+
+  const settingsMap = new Map(
+    (studentClass.lessonVisibility || []).map((setting) => [setting.lesson.toString(), setting])
+  );
+
+  const lessonAccessMap = {};
+  const accessibleLessonIds = [];
+  let progressionUnlocked = true;
+
+  lessons.forEach((lesson) => {
+    const lessonId = lesson._id.toString();
+    const lessonSetting = settingsMap.get(lessonId);
+    const openedForClass = isLessonOpenForClass(lessonSetting);
+    const accessible = progressionUnlocked && openedForClass;
+
+    lessonAccessMap[lessonId] = {
+      accessible,
+      reason: progressionUnlocked ? 'visibility' : 'exam',
+    };
+
+    if (accessible) accessibleLessonIds.push(lessonId);
+
+    const lessonExamIds = examMapByLesson.get(lessonId) || [];
+    if (lessonExamIds.length > 0) {
+      progressionUnlocked = progressionUnlocked && lessonExamIds.some((examId) =>
+        isPassingExamResult(resultMap.get(examId))
+      );
+    }
+  });
+
+  return { studentClass, lessonAccessMap, accessibleLessonIds };
+}
 
 // GET /api/lessons?course=:courseId  (học sinh - bắt buộc có course)
 // GET /api/lessons                    (admin - xem tất cả)
@@ -23,23 +108,15 @@ const getLessons = async (req, res) => {
     // Học sinh bắt buộc phải có courseId
     if (!req.query.course) return res.status(400).json({ message: 'Vui lòng cung cấp courseId' });
 
-    // Tìm lớp học của học sinh cho khóa học này
-    const enrollments = await ClassEnrollment.find({ student: req.user._id, status: 'approved' }).select('class');
-    const classIds = enrollments.map(e => e.class);
-    const studentClass = await Class.findOne({ _id: { $in: classIds }, courses: req.query.course }).select('lessonVisibility');
-
-    if (!studentClass) {
-      return res.status(403).json({ message: 'Bạn chưa được duyệt vào lớp học chứa khóa học này' });
+    const access = await getStudentLessonAccess(req.user._id, req.query.course);
+    if (access.error) {
+      return res.status(access.error.status).json({ message: access.error.message });
     }
-
-    const visibleIds = studentClass.lessonVisibility
-      .filter(lv => lv.isVisible)
-      .map(lv => lv.lesson);
 
     const lessons = await Lesson.find({
       course: req.query.course,
       isPublished: true,
-      _id: { $in: visibleIds },
+      _id: { $in: access.accessibleLessonIds },
     }).sort({ order: 1 });
     res.json(lessons);
   } catch (err) {
@@ -59,14 +136,16 @@ const getLessonById = async (req, res) => {
         return res.status(403).json({ message: 'Bài học này chưa được mở' });
       }
       const courseId = lesson.course?._id || lesson.course;
-      const enrollments = await ClassEnrollment.find({ student: req.user._id, status: 'approved' }).select('class');
-      const classIds = enrollments.map(e => e.class);
-      const studentClass = await Class.findOne({ _id: { $in: classIds }, courses: courseId }).select('lessonVisibility');
-      if (!studentClass) {
-        return res.status(403).json({ message: 'Bạn chưa được duyệt vào lớp học chứa khóa học này' });
+      const access = await getStudentLessonAccess(req.user._id, courseId);
+      if (access.error) {
+        return res.status(access.error.status).json({ message: access.error.message });
       }
-      const visEntry = studentClass.lessonVisibility.find(lv => lv.lesson.toString() === req.params.id);
-      if (!visEntry || !visEntry.isVisible) {
+
+      const lessonAccess = access.lessonAccessMap[req.params.id];
+      if (!lessonAccess?.accessible) {
+        if (lessonAccess?.reason === 'exam') {
+          return res.status(403).json({ message: 'Bạn cần hoàn thành bài kiểm tra của bài trước với điểm trên 5 để mở bài này' });
+        }
         return res.status(403).json({ message: 'Bài học này chưa được mở cho lớp của bạn' });
       }
     }
