@@ -115,13 +115,13 @@ export default function LoginPage() {
 
         <div className="space-y-3">
           <a
-            href="/api/auth/google"
+            href={`${import.meta.env.VITE_API_BASE_URL}/api/auth/google`}
             className="flex items-center justify-center gap-3 w-full border border-gray-300 rounded-lg px-4 py-2 hover:bg-gray-50 transition-colors text-sm font-medium"
           >
             <FaGoogle className="text-red-500" /> Đăng nhập với Google
           </a>
           {/* <a
-            href="/api/auth/facebook"
+            href={`${import.meta.env.VITE_API_BASE_URL}/api/auth/facebook`}
             className="flex items-center justify-center gap-3 w-full bg-blue-700 text-white rounded-lg px-4 py-2 hover:bg-blue-800 transition-colors text-sm font-medium"
           >
             <FaFacebook /> Đăng nhập với Facebook
