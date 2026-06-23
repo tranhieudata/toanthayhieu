@@ -1,6 +1,6 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { FiBook, FiUser, FiLogOut, FiSettings, FiClipboard } from 'react-icons/fi';
+import { FiBook, FiUser, FiLogOut, FiSettings, FiClipboard, FiBookOpen } from 'react-icons/fi';
 import { useState } from 'react';
 
 export default function Navbar() {
@@ -29,9 +29,14 @@ export default function Navbar() {
               <Link to="/dashboard" className="text-gray-600 hover:text-blue-600 transition-colors">Lớp học của tôi</Link>
             )}
             {user && !isAdmin && (
-              <Link to="/exams" className="text-gray-600 hover:text-blue-600 transition-colors flex items-center gap-1">
-                <FiClipboard size={14} /> Đề kiểm tra
-              </Link>
+              <>
+                <Link to="/homeworks" className="text-gray-600 hover:text-blue-600 transition-colors flex items-center gap-1">
+                  <FiBookOpen size={14} /> Bài tập
+                </Link>
+                <Link to="/exams" className="text-gray-600 hover:text-blue-600 transition-colors flex items-center gap-1">
+                  <FiClipboard size={14} /> Đề kiểm tra
+                </Link>
+              </>
             )}
             {isAdmin && (
               <Link to="/admin" className="text-gray-600 hover:text-blue-600 transition-colors">Quản trị</Link>

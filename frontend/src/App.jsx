@@ -14,6 +14,7 @@ import OAuthSuccess from './pages/OAuthSuccess';
 import DashboardPage from './pages/DashboardPage';
 import ClassesPage from './pages/ClassesPage';
 import ClassDetailPage from './pages/ClassDetailPage';
+import StudentHomeworkPage from './pages/StudentHomeworkPage';
 
 // Admin pages
 import AdminLayout from './pages/admin/AdminLayout';
@@ -29,6 +30,7 @@ import AdminLessonEditor from './pages/admin/AdminLessonEditor';
 import AdminExams from './pages/admin/AdminExams';
 import AdminExamEditor from './pages/admin/AdminExamEditor';
 import AdminExamGrade from './pages/admin/AdminExamGrade';
+import AdminHomework from './pages/admin/AdminHomework';
 import StudentExamsPage from './pages/StudentExamsPage';
 import StudentExamDetailPage from './pages/StudentExamDetailPage';
 
@@ -63,6 +65,7 @@ function App() {
           <Route path="/lesson/:lessonId" element={<PrivateRoute><LessonDetailPage /></PrivateRoute>} />
           <Route path="/lessons/:id" element={<PrivateRoute><LessonPage /></PrivateRoute>} />
           <Route path="/exercises/:id" element={<PrivateRoute><ExercisePage /></PrivateRoute>} />
+          <Route path="/homeworks" element={<PrivateRoute><StudentHomeworkPage /></PrivateRoute>} />
           <Route path="/exams" element={<PrivateRoute><StudentExamsPage /></PrivateRoute>} />
           <Route path="/exams/:id" element={<PrivateRoute><StudentExamDetailPage /></PrivateRoute>} />
           <Route path="/admin" element={<AdminRoute><AdminLayout /></AdminRoute>}>
@@ -77,6 +80,7 @@ function App() {
             <Route path="exams/new" element={<AdminExamEditor />} />
             <Route path="exams/:id/edit" element={<AdminExamEditor />} />
             <Route path="exams/:id/grade" element={<AdminExamGrade />} />
+            <Route path="homeworks" element={<AdminHomework />} />
             <Route path="tuition" element={<AdminTuition />} />
             <Route path="revenue" element={<AdminRevenue />} />
             <Route path="settings" element={<AdminSettings />} />

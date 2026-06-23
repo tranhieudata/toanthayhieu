@@ -21,10 +21,25 @@ if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 connectDB();
 
 // Middleware
-app.use(cors({
-  origin: process.env.CLIENT_URL,
+const corsOptions = {
+  origin: (origin, callback) => {
+    const allowedOrigins = [
+      'http://localhost:5173',
+      'http://localhost:5174',
+      'http://localhost:5175',
+      process.env.CLIENT_URL
+    ].filter(Boolean);
+    
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
-}));
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -97,6 +112,7 @@ app.use('/api/users', require('./routes/users'));
 app.use('/api/tuition', require('./routes/tuition'));
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/exams', require('./routes/exams'));
+app.use('/api/homeworks', require('./routes/homeworks'));
 app.use('/api/levels', require('./routes/levels'));
 
 app.get('/api/health', (req, res) => res.json({ status: 'OK' }));
