@@ -214,11 +214,11 @@ export default function StudentHomeworkPage() {
                             {sub.submissionImages.map((img, idx) => (
                               <div key={idx} className="relative group">
                                 <button
-                                  onClick={() => setPreviewImage(img.url)}
+                                  onClick={() => setPreviewImage(`${import.meta.env.VITE_API_BASE_URL}${img.url}`)}
                                   className="w-full relative"
                                 >
                                   <img
-                                    src={img.url}
+                                    src={`${import.meta.env.VITE_API_BASE_URL}${img.url}`}
                                     alt={`Submission ${idx + 1}`}
                                     className="w-full h-32 object-cover rounded border border-gray-300 cursor-pointer hover:opacity-75 transition"
                                   />

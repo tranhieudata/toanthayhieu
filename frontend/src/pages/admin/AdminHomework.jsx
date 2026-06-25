@@ -4,6 +4,7 @@ import api from '../../api/axios';
 import toast from 'react-hot-toast';
 import { FiPlus, FiEdit2, FiTrash2, FiBook, FiList, FiChevronDown, FiChevronUp, FiUpload, FiImage, FiX, FiEdit3, FiCheckCircle, FiClock, FiDownload, FiStar } from 'react-icons/fi';
 
+
 const emptyForm = {
   title: '',
   description: '',
@@ -450,6 +451,7 @@ export default function AdminHomework() {
                           alt="Question preview"
                           className="max-h-40 mx-auto rounded"
                         />
+                     
                         <p className="text-sm text-gray-600">Nhấp để đổi ảnh</p>
                       </div>
                     ) : (
@@ -601,12 +603,13 @@ export default function AdminHomework() {
                                       {submission.submissionImages.map((img, idx) => (
                                         <div key={idx} className="relative group">
                                           <img
-                                            src={img.url}
+                                            src={`${import.meta.env.VITE_API_BASE_URL}${img.url}`}
                                             alt={`Submission ${idx + 1}`}
                                             className="w-full h-32 object-cover rounded border border-gray-200"
                                           />
+                                          
                                           <a
-                                            href={img.url}
+                                            href={`${import.meta.env.VITE_API_BASE_URL}${img.url}`}
                                             target="_blank"
                                             rel="noreferrer"
                                             className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 transition"
@@ -843,10 +846,11 @@ export default function AdminHomework() {
                                           {adminUploadImages.map((img, idx) => (
                                             <div key={idx} className="relative group">
                                               <img
-                                                src={img.url}
+                                                src={`${import.meta.env.VITE_API_BASE_URL}${img.url}`}
                                                 alt={`Upload ${idx + 1}`}
                                                 className="w-full h-24 object-cover rounded border border-gray-200"
                                               />
+                                                
                                               <button
                                                 type="button"
                                                 onClick={() => setAdminUploadImages(prev => prev.filter((_, i) => i !== idx))}
