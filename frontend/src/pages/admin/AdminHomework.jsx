@@ -1,8 +1,9 @@
 ﻿import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import api from '../../api/axios';
+import api, { getUploadUrl } from '../../api/axios';
 import toast from 'react-hot-toast';
-import { FiPlus, FiEdit2, FiTrash2, FiBook, FiList, FiChevronDown, FiChevronUp, FiUpload, FiImage, FiX, FiEdit3, FiCheckCircle, FiClock, FiDownload, FiStar } from 'react-icons/fi';
+import { FiPlus, FiEdit2, FiTrash2, FiBook, FiList, FiChevronDown, FiChevronUp, FiUpload, FiImage, FiX, FiEdit3, FiCheckCircle, FiClock, FiEye } from 'react-icons/fi';
+import { compressImageFile } from '../../utils/imageCompression';
 
 
 const emptyForm = {
@@ -42,6 +43,7 @@ export default function AdminHomework() {
   const [adminUploadImages, setAdminUploadImages] = useState([]);
   const [gradingLoading, setGradingLoading] = useState(false);
   const [gradingError, setGradingError] = useState('');
+  const [previewImage, setPreviewImage] = useState(null);
 
   const loadHomeworks = async () => {
     setLoading(true);
@@ -87,8 +89,9 @@ export default function AdminHomework() {
     if (!file) return;
     setUploading(true);
     try {
+      const compressedFile = await compressImageFile(file);
       const formData = new FormData();
-      formData.append('file', file);
+      formData.append('file', compressedFile);
       const { data } = await api.post('/upload/image', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
@@ -222,20 +225,84 @@ export default function AdminHomework() {
     }
   };
 
-  const handleAdminImageUpload = async (file, studentId) => {
+  const uploadHomeworkImage = async (file) => {
+    if (!file) return;
+    const compressedFile = await compressImageFile(file);
+    const formData = new FormData();
+    formData.append('file', compressedFile);
+    const { data } = await api.post('/upload/image', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+    return { url: data.url, uploadedAt: new Date() };
+  };
+
+  const handleAdminImageUpload = async (file) => {
     if (!file) return;
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      const { data } = await api.post('/upload/image', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
-      setAdminUploadImages(prev => [...prev, { url: data.url, uploadedAt: new Date() }]);
+      const uploadedImage = await uploadHomeworkImage(file);
+      setAdminUploadImages(prev => [...prev, uploadedImage]);
       toast.success('Tải ảnh thành công');
     } catch (err) {
       console.error('Image upload error:', err);
       toast.error(err.response?.data?.message || 'Lỗi tải ảnh');
     }
+  };
+
+  const saveAdminSubmissionImages = async (studentId, images, successMessage = 'Cập nhật ảnh thành công') => {
+    try {
+      const { data } = await api.post(`/homeworks/${selectedHomework._id}/submissions/admin-submit`, {
+        studentId,
+        submissionImages: images
+      });
+      setSubmissions(prev => {
+        const exists = prev.some(sub => sub.student?._id === studentId);
+        if (exists) {
+          return prev.map(sub => (sub.student?._id === studentId ? data : sub));
+        }
+        return [...prev, data];
+      });
+      toast.success(successMessage);
+      await loadSubmissions(selectedHomework._id);
+    } catch (err) {
+      console.error('Update submission images error:', err);
+      toast.error(err.response?.data?.message || 'Lỗi cập nhật ảnh');
+    }
+  };
+
+  const handleAddSubmissionImages = async (files, student, submission) => {
+    if (!files || files.length === 0) return;
+    try {
+      const uploadedImages = [];
+      for (const file of files) {
+        uploadedImages.push(await uploadHomeworkImage(file));
+      }
+      await saveAdminSubmissionImages(
+        student._id,
+        [...(submission?.submissionImages || []), ...uploadedImages],
+        'Thêm ảnh thành công'
+      );
+    } catch (err) {
+      console.error('Add submission images error:', err);
+      toast.error(err.response?.data?.message || 'Lỗi thêm ảnh');
+    }
+  };
+
+  const handleReplaceSubmissionImage = async (file, student, submission, imageIndex) => {
+    if (!file) return;
+    try {
+      const uploadedImage = await uploadHomeworkImage(file);
+      const nextImages = [...(submission?.submissionImages || [])];
+      nextImages[imageIndex] = uploadedImage;
+      await saveAdminSubmissionImages(student._id, nextImages, 'Đổi ảnh thành công');
+    } catch (err) {
+      console.error('Replace submission image error:', err);
+      toast.error(err.response?.data?.message || 'Lỗi đổi ảnh');
+    }
+  };
+
+  const handleRemoveSubmissionImage = async (student, submission, imageIndex) => {
+    const nextImages = (submission?.submissionImages || []).filter((_, idx) => idx !== imageIndex);
+    await saveAdminSubmissionImages(student._id, nextImages, 'Xóa ảnh thành công');
   };
 
   const handleAdminSubmitHomework = async (studentId) => {
@@ -447,7 +514,7 @@ export default function AdminHomework() {
                     ) : form.questionImage?.url ? (
                       <div className="space-y-2">
                         <img
-                          src={form.questionImage.url}
+                          src={getUploadUrl(form.questionImage.url)}
                           alt="Question preview"
                           className="max-h-40 mx-auto rounded"
                         />
@@ -598,27 +665,84 @@ export default function AdminHomework() {
                                 {/* Submission images */}
                                 {submission.submissionImages && submission.submissionImages.length > 0 && (
                                   <div>
-                                    <p className="font-medium text-gray-700 mb-2">Bài làm:</p>
+                                    <div className="flex items-center justify-between gap-3 mb-2">
+                                      <p className="font-medium text-gray-700">Bài làm:</p>
+                                      <label className="inline-flex items-center gap-1 px-3 py-1.5 text-sm bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 cursor-pointer">
+                                        <FiUpload size={14} /> Thêm ảnh
+                                        <input
+                                          type="file"
+                                          accept="image/*"
+                                          multiple
+                                          onChange={(e) => {
+                                            handleAddSubmissionImages(Array.from(e.target.files || []), student, submission);
+                                            e.target.value = '';
+                                          }}
+                                          className="hidden"
+                                        />
+                                      </label>
+                                    </div>
                                     <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                                       {submission.submissionImages.map((img, idx) => (
                                         <div key={idx} className="relative group">
-                                          <img
-                                            src={`${import.meta.env.VITE_API_BASE_URL}${img.url}`}
-                                            alt={`Submission ${idx + 1}`}
-                                            className="w-full h-32 object-cover rounded border border-gray-200"
-                                          />
-                                          
-                                          <a
-                                            href={`${import.meta.env.VITE_API_BASE_URL}${img.url}`}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 transition"
+                                          <button
+                                            type="button"
+                                            onClick={() => setPreviewImage(getUploadUrl(img.url))}
+                                            className="w-full block"
                                           >
-                                            <FiDownload className="text-white" size={20} />
-                                          </a>
+                                            <img
+                                              src={getUploadUrl(img.url)}
+                                              alt={`Submission ${idx + 1}`}
+                                              className="w-full h-32 object-cover rounded border border-gray-200"
+                                            />
+                                            <span className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
+                                              <FiEye className="text-white" size={20} />
+                                            </span>
+                                          </button>
+                                          <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition">
+                                            <label className="bg-white text-blue-600 rounded-full p-1 shadow cursor-pointer hover:bg-blue-50" title="Đổi ảnh">
+                                              <FiEdit2 size={14} />
+                                              <input
+                                                type="file"
+                                                accept="image/*"
+                                                onChange={(e) => {
+                                                  handleReplaceSubmissionImage(e.target.files?.[0], student, submission, idx);
+                                                  e.target.value = '';
+                                                }}
+                                                className="hidden"
+                                              />
+                                            </label>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleRemoveSubmissionImage(student, submission, idx)}
+                                              className="bg-red-500 text-white rounded-full p-1 shadow hover:bg-red-600"
+                                              title="Xóa ảnh"
+                                            >
+                                              <FiX size={14} />
+                                            </button>
+                                          </div>
                                         </div>
                                       ))}
                                     </div>
+                                  </div>
+                                )}
+
+                                {(!submission.submissionImages || submission.submissionImages.length === 0) && (
+                                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
+                                    <FiImage size={28} className="mx-auto text-gray-400 mb-2" />
+                                    <p className="text-sm text-gray-600 mb-3">Bài làm chưa có ảnh</p>
+                                    <label className="inline-flex items-center gap-2 px-3 py-2 bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 cursor-pointer">
+                                      <FiUpload /> Thêm ảnh
+                                      <input
+                                        type="file"
+                                        accept="image/*"
+                                        multiple
+                                        onChange={(e) => {
+                                          handleAddSubmissionImages(Array.from(e.target.files || []), student, submission);
+                                          e.target.value = '';
+                                        }}
+                                        className="hidden"
+                                      />
+                                    </label>
                                   </div>
                                 )}
 
@@ -717,7 +841,7 @@ export default function AdminHomework() {
                                           }
                                           min="0"
                                           max={selectedHomework.maxScore}
-                                          step="0.5"
+                                          step="0.1"
                                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                                           required={gradingForm.aiModel === 'manual'}
                                           disabled={gradingLoading}
@@ -825,7 +949,7 @@ export default function AdminHomework() {
                                             const files = e.target.files;
                                             if (files) {
                                               Array.from(files).forEach(file => {
-                                                handleAdminImageUpload(file, student._id);
+                                                handleAdminImageUpload(file);
                                               });
                                             }
                                           }}
@@ -845,11 +969,20 @@ export default function AdminHomework() {
                                         <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                                           {adminUploadImages.map((img, idx) => (
                                             <div key={idx} className="relative group">
-                                              <img
-                                                src={`${import.meta.env.VITE_API_BASE_URL}${img.url}`}
-                                                alt={`Upload ${idx + 1}`}
-                                                className="w-full h-24 object-cover rounded border border-gray-200"
-                                              />
+                                              <button
+                                                type="button"
+                                                onClick={() => setPreviewImage(getUploadUrl(img.url))}
+                                                className="w-full block"
+                                              >
+                                                <img
+                                                  src={getUploadUrl(img.url)}
+                                                  alt={`Upload ${idx + 1}`}
+                                                  className="w-full h-24 object-cover rounded border border-gray-200"
+                                                />
+                                                <span className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
+                                                  <FiEye className="text-white" size={18} />
+                                                </span>
+                                              </button>
                                                 
                                               <button
                                                 type="button"
@@ -905,6 +1038,29 @@ export default function AdminHomework() {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {previewImage && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-[60] p-4"
+          onClick={() => setPreviewImage(null)}
+        >
+          <div className="relative max-w-4xl max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => setPreviewImage(null)}
+              className="absolute -top-3 -right-3 bg-white rounded-full p-2 hover:bg-gray-100 shadow"
+              title="Đóng"
+            >
+              <FiX size={22} />
+            </button>
+            <img
+              src={previewImage}
+              alt="Preview"
+              className="max-w-full max-h-[90vh] object-contain rounded"
+            />
           </div>
         </div>
       )}

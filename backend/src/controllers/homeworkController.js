@@ -524,7 +524,16 @@ const submitHomework = async (req, res) => {
     const homework = await Homework.findById(homeworkId);
     if (!homework) return res.status(404).json({ message: 'Không tìm thấy bài tập' });
 
-    if (!Array.isArray(submissionImages) || submissionImages.length === 0) {
+    if (!Array.isArray(submissionImages)) {
+      return res.status(400).json({ message: 'Danh sách ảnh không hợp lệ' });
+    }
+
+    const existingSubmission = await HomeworkSubmission.findOne({
+      homework: homeworkId,
+      student: studentId
+    });
+
+    if (!existingSubmission && submissionImages.length === 0) {
       return res.status(400).json({ message: 'Cần ít nhất một ảnh' });
     }
 
@@ -692,12 +701,21 @@ const adminSubmitHomework = async (req, res) => {
   try {
     const { studentId, submissionImages } = req.body;
     
-    if (!studentId || !Array.isArray(submissionImages) || submissionImages.length === 0) {
-      return res.status(400).json({ message: 'Cần studentId và ít nhất một ảnh' });
+    if (!studentId || !Array.isArray(submissionImages)) {
+      return res.status(400).json({ message: 'Cần studentId và danh sách ảnh hợp lệ' });
     }
 
     const homework = await Homework.findById(req.params.id);
     if (!homework) return res.status(404).json({ message: 'Không tìm thấy bài tập' });
+
+    const existingSubmission = await HomeworkSubmission.findOne({
+      homework: req.params.id,
+      student: studentId
+    });
+
+    if (!existingSubmission && submissionImages.length === 0) {
+      return res.status(400).json({ message: 'Cần ít nhất một ảnh' });
+    }
 
     // Tạo hoặc cập nhật submission
     const submission = await HomeworkSubmission.findOneAndUpdate(

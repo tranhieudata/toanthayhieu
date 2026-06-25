@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import api from '../api/axios';
+import api, { getUploadUrl } from '../api/axios';
 import toast from 'react-hot-toast';
-import { FiUpload, FiX, FiImage, FiCheck, FiClock, FiBook, FiDownload, FiEye, FiTrash2 } from 'react-icons/fi';
+import { FiUpload, FiX, FiCheck, FiClock, FiBook, FiEye, FiEdit2 } from 'react-icons/fi';
+import { compressImageFile } from '../utils/imageCompression';
 
 export default function StudentHomeworkPage() {
   const { user } = useAuth();
@@ -53,8 +54,9 @@ export default function StudentHomeworkPage() {
       const uploadedImages = [];
 
       for (const file of files) {
+        const compressedFile = await compressImageFile(file);
         const formData = new FormData();
-        formData.append('file', file);
+        formData.append('file', compressedFile);
         const { data } = await api.post('/upload/image', formData, {
           headers: { 'Content-Type': 'multipart/form-data' }
         });
@@ -103,6 +105,40 @@ export default function StudentHomeworkPage() {
     } catch (err) {
       console.error('Remove image error:', err);
       toast.error(err.response?.data?.message || 'Lỗi xóa ảnh');
+    }
+  };
+
+  const handleReplaceImage = async (file, homeworkId, imageIndex) => {
+    if (!file) return;
+
+    setUploadingImages(prev => ({ ...prev, [homeworkId]: true }));
+    try {
+      const compressedFile = await compressImageFile(file);
+      const formData = new FormData();
+      formData.append('file', compressedFile);
+      const { data: uploaded } = await api.post('/upload/image', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+
+      const currentSub = submissions[homeworkId];
+      const nextImages = [...(currentSub?.submissionImages || [])];
+      nextImages[imageIndex] = { url: uploaded.url, uploadedAt: new Date() };
+
+      const { data } = await api.post(`/homeworks/${homeworkId}/submit`, {
+        submissionImages: nextImages
+      });
+
+      setSubmissions(prev => ({
+        ...prev,
+        [homeworkId]: data
+      }));
+
+      toast.success('Đổi ảnh thành công');
+    } catch (err) {
+      console.error('Replace image error:', err);
+      toast.error(err.response?.data?.message || 'Lỗi đổi ảnh');
+    } finally {
+      setUploadingImages(prev => ({ ...prev, [homeworkId]: false }));
     }
   };
 
@@ -189,11 +225,11 @@ export default function StudentHomeworkPage() {
                         <div className="mb-6">
                           <h3 className="font-medium text-gray-900 mb-2">Ảnh đề bài:</h3>
                           <button
-                            onClick={() => setPreviewImage(hw.questionImage.url)}
+                            onClick={() => setPreviewImage(getUploadUrl(hw.questionImage.url))}
                             className="relative inline-block group"
                           >
                             <img
-                              src={hw.questionImage.url}
+                              src={getUploadUrl(hw.questionImage.url)}
                               alt="Question"
                               className="max-w-md h-auto rounded border border-gray-300 cursor-pointer hover:opacity-75 transition"
                             />
@@ -214,11 +250,11 @@ export default function StudentHomeworkPage() {
                             {sub.submissionImages.map((img, idx) => (
                               <div key={idx} className="relative group">
                                 <button
-                                  onClick={() => setPreviewImage(`${import.meta.env.VITE_API_BASE_URL}${img.url}`)}
+                                  onClick={() => setPreviewImage(getUploadUrl(img.url))}
                                   className="w-full relative"
                                 >
                                   <img
-                                    src={`${import.meta.env.VITE_API_BASE_URL}${img.url}`}
+                                    src={getUploadUrl(img.url)}
                                     alt={`Submission ${idx + 1}`}
                                     className="w-full h-32 object-cover rounded border border-gray-300 cursor-pointer hover:opacity-75 transition"
                                   />
@@ -227,13 +263,30 @@ export default function StudentHomeworkPage() {
                                   </div>
                                 </button>
                                 {sub.status !== 'graded' && (
-                                  <button
-                                    onClick={() => handleRemoveImage(hw._id, idx)}
-                                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 opacity-0 group-hover:opacity-100 transition"
-                                    title="Xóa ảnh"
-                                  >
-                                    <FiX size={14} />
-                                  </button>
+                                  <div className="absolute -top-2 -right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition">
+                                    <label
+                                      className="bg-white text-blue-600 rounded-full p-1 shadow cursor-pointer hover:bg-blue-50"
+                                      title="Đổi ảnh"
+                                    >
+                                      <FiEdit2 size={14} />
+                                      <input
+                                        type="file"
+                                        accept="image/*"
+                                        onChange={(e) => {
+                                          handleReplaceImage(e.target.files?.[0], hw._id, idx);
+                                          e.target.value = '';
+                                        }}
+                                        className="hidden"
+                                      />
+                                    </label>
+                                    <button
+                                      onClick={() => handleRemoveImage(hw._id, idx)}
+                                      className="bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                                      title="Xóa ảnh"
+                                    >
+                                      <FiX size={14} />
+                                    </button>
+                                  </div>
                                 )}
                               </div>
                             ))}
