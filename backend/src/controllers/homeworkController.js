@@ -15,6 +15,33 @@ const IMAGE_MIME_BY_EXT = {
   '.webp': 'image/webp',
 };
 
+const GEMINI_MODELS = [
+  'gemini-2.5-pro',
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
+];
+
+async function generateGeminiContent(content) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error('GEMINI_API_KEY is not configured');
+
+  const genAI = new GoogleGenerativeAI(apiKey);
+  let lastError;
+
+  for (const modelName of GEMINI_MODELS) {
+    try {
+      const model = genAI.getGenerativeModel({ model: modelName });
+      const result = await model.generateContent(content);
+      return result.response.text().trim();
+    } catch (error) {
+      lastError = error;
+      console.warn(`[Gemini] ${modelName} failed: ${error.message}`);
+    }
+  }
+
+  throw lastError || new Error('Could not call Gemini');
+}
+
 function clampScore(value, maxScore) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return null;
@@ -174,21 +201,21 @@ async function generateAnswerKey(homework) {
       throw new Error('GEMINI_API_KEY is not configured');
     }
 
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-    const imageParts = await buildImageParts(homework.questionImage ? [homework.questionImage] : []);
+    const imageParts = await buildImageParts([
+      homework.questionImage,
+      ...(homework.solutionImages || []),
+    ].filter(img => img?.url));
     
 
     const prompt = `You are an experienced Vietnamese math teacher. Create a detailed reference solution for this homework.
 
 Homework title: ${homework.title}
 Homework description: ${homework.description || ''}
-The attached image is the homework question. Use the image as the main source if the text description is incomplete.
+Attached images: homework question image first if available, then teacher solution/reference images if available. Use teacher solution images as the answer key when present.
 
 Return only the reference solution text in Vietnamese.`;
 
-    const result = await model.generateContent([prompt, ...imageParts]);
-    const answerKey = result.response.text().trim();
+    const answerKey = await generateGeminiContent([prompt, ...imageParts]);
     if (!answerKey) throw new Error('AI could not create a reference answer');
     return answerKey;
   } catch (error) {
@@ -205,9 +232,10 @@ async function generateAIFeedbackGemini(homework, student, submissionImages, ans
       throw new Error('GEMINI_API_KEY is not configured');
     }
 
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-    const questionImageParts = await buildImageParts(homework.questionImage ? [homework.questionImage] : []);
+    const questionImageParts = await buildImageParts([
+      homework.questionImage,
+      ...(homework.solutionImages || []),
+    ].filter(img => img?.url));
     const submissionImageParts = await buildImageParts(submissionImages);
 
     if (submissionImageParts.length === 0) {
@@ -224,20 +252,35 @@ ${answerKey}
 Max score: ${homework.maxScore}
 Student: ${student?.name || 'Hoc sinh'}
 
-Attached images order: homework question image first if available, then all student submission images. Grade ONLY from the student submission images.
+Attached images order: homework question image first if available, teacher solution/reference images next if available, then all student submission images. Grade ONLY from the student submission images.
 
-Feedback requirements:
-- Vietnamese.
-- Positive and encouraging.
-- Mention strengths first.
-- Then mention weak points that need improvement and what to practice next.
-- Keep it concise, about 2-4 sentences.
+Hướng dẫn viết nhận xét:
+      - Viết để cho Phụ huynh cũng có thể đọc được và hiểu được tình hình học tập của con mình.
+      - Gửi kết quả có số điểm, cụ thể mức độ nào làm tốt, mức độ nào cần cải thiện.
+      - Viết tự nhiên như giáo viên đang nhận xét trực tiếp.
+      - Chú ý các trường hợp đặc biệt:
+        + Sai bài dễ nhưng đúng bài vừa hoặc khó → có thể do thiếu cẩn thận hoặc bỏ sót dữ kiện.
+        + Đúng phần lý thuyết nhưng sai phần vận dụng → kiến thức nền tốt nhưng cần luyện áp dụng.
+        + Đúng bài khó nhưng sai bài cơ bản → kiểm tra lại sự tập trung và cách đọc đề.
+        + Làm đúng nhiều bài cùng dạng nhưng sai dạng mới → cần tăng khả năng linh hoạt.
+      - Chỉ nhận xét những điều có dữ liệu hỗ trợ, không suy đoán quá mức.
+      - kết hợp với tiêu chí được gán cho từng mức độ (nếu có) để đưa ra nhận xét chính xác hơn.
+      - Không viết dạng báo cáo khô cứng.
+      - Không dùng từ: yếu, kém, dở.
+      - Nêu điểm mạnh trước, sau đó góp ý cải thiện.
+      - Độ dài khoảng 50–80 từ.
+      - Dựa trên cài đặt mức độ khó của admin (nếu có) để đưa ra nhận xét phù hợp.
+      - Dùng từ thầy và con thông qua gọi tên học sinh để tạo sự gần gũi.
+      - Viết để cho Phụ huynh cũng có thể đọc được và hiểu được tình hình học tập của con mình.
+      - ví dụ : Em chào C . Em gửi kết quả học tập của con bài kiểm tra vừa rồi con được 8,5 điểm . Con nắm vững kiến thức
+      và kỹ năng ở mức độ Nhận biết và Thông hiểu, tuy nhiên con cần luyện tập thêm một số dạng bài ở mức độ Vận dụng cao để cải thiện hơn nữa.
+
+      Viết bằng tiếng Việt, lời lẽ thân thiện, phù hợp với học sinh
 
 Return valid JSON only:
 {"score": <number from 0 to ${homework.maxScore}>, "feedback": "<Vietnamese feedback>"}`;
 
-    const result = await model.generateContent([prompt, ...questionImageParts, ...submissionImageParts]);
-    const responseText = result.response.text().trim();
+    const responseText = await generateGeminiContent([prompt, ...questionImageParts, ...submissionImageParts]);
 
     const parsed = extractJSON(responseText);
     const finalScore = clampScore(parsed.score, homework.maxScore);
@@ -258,16 +301,52 @@ Return valid JSON only:
 }
 
 async function generateAnswerKeyChatGPT(homework) {
-  const prompt = `You are an experienced Vietnamese math teacher. Create a detailed reference solution for this homework.
+//   const prompt = `You are an experienced Vietnamese math teacher. Create a detailed reference solution for this homework.
 
-Homework title: ${homework.title}
-Homework description: ${homework.description || ''}
-The attached image is the homework question. Use the image as the main source if the text description is incomplete.
+// Homework title: ${homework.title}
+// Homework description: ${homework.description || ''}
+// Attached images: homework question image first if available, then teacher solution/reference images if available. Use teacher solution images as the answer key when present.
 
-Return only the reference solution text in Vietnamese.`;
+// Return only the reference solution text in Vietnamese.`;
+      const prompt = `Bạn là một giáo viên dạy học đáng tin cậy. Hãy viết một nhận xét ngắn gọn (3-5 dòng) cho học sinh về kết quả kiểm tra của em.
 
+      Thông tin bài kiểm tra:
+      - Tên đề: ${homework.title}
+      - Chủ đề: ${homework.lesson?.title || 'Không xác định'}
+    
+
+      Thông tin kết quả học sinh:
+      - Tên học sinh: ${student?.name || 'Học sinh'}
+      - Tổng điểm: ${totalScore.toFixed(2)}/10 (%)
+
+
+      Hướng dẫn viết nhận xét:
+      - Viết để cho Phụ huynh cũng có thể đọc được và hiểu được tình hình học tập của con mình.
+      - Gửi kết quả có số điểm, cụ thể mức độ nào làm tốt, mức độ nào cần cải thiện.
+      - Viết tự nhiên như giáo viên đang nhận xét trực tiếp.
+      - Chú ý các trường hợp đặc biệt:
+        + Sai bài dễ nhưng đúng bài vừa hoặc khó → có thể do thiếu cẩn thận hoặc bỏ sót dữ kiện.
+        + Đúng phần lý thuyết nhưng sai phần vận dụng → kiến thức nền tốt nhưng cần luyện áp dụng.
+        + Đúng bài khó nhưng sai bài cơ bản → kiểm tra lại sự tập trung và cách đọc đề.
+        + Làm đúng nhiều bài cùng dạng nhưng sai dạng mới → cần tăng khả năng linh hoạt.
+      - Chỉ nhận xét những điều có dữ liệu hỗ trợ, không suy đoán quá mức.
+      - kết hợp với tiêu chí được gán cho từng mức độ (nếu có) để đưa ra nhận xét chính xác hơn.
+      - Không viết dạng báo cáo khô cứng.
+      - Không dùng từ: yếu, kém, dở.
+      - Nêu điểm mạnh trước, sau đó góp ý cải thiện.
+      - Độ dài khoảng 50–80 từ.
+      - Dựa trên cài đặt mức độ khó của admin (nếu có) để đưa ra nhận xét phù hợp.
+      - Dùng từ thầy và con thông qua gọi tên học sinh để tạo sự gần gũi.
+      - Viết để cho Phụ huynh cũng có thể đọc được và hiểu được tình hình học tập của con mình.
+      - ví dụ : Em chào C . Em gửi kết quả học tập của con bài kiểm tra vừa rồi con được 8,5 điểm . Con nắm vững kiến thức
+      và kỹ năng ở mức độ Nhận biết và Thông hiểu, tuy nhiên con cần luyện tập thêm một số dạng bài ở mức độ Vận dụng cao để cải thiện hơn nữa.
+
+      Viết bằng tiếng Việt, lời lẽ thân thiện, phù hợp với học sinh.`;
   
-  const answerKey = await callOpenAIWithImages(prompt, homework.questionImage ? [homework.questionImage] : []);
+  const answerKey = await callOpenAIWithImages(prompt, [
+    homework.questionImage,
+    ...(homework.solutionImages || []),
+  ].filter(img => img?.url));
     if (!answerKey) throw new Error('AI could not create a reference answer');
   return answerKey;
 }
@@ -288,7 +367,7 @@ ${answerKey}
 Max score: ${homework.maxScore}
 Student: ${student?.name || 'Hoc sinh'}
 
-Attached images order: homework question image first if available, then all student submission images. Grade from the student submission images.
+Attached images order: homework question image first if available, teacher solution/reference images next if available, then all student submission images. Grade from the student submission images.
 
 Feedback requirements:
 - Vietnamese.
@@ -302,7 +381,7 @@ Return valid JSON only:
 
   const responseText = await callOpenAIWithImages(
     prompt,
-    [homework.questionImage, ...(submissionImages || [])].filter(Boolean),
+    [homework.questionImage, ...(homework.solutionImages || []), ...(submissionImages || [])].filter(img => img?.url),
     { json: true }
   );
   const parsed = extractJSON(responseText);
@@ -347,6 +426,7 @@ const getStudentHomeworks = async (req, res) => {
     const homeworks = await Homework.find({ class: { $in: classIds }, isPublished: true })
       .populate('class', 'name')
       .populate('lesson', 'title')
+      .populate('sourceExam', 'title')
       .sort({ createdAt: -1 });
     
   
@@ -368,6 +448,7 @@ const getHomeworks = async (req, res) => {
     const homeworks = await Homework.find(filter)
       .populate('class', 'name')
       .populate('lesson', 'title')
+      .populate('sourceExam', 'title')
       .populate('createdBy', 'name')
       .sort({ createdAt: -1 });
     
@@ -383,6 +464,7 @@ const getHomeworkById = async (req, res) => {
     const homework = await Homework.findById(req.params.id)
       .populate('class', 'name students')
       .populate('lesson', 'title')
+      .populate('sourceExam', 'title')
       .populate('createdBy', 'name');
     
     if (!homework) return res.status(404).json({ message: 'Không tìm thấy bài tập' });
@@ -396,10 +478,10 @@ const getHomeworkById = async (req, res) => {
 // POST /api/homeworks - Create homework
 const createHomework = async (req, res) => {
   try {
-    const { title, description, classId, lessonId, questionImage, answerKey, maxScore, dueDate } = req.body;
+    const { title, description, classId, lessonId, questionImage, answerKey, maxScore, dueDate, sourceExam, examPackage, solutionImages } = req.body;
 
-    if (!title || !classId || !questionImage?.url) {
-      return res.status(400).json({ message: 'Thiếu thông tin bắt buộc (title, classId, questionImage)' });
+    if (!title || !classId || (!questionImage?.url && !description?.trim() && !sourceExam)) {
+      return res.status(400).json({ message: 'Thiếu thông tin bắt buộc (title, classId và đề bài)' });
     }
 
     const homework = new Homework({
@@ -407,7 +489,10 @@ const createHomework = async (req, res) => {
       description,
       class: classId,
       lesson: lessonId && lessonId.trim() ? lessonId : undefined, // Convert empty string to undefined
-      questionImage,
+      questionImage: questionImage?.url ? questionImage : { url: '' },
+      sourceExam: sourceExam || undefined,
+      examPackage: examPackage || null,
+      solutionImages: Array.isArray(solutionImages) ? solutionImages : [],
       answerKey,
       maxScore: maxScore || 10,
       createdBy: req.user._id,
@@ -419,6 +504,7 @@ const createHomework = async (req, res) => {
   
     await homework.populate('class', 'name');
     await homework.populate('lesson', 'title');
+    await homework.populate('sourceExam', 'title');
     
     res.status(201).json(homework);
   } catch (err) {
@@ -430,7 +516,7 @@ const createHomework = async (req, res) => {
 // PUT /api/homeworks/:id - Cập nhật bài tập
 const updateHomework = async (req, res) => {
   try {
-    const allowed = ['title', 'description', 'classId', 'lessonId', 'questionImage', 'answerKey', 'maxScore', 'dueDate', 'isPublished'];
+    const allowed = ['title', 'description', 'classId', 'lessonId', 'questionImage', 'answerKey', 'maxScore', 'dueDate', 'isPublished', 'sourceExam', 'examPackage', 'solutionImages'];
     const $set = {};
     
     allowed.forEach(field => {
@@ -440,6 +526,8 @@ const updateHomework = async (req, res) => {
           $set['lesson'] = req.body[field] && req.body[field].trim() ? req.body[field] : null;
         } else if (field === 'classId') {
           $set['class'] = req.body[field];
+        } else if (field === 'sourceExam') {
+          $set.sourceExam = req.body[field] || null;
         } else {
           $set[field] = req.body[field];
         }
@@ -452,7 +540,8 @@ const updateHomework = async (req, res) => {
       { new: true, runValidators: false }
     )
       .populate('class', 'name')
-      .populate('lesson', 'title');
+      .populate('lesson', 'title')
+      .populate('sourceExam', 'title');
 
     if (!homework) return res.status(404).json({ message: 'Không tìm thấy bài tập' });
     

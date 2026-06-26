@@ -5,6 +5,50 @@ const Class = require('../models/Class');
 const ClassEnrollment = require('../models/ClassEnrollment');
 const SiteSettings = require('../models/SiteSettings');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const fs = require('fs/promises');
+const path = require('path');
+
+const UPLOADS_DIR = path.resolve(__dirname, '../../uploads');
+const IMAGE_MIME_BY_EXT = {
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+};
+
+const GEMINI_MODELS = [
+  'gemini-2.5-pro',
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
+];
+
+async function generateGeminiContent(content) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error('GEMINI_API_KEY not set');
+
+  const genAI = new GoogleGenerativeAI(apiKey);
+  let lastError;
+
+  for (const modelName of GEMINI_MODELS) {
+    try {
+      const model = genAI.getGenerativeModel({ model: modelName });
+      const result = await model.generateContent(content);
+      return result.response.text().trim();
+    } catch (error) {
+      lastError = error;
+      console.warn(`[Gemini] ${modelName} failed: ${error.message}`);
+    }
+  }
+
+  throw lastError || new Error('Không gọi được Gemini');
+}
+
+function clampScore(value, maxScore) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 0;
+  return Math.min(Math.max(numeric, 0), maxScore);
+}
 
 // Tự động sinh nhận xét dựa trên điểm từng mức độ (fallback)
 function generateAutoFeedback(exam, scores) {
@@ -46,9 +90,6 @@ async function generateAIFeedbackGemini(exam, student, scores, settings) {
       console.warn('GEMINI_API_KEY not set, using fallback feedback');
       return generateAutoFeedback(exam, scores);
     }
-    // Khởi tạo lazy để đảm bảo dùng env var sau khi dotenv đã load
-    const genAI = new GoogleGenerativeAI(apiKey);
-
     // Tính điểm từng mức độ
     const levelResults = exam.levels.map((level) => {
       const levelScores = scores.filter(
@@ -108,11 +149,7 @@ và kỹ năng ở mức độ Nhận biết và Thông hiểu, tuy nhiên con c
 
 Viết bằng tiếng Việt, lời lẽ thân thiện, phù hợp với học sinh.`;
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-    const result = await model.generateContent(prompt);
-    const feedback = result.response.text();
-
-    return feedback.trim();
+    return await generateGeminiContent(prompt);
   } catch (error) {
     console.error('Gemini API error:', error.message);
     // Fallback to simple feedback
@@ -120,20 +157,9 @@ Viết bằng tiếng Việt, lời lẽ thân thiện, phù hợp với học s
   }
 }
 
-// Hàm dùng chung: gọi Gemini với fallback flash
+// Hàm dùng chung: gọi Gemini với fallback pro -> flash -> flash-lite
 async function callGemini(prompt) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error('GEMINI_API_KEY not set');
-  const genAI = new GoogleGenerativeAI(apiKey);
-  let result;
-  try {
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
-    result = await model.generateContent(prompt);
-  } catch {
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-    result = await model.generateContent(prompt);
-  }
-  return result.response.text().trim();
+  return generateGeminiContent(prompt);
 }
 
 // Chuẩn hoá JSON từ response Gemini (bỏ markdown fences, tìm {...})
@@ -142,6 +168,120 @@ function extractJSON(text) {
   const s = text.indexOf('{'), e = text.lastIndexOf('}');
   if (s !== -1 && e !== -1) text = text.substring(s, e + 1);
   return text;
+}
+
+async function uploadImageToGeminiPart(image) {
+  const rawUrl = typeof image === 'string' ? image : image?.url;
+  if (!rawUrl) return null;
+
+  let pathname = rawUrl;
+  try {
+    pathname = new URL(rawUrl, 'http://local').pathname;
+  } catch {
+    pathname = rawUrl;
+  }
+
+  if (!pathname.startsWith('/uploads/')) {
+    throw new Error(`Image is not in uploads: ${rawUrl}`);
+  }
+
+  const relativePath = decodeURIComponent(pathname.replace(/^\/uploads\//, ''));
+  const filePath = path.resolve(UPLOADS_DIR, relativePath);
+  if (!filePath.startsWith(UPLOADS_DIR + path.sep)) {
+    throw new Error('Invalid image path');
+  }
+
+  const ext = path.extname(filePath).toLowerCase();
+  const mimeType = IMAGE_MIME_BY_EXT[ext];
+  if (!mimeType) {
+    throw new Error(`Unsupported image type: ${ext}`);
+  }
+
+  const data = await fs.readFile(filePath);
+  return {
+    inlineData: {
+      data: data.toString('base64'),
+      mimeType,
+    },
+  };
+}
+
+async function buildImageParts(images) {
+  const parts = [];
+  for (const image of images || []) {
+    const part = await uploadImageToGeminiPart(image);
+    if (part) parts.push(part);
+  }
+  return parts;
+}
+
+function examPackageToText(examPackage) {
+  if (!examPackage) return '';
+  const mc = (examPackage.questions?.multipleChoice || []).map((q, i) => {
+    const options = ['A', 'B', 'C', 'D'].map(key => `${key}. ${q.options?.[key] || ''}`).join('\n');
+    return `Câu ${q.number || i + 1}. ${q.question || ''}\n${options}`;
+  });
+  const essay = (examPackage.questions?.essay || []).map((q, i) => {
+    return `Bài ${i + 1}. ${q.question || ''}`;
+  });
+  const answer = [
+    ...(examPackage.questions?.multipleChoice || []).map((q, i) => `Câu ${q.number || i + 1}: ${q.answer || ''}`),
+    ...(examPackage.questions?.essay || []).map((q, i) => `Bài ${i + 1}: ${q.solution || ''}`),
+  ];
+  return [
+    examPackage.title || '',
+    mc.length ? 'I. Trắc nghiệm\n' + mc.join('\n\n') : '',
+    essay.length ? 'II. Tự luận\n' + essay.join('\n\n') : '',
+    answer.length ? 'Đáp án tham khảo\n' + answer.join('\n') : '',
+  ].filter(Boolean).join('\n\n');
+}
+
+function maxScoreForQuestion(exam, questionOrder) {
+  const mc = exam.examPackage?.questions?.multipleChoice || [];
+  const essay = exam.examPackage?.questions?.essay || [];
+  if (mc.length || essay.length) {
+    if (questionOrder <= mc.length) return Number(mc[questionOrder - 1]?.points) || 0;
+    return Number(essay[questionOrder - mc.length - 1]?.points) || 0;
+  }
+
+  if (exam.examPackage?.matrix?.length) {
+    const levels = exam.examPackage.cognitiveLevels || [];
+    let cursor = 1;
+    for (const row of exam.examPackage.matrix) {
+      for (const level of levels) {
+        for (const type of ['tn', 'tl']) {
+          const cell = row[type]?.[level.key || level.name];
+          const count = Number(cell?.count) || 0;
+          const pointEach = count > 0 ? (Number(cell?.points) || 0) / count : 0;
+          if (questionOrder >= cursor && questionOrder < cursor + count) return pointEach;
+          cursor += count;
+        }
+      }
+    }
+  }
+
+  const level = (exam.levels || []).find((l) => questionOrder >= l.fromQuestion && questionOrder <= l.toQuestion);
+  if (!level) return 0;
+  const count = level.toQuestion - level.fromQuestion + 1;
+  return count > 0 ? level.totalPoints / count : 0;
+}
+
+function maxScoreForExam(exam) {
+  if (exam.examPackage?.totals?.totalPoints) return Number(exam.examPackage.totals.totalPoints) || 0;
+  const fromQuestions = [
+    ...(exam.examPackage?.questions?.multipleChoice || []),
+    ...(exam.examPackage?.questions?.essay || []),
+  ].reduce((sum, question) => sum + (Number(question.points) || 0), 0);
+  if (fromQuestions > 0) return Number(fromQuestions.toFixed(2));
+  return (exam.levels || []).reduce((sum, level) => sum + (Number(level.totalPoints) || 0), 0);
+}
+
+function pickClassForStudent(exam, studentId) {
+  return (exam.classSchedules || []).find((schedule) => {
+    const cls = schedule.class;
+    const students = cls?.students || [];
+    return students.some((student) => String(student?._id || student) === String(studentId));
+  })?.class?._id || (exam.classSchedules || []).find((schedule) => schedule.class)?.class?._id || undefined;
 }
 
 function normalizeExamForAdmin(examDoc) {
@@ -196,7 +336,7 @@ const getExamById = async (req, res) => {
 const createExam = async (req, res) => {
   try {
     console.log('[createExam] classSchedules received:', JSON.stringify(req.body.classSchedules));
-    const allowed = ['title', 'content', 'lesson', 'level', 'totalQuestions', 'isTemplate', 'note', 'levels', 'classSchedules'];
+    const allowed = ['title', 'content', 'lesson', 'level', 'totalQuestions', 'isTemplate', 'note', 'levels', 'classSchedules', 'examPackage'];
     const data = {};
     allowed.forEach(field => { if (field in req.body) data[field] = req.body[field]; });
     data.createdBy = req.user._id;
@@ -211,7 +351,7 @@ const createExam = async (req, res) => {
 const updateExam = async (req, res) => {
   try {
     console.log('[updateExam] classSchedules received:', JSON.stringify(req.body.classSchedules));
-    const allowed = ['title', 'content', 'lesson', 'level', 'totalQuestions', 'isTemplate', 'note', 'levels', 'classSchedules'];
+    const allowed = ['title', 'content', 'lesson', 'level', 'totalQuestions', 'isTemplate', 'note', 'levels', 'classSchedules', 'examPackage'];
     const $set = {};
     allowed.forEach(field => {
       if (field in req.body) $set[field] = req.body[field];
@@ -270,14 +410,22 @@ const saveExamResult = async (req, res) => {
     const User = require('../models/User');
     const student = await User.findById(studentId).select('name email');
 
-    const totalScore = (scores || []).reduce((sum, s) => sum + (s.score || 0), 0);
-    const maxScore = exam.levels.reduce((sum, l) => sum + l.totalPoints, 0);
+    const normalizedScores = [];
+    for (let q = 1; q <= exam.totalQuestions; q += 1) {
+      const found = (scores || []).find((score) => Number(score.questionOrder) === q);
+      normalizedScores.push({
+        questionOrder: q,
+        score: clampScore(found?.score ?? 0, maxScoreForQuestion(exam, q)),
+      });
+    }
+    const totalScore = normalizedScores.reduce((sum, s) => sum + (s.score || 0), 0);
+    const maxScore = maxScoreForExam(exam);
     
     // Lấy cài đặt mức độ từ admin
     const settings = await SiteSettings.findOne({ key: 'default' });
     
     // Sinh nhận xét AI
-    const autoFeedback = await generateAIFeedbackGemini(exam, student, scores || [], settings);
+    const autoFeedback = await generateAIFeedbackGemini(exam, student, normalizedScores, settings);
 
     const result = await ExamResult.findOneAndUpdate(
       { exam: req.params.id, student: studentId },
@@ -288,7 +436,7 @@ const saveExamResult = async (req, res) => {
             const s = (exam.classSchedules || []).find(s => s.class);
             return s ? s.class : undefined;
           })(),
-          scores: scores || [],
+          scores: normalizedScores,
           totalScore,
           maxScore,
           autoFeedback,
@@ -327,6 +475,134 @@ const getStudentResult = async (req, res) => {
 };
 
 // POST /api/exams/student/:id/submit - học sinh nộp ảnh bài làm
+const adminSubmitExamImages = async (req, res) => {
+  try {
+    const { submissionImages } = req.body;
+    const { studentId } = req.params;
+    if (!Array.isArray(submissionImages)) {
+      return res.status(400).json({ message: 'Danh sách ảnh không hợp lệ' });
+    }
+
+    const exam = await Exam.findById(req.params.id).populate('classSchedules.class', 'students');
+    if (!exam) return res.status(404).json({ message: 'Không tìm thấy đề kiểm tra' });
+
+    const normalizedImages = submissionImages
+      .filter((img) => img?.url)
+      .map((img) => ({ url: img.url, uploadedAt: img.uploadedAt || new Date() }));
+
+    const result = await ExamResult.findOneAndUpdate(
+      { exam: req.params.id, student: studentId },
+      {
+        $set: {
+          class: pickClassForStudent(exam, studentId),
+          submissionImages: normalizedImages,
+          submittedAt: normalizedImages.length > 0 ? new Date() : undefined,
+          status: 'pending',
+        },
+        $setOnInsert: {
+          exam: req.params.id,
+          student: studentId,
+        },
+      },
+      { upsert: true, new: true, runValidators: false }
+    )
+      .populate('student', 'name email')
+      .populate('gradedBy', 'name');
+
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+};
+
+const aiGradeExamResult = async (req, res) => {
+  try {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return res.status(400).json({ message: 'GEMINI_API_KEY chưa được cấu hình' });
+    }
+
+    const exam = await Exam.findById(req.params.id)
+      .populate('lesson', 'title')
+      .populate('classSchedules.class', 'students');
+    if (!exam) return res.status(404).json({ message: 'Không tìm thấy đề kiểm tra' });
+
+    const resultDoc = await ExamResult.findOne({ exam: req.params.id, student: req.params.studentId });
+    if (!resultDoc || !resultDoc.submissionImages?.length) {
+      return res.status(400).json({ message: 'Học sinh chưa có ảnh bài làm để AI chấm' });
+    }
+
+    const User = require('../models/User');
+    const student = await User.findById(req.params.studentId).select('name email');
+    const maxScore = maxScoreForExam(exam);
+    const questionMaxScores = [];
+    for (let q = 1; q <= exam.totalQuestions; q++) {
+      questionMaxScores.push({ questionOrder: q, maxScore: +maxScoreForQuestion(exam, q).toFixed(2) });
+    }
+
+    const submissionParts = await buildImageParts(resultDoc.submissionImages);
+    if (submissionParts.length === 0) {
+      return res.status(400).json({ message: 'Không đọc được ảnh bài làm' });
+    }
+
+    const examText = examPackageToText(exam.examPackage) || exam.content || exam.title;
+    const prompt = `Bạn là giáo viên Toán Việt Nam. Hãy chấm bài kiểm tra từ ảnh bài làm của học sinh.
+
+Tên đề: ${exam.title}
+Chủ đề/bài học: ${exam.lesson?.title || ''}
+Học sinh: ${student?.name || 'Học sinh'}
+Tổng điểm: ${maxScore}
+Số câu: ${exam.totalQuestions}
+
+Nội dung đề và đáp án/hướng dẫn chấm nếu có:
+${examText}
+
+Điểm tối đa từng câu:
+${questionMaxScores.map((q) => `- Câu ${q.questionOrder}: ${q.maxScore}`).join('\n')}
+
+Yêu cầu:
+- Chỉ chấm dựa trên ảnh bài làm đính kèm.
+- Nếu không thấy lời giải/câu trả lời của một câu, cho 0 điểm câu đó.
+- Điểm mỗi câu không vượt quá điểm tối đa.
+- Trả về JSON hợp lệ, không markdown, đúng format:
+{"scores":[{"questionOrder":1,"score":0,"note":"nhận xét ngắn"}],"teacherNote":"nhận xét chung ngắn bằng tiếng Việt"}`;
+
+    const responseText = await generateGeminiContent([prompt, ...submissionParts]);
+    const parsed = JSON.parse(extractJSON(responseText));
+    const scores = [];
+    for (let q = 1; q <= exam.totalQuestions; q++) {
+      const raw = (parsed.scores || []).find((s) => Number(s.questionOrder) === q);
+      scores.push({ questionOrder: q, score: clampScore(raw?.score ?? 0, maxScoreForQuestion(exam, q)) });
+    }
+
+    const totalScore = scores.reduce((sum, s) => sum + (s.score || 0), 0);
+    const saved = await ExamResult.findOneAndUpdate(
+      { exam: req.params.id, student: req.params.studentId },
+      {
+        $set: {
+          class: pickClassForStudent(exam, req.params.studentId),
+          scores,
+          totalScore,
+          maxScore,
+          autoFeedback: parsed.teacherNote || generateAutoFeedback(exam, scores),
+          teacherNote: parsed.teacherNote || '',
+          gradedBy: req.user._id,
+          gradedAt: new Date(),
+          status: 'graded',
+        },
+      },
+      { new: true, runValidators: true }
+    )
+      .populate('student', 'name email')
+      .populate('gradedBy', 'name');
+
+    res.json(saved);
+  } catch (err) {
+    console.error('[Exam AI grade] error:', err.message);
+    res.status(400).json({ message: err.message });
+  }
+};
+
 const submitExamImages = async (req, res) => {
   try {
     const { imageUrls } = req.body;
@@ -542,4 +818,19 @@ Yêu cầu:
   }
 };
 
-module.exports = { getExams, getExamById, createExam, updateExam, deleteExam, getExamResults, saveExamResult, getStudentResult, getStudentExams, getStudentExamDetail, submitExamImages, generateSharedPractice };
+module.exports = {
+  getExams,
+  getExamById,
+  createExam,
+  updateExam,
+  deleteExam,
+  getExamResults,
+  saveExamResult,
+  getStudentResult,
+  adminSubmitExamImages,
+  aiGradeExamResult,
+  getStudentExams,
+  getStudentExamDetail,
+  submitExamImages,
+  generateSharedPractice,
+};

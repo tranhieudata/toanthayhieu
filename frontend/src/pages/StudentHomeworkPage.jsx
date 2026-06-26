@@ -225,11 +225,11 @@ export default function StudentHomeworkPage() {
                         <div className="mb-6">
                           <h3 className="font-medium text-gray-900 mb-2">Ảnh đề bài:</h3>
                           <button
-                            onClick={() => setPreviewImage(getUploadUrl(hw.questionImage.url))}
+                            onClick={() => setPreviewImage(getUploadUrl(`${import.meta.env.VITE_API_URL}/${hw.questionImage.url}`))}
                             className="relative inline-block group"
                           >
                             <img
-                              src={getUploadUrl(hw.questionImage.url)}
+                              src={getUploadUrl(`${import.meta.env.VITE_API_URL}/${hw.questionImage.url}`)}
                               alt="Question"
                               className="max-w-md h-auto rounded border border-gray-300 cursor-pointer hover:opacity-75 transition"
                             />
@@ -250,11 +250,11 @@ export default function StudentHomeworkPage() {
                             {sub.submissionImages.map((img, idx) => (
                               <div key={idx} className="relative group">
                                 <button
-                                  onClick={() => setPreviewImage(getUploadUrl(img.url))}
+                                  onClick={() => setPreviewImage(getUploadUrl(`${import.meta.env.VITE_API_URL}/${img.url}`))}
                                   className="w-full relative"
                                 >
                                   <img
-                                    src={getUploadUrl(img.url)}
+                                    src={getUploadUrl(`${import.meta.env.VITE_API_URL}/${img.url}`)}
                                     alt={`Submission ${idx + 1}`}
                                     className="w-full h-32 object-cover rounded border border-gray-300 cursor-pointer hover:opacity-75 transition"
                                   />

@@ -12,16 +12,64 @@ const emptyForm = {
   classId: '',
   lessonId: '',
   questionImage: { url: '' },
+  sourceExam: '',
+  examPackage: null,
+  solutionImages: [],
   answerKey: '',
   maxScore: 10,
   dueDate: '',
 };
+
+function examPackageToHomeworkText(paper) {
+  if (!paper) return '';
+  const mc = (paper.questions?.multipleChoice || []).map((q, index) => {
+    const options = ['A', 'B', 'C', 'D'].map(key => `${key}. ${q.options?.[key] || ''}`).join('\n');
+    return `Câu ${q.number || index + 1}. ${q.question || ''}\n${options}`;
+  });
+  const essay = (paper.questions?.essay || []).map((q, index) => `Bài ${index + 1}. ${q.question || ''}`);
+  return [
+    paper.title || '',
+    mc.length ? `I. Phần trắc nghiệm\n${mc.join('\n\n')}` : '',
+    essay.length ? `II. Phần tự luận\n${essay.join('\n\n')}` : '',
+  ].filter(Boolean).join('\n\n');
+}
+
+function examPackageToAnswerKey(paper) {
+  if (!paper) return '';
+  const mc = (paper.questions?.multipleChoice || []).map((q, index) => `Câu ${q.number || index + 1}: ${q.answer || ''}`);
+  const essay = (paper.questions?.essay || []).map((q, index) => `Bài ${index + 1}: ${q.solution || ''}`);
+  return [...mc, ...essay].filter(Boolean).join('\n');
+}
+
+function getClipboardImageFiles(event) {
+  const clipboard = event.clipboardData;
+  if (!clipboard) return [];
+
+  const fromItems = Array.from(clipboard.items || [])
+    .filter(item => item.kind === 'file' && item.type.startsWith('image/'))
+    .map((item, index) => {
+      const file = item.getAsFile();
+      if (!file) return null;
+      const ext = (file.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
+      return new File([file], file.name || `clipboard-image-${Date.now()}-${index}.${ext}`, {
+        type: file.type,
+        lastModified: Date.now(),
+      });
+    })
+    .filter(Boolean);
+
+  if (fromItems.length > 0) return fromItems;
+
+  return Array.from(clipboard.files || [])
+    .filter(file => file.type.startsWith('image/'));
+}
 
 export default function AdminHomework() {
   const navigate = useNavigate();
   const [homeworks, setHomeworks] = useState([]);
   const [classes, setClasses] = useState([]);
   const [lessons, setLessons] = useState([]);
+  const [examBank, setExamBank] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filterClass, setFilterClass] = useState('');
   const [modal, setModal] = useState(false);
@@ -79,6 +127,7 @@ export default function AdminHomework() {
     loadHomeworks();
     api.get('/classes').then(r => setClasses(r.data || [])).catch(() => {});
     api.get('/lessons').then(r => setLessons(r.data || [])).catch(() => {});
+    api.get('/exams', { params: { isTemplate: 'true' } }).then(r => setExamBank(r.data || [])).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -130,6 +179,9 @@ export default function AdminHomework() {
       classId: hw.class?._id || '',
       lessonId: hw.lesson?._id || '',
       questionImage: hw.questionImage || { url: '' },
+      sourceExam: hw.sourceExam?._id || hw.sourceExam || '',
+      examPackage: hw.examPackage || null,
+      solutionImages: hw.solutionImages || [],
       answerKey: hw.answerKey || '',
       maxScore: hw.maxScore || 10,
       dueDate: hw.dueDate ? hw.dueDate.substring(0, 10) : '',
@@ -140,8 +192,8 @@ export default function AdminHomework() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.title || !form.classId || !form.questionImage?.url) {
-      return toast.error('Vui lòng điền đầy đủ thông tin');
+    if (!form.title || !form.classId || (!form.questionImage?.url && !form.description?.trim() && !form.sourceExam)) {
+      return toast.error('Vui lòng nhập đề bài, chọn từ ngân hàng đề hoặc tải ảnh đề');
     }
 
     setSubmitting(true);
@@ -236,6 +288,54 @@ export default function AdminHomework() {
     return { url: data.url, uploadedAt: new Date() };
   };
 
+  const handleSelectExamFromBank = (examId) => {
+    const selectedExam = examBank.find(exam => exam._id === examId);
+    if (!selectedExam) {
+      setForm(f => ({ ...f, sourceExam: '', examPackage: null }));
+      return;
+    }
+    const description = selectedExam.examPackage
+      ? examPackageToHomeworkText(selectedExam.examPackage)
+      : selectedExam.content || selectedExam.title;
+    const answerKey = selectedExam.examPackage
+      ? examPackageToAnswerKey(selectedExam.examPackage)
+      : '';
+    setForm(f => ({
+      ...f,
+      title: f.title || selectedExam.title,
+      description: description || f.description,
+      sourceExam: selectedExam._id,
+      examPackage: selectedExam.examPackage || null,
+      answerKey: f.answerKey || answerKey,
+      maxScore: selectedExam.levels?.reduce((sum, level) => sum + (level.totalPoints || 0), 0) || f.maxScore,
+    }));
+  };
+
+  const handleSolutionImageUpload = async (files) => {
+    if (!files || files.length === 0) return;
+    try {
+      const uploadedImages = [];
+      for (const file of files) {
+        uploadedImages.push(await uploadHomeworkImage(file));
+      }
+      setForm(f => ({
+        ...f,
+        solutionImages: [...(f.solutionImages || []), ...uploadedImages],
+      }));
+      toast.success('Tải ảnh lời giải thành công');
+    } catch (err) {
+      console.error('Solution image upload error:', err);
+      toast.error(err.response?.data?.message || 'Lỗi tải ảnh lời giải');
+    }
+  };
+
+  const removeSolutionImage = (index) => {
+    setForm(f => ({
+      ...f,
+      solutionImages: (f.solutionImages || []).filter((_, idx) => idx !== index),
+    }));
+  };
+
   const handleAdminImageUpload = async (file) => {
     if (!file) return;
     try {
@@ -285,6 +385,20 @@ export default function AdminHomework() {
       console.error('Add submission images error:', err);
       toast.error(err.response?.data?.message || 'Lỗi thêm ảnh');
     }
+  };
+
+  const handlePasteSubmissionImages = async (event, student, submission) => {
+    const files = getClipboardImageFiles(event);
+    if (files.length === 0) return;
+    event.preventDefault();
+    await handleAddSubmissionImages(files, student, submission);
+  };
+
+  const handlePasteAdminUploadImages = (event) => {
+    const files = getClipboardImageFiles(event);
+    if (files.length === 0) return;
+    event.preventDefault();
+    files.forEach(file => handleAdminImageUpload(file));
   };
 
   const handleReplaceSubmissionImage = async (file, student, submission, imageIndex) => {
@@ -498,7 +612,24 @@ export default function AdminHomework() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Ảnh đề bài *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Chọn từ ngân hàng đề</label>
+                <select
+                  value={form.sourceExam || ''}
+                  onChange={(e) => handleSelectExamFromBank(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">-- Không chọn --</option>
+                  {examBank.map(exam => (
+                    <option key={exam._id} value={exam._id}>{exam.title}</option>
+                  ))}
+                </select>
+                {form.sourceExam && (
+                  <p className="text-xs text-emerald-600 mt-1">Đã lấy nội dung đề từ ngân hàng đề.</p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Ảnh đề bài</label>
                 <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center cursor-pointer hover:border-blue-500">
                   <input
                     type="file"
@@ -540,6 +671,53 @@ export default function AdminHomework() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                   placeholder="Để AI tự động chấm điểm"
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Ảnh lời giải mẫu</label>
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-4">
+                  <label className="flex items-center justify-center gap-2 text-sm text-blue-700 cursor-pointer hover:text-blue-800">
+                    <FiUpload />
+                    Tải ảnh lời giải
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        handleSolutionImageUpload(Array.from(e.target.files || []));
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+                  {form.solutionImages?.length > 0 && (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-3">
+                      {form.solutionImages.map((img, index) => (
+                        <div key={`${img.url}-${index}`} className="relative group">
+                          <button
+                            type="button"
+                            onClick={() => setPreviewImage(getUploadUrl(img.url))}
+                            className="w-full"
+                          >
+                            <img
+                              src={getUploadUrl(img.url)}
+                              alt={`Lời giải ${index + 1}`}
+                              className="w-full h-28 object-cover rounded-lg border border-gray-200"
+                            />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => removeSolutionImage(index)}
+                            className="absolute top-1 right-1 p-1 bg-red-600 text-white rounded-full opacity-0 group-hover:opacity-100"
+                            title="Xóa ảnh"
+                          >
+                            <FiX size={12} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -664,9 +842,16 @@ export default function AdminHomework() {
                               <>
                                 {/* Submission images */}
                                 {submission.submissionImages && submission.submissionImages.length > 0 && (
-                                  <div>
+                                  <div
+                                    tabIndex={0}
+                                    onPaste={(event) => handlePasteSubmissionImages(event, student, submission)}
+                                    className="rounded-lg outline-none focus:ring-2 focus:ring-green-300"
+                                  >
                                     <div className="flex items-center justify-between gap-3 mb-2">
-                                      <p className="font-medium text-gray-700">Bài làm:</p>
+                                      <div>
+                                        <p className="font-medium text-gray-700">Bài làm:</p>
+                                        <p className="text-xs text-gray-400">Bấm vào vùng này rồi Ctrl+V để dán ảnh</p>
+                                      </div>
                                       <label className="inline-flex items-center gap-1 px-3 py-1.5 text-sm bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 cursor-pointer">
                                         <FiUpload size={14} /> Thêm ảnh
                                         <input
@@ -727,9 +912,14 @@ export default function AdminHomework() {
                                 )}
 
                                 {(!submission.submissionImages || submission.submissionImages.length === 0) && (
-                                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
+                                  <div
+                                    tabIndex={0}
+                                    onPaste={(event) => handlePasteSubmissionImages(event, student, submission)}
+                                    className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center outline-none focus:ring-2 focus:ring-green-300"
+                                  >
                                     <FiImage size={28} className="mx-auto text-gray-400 mb-2" />
                                     <p className="text-sm text-gray-600 mb-3">Bài làm chưa có ảnh</p>
+                                    <p className="mb-3 text-xs text-gray-400">Bấm vào khung rồi Ctrl+V để dán ảnh</p>
                                     <label className="inline-flex items-center gap-2 px-3 py-2 bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 cursor-pointer">
                                       <FiUpload /> Thêm ảnh
                                       <input
@@ -940,7 +1130,11 @@ export default function AdminHomework() {
                                       <label className="block text-sm font-medium text-gray-700 mb-2">
                                         Ảnh bài làm *
                                       </label>
-                                      <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center cursor-pointer hover:border-blue-500">
+                                      <div
+                                        tabIndex={0}
+                                        onPaste={handlePasteAdminUploadImages}
+                                        className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center cursor-pointer hover:border-blue-500 outline-none focus:ring-2 focus:ring-blue-300"
+                                      >
                                         <input
                                           type="file"
                                           accept="image/*"
@@ -959,6 +1153,7 @@ export default function AdminHomework() {
                                         <label htmlFor={`admin-upload-${student._id}`} className="cursor-pointer block">
                                           <FiImage size={32} className="mx-auto text-gray-400 mb-2" />
                                           <p className="text-sm text-gray-600">Tải lên ảnh bài làm</p>
+                                          <p className="mt-1 text-xs text-gray-400">Hoặc bấm vào khung rồi Ctrl+V để dán ảnh</p>
                                         </label>
                                       </div>
                                     </div>
