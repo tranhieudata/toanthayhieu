@@ -26,6 +26,7 @@ import AdminContentManager from './pages/admin/AdminContentManager';
 import AdminTuition from './pages/admin/AdminTuition';
 import AdminRevenue from './pages/admin/AdminRevenue';
 import AdminSettings from './pages/admin/AdminSettings';
+import AdminLessons from './pages/admin/AdminLessons';
 import AdminLessonEditor from './pages/admin/AdminLessonEditor';
 import AdminExams from './pages/admin/AdminExams';
 import AdminExamEditor from './pages/admin/AdminExamEditor';
@@ -71,6 +72,7 @@ function App() {
           <Route path="/admin" element={<AdminRoute><AdminLayout /></AdminRoute>}>
             <Route index element={<AdminDashboard />} />
             <Route path="content" element={<AdminContentManager />} />
+            <Route path="lessons" element={<AdminLessons />} />
             <Route path="lessons/new" element={<AdminLessonEditor />} />
             <Route path="lessons/:id/edit" element={<AdminLessonEditor />} />
             <Route path="students" element={<AdminStudents />} />

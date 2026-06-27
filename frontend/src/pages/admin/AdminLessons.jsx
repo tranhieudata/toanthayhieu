@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '../../api/axios';
 import toast from 'react-hot-toast';
 import { FiPlus, FiEdit2, FiTrash2, FiX, FiToggleLeft, FiToggleRight } from 'react-icons/fi';
@@ -6,6 +7,7 @@ import { FiPlus, FiEdit2, FiTrash2, FiX, FiToggleLeft, FiToggleRight } from 'rea
 const emptyForm = { title: '', content: '', videoUrl: '', course: '', order: 0, duration: '', isPublished: false };
 
 export default function AdminLessons() {
+  const navigate = useNavigate();
   const [lessons, setLessons] = useState([]);
   const [courses, setCourses] = useState([]);
   const [modal, setModal] = useState(false);
@@ -20,10 +22,9 @@ export default function AdminLessons() {
     api.get('/courses/admin/all').then(res => setCourses(res.data));
   }, []);
 
-  const openCreate = () => { setForm(emptyForm); setEditId(null); setModal(true); };
+  const openCreate = () => { navigate('/admin/lessons/new'); };
   const openEdit = (l) => {
-    setForm({ title: l.title, content: l.content, videoUrl: l.videoUrl, course: l.course?._id || l.course, order: l.order, duration: l.duration, isPublished: l.isPublished });
-    setEditId(l._id); setModal(true);
+    navigate(`/admin/lessons/${l._id}/edit`);
   };
 
   const handleSubmit = async (e) => {

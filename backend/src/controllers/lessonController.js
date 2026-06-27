@@ -5,6 +5,7 @@ const Class = require('../models/Class');
 const Exam = require('../models/Exam');
 const ExamResult = require('../models/ExamResult');
 const { hasAccessToCourse } = require('../utils/accessControl');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 function isLessonOpenForClass(lessonSetting, now = new Date()) {
   if (!lessonSetting) return false;
@@ -220,6 +221,150 @@ const toggleLessonStatus = async (req, res) => {
   }
 };
 
+function stripCodeFence(text = '') {
+  return text
+    .replace(/^```(?:html)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+}
+
+function normalizeLessonHtml(html = '') {
+  return stripCodeFence(html)
+    .replace(/<p>(?:\s|&nbsp;|<br\s*\/?>)*<\/p>/gi, '')
+    .replace(/<div>(?:\s|&nbsp;|<br\s*\/?>)*<\/div>/gi, '')
+    .replace(/(?:<br\s*\/?>\s*){2,}/gi, '<br>')
+    .replace(/>\s+</g, '><')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+function buildLessonPrompt({ title, description, courseTitle, courseDescription, grade, chapter, topic }) {
+  return `
+Bạn là giáo viên Toán Việt Nam giàu kinh nghiệm. Hãy soạn nội dung bài học dạng HTML để nhúng vào trình soạn thảo rich text.
+
+Thông tin bài học:
+- Tiêu đề: ${title}
+- Mô tả chuyên đề học: ${description || 'Không có'}
+- Khóa học: ${courseTitle || 'Không rõ'}
+- Mô tả khóa học: ${courseDescription || 'Không có'}
+- Lớp: ${grade}
+- Phụ lục/chương: ${chapter}
+- Chủ đề: ${topic}
+
+Yêu cầu nội dung:
+1. Chỉ trả về HTML hợp lệ, không dùng Markdown, không bọc trong \`\`\`.
+2. Có các thẻ h2, h3, p, ul/ol phù hợp với Quill editor.
+3. Gồm phần mục tiêu, lý thuyết trọng tâm, ví dụ mẫu có lời giải, lỗi sai thường gặp.
+4. Trong phần lý thuyết phải có một mục "Luyện tập nhỏ" gồm 3-5 câu hỏi ngắn kèm đáp án/hướng dẫn ngay dưới mỗi câu.
+5. Công thức toán viết bằng LaTeX trong dấu $...$ hoặc $$...$$.
+6. Văn phong rõ ràng, phù hợp học sinh lớp ${grade}, không quá dài, ưu tiên tính sư phạm, khoảng cách dòng sát nhau. Những công thức căn vào giữa trang.
+7.Phần I: Kiến thức cần nhớ, Phần II : Dạng bài tập. 
+Phần II có ít nhất 3 dạng bài tập đủ dạng từ cơ bản đến nâng cao, mỗi dạng có 2 ví dụ mẫu kèm lời giải chi tiết. Mỗi ví dụ mẫu có 1 câu hỏi và 1 lời giải. Nội dung phải phù hợp với chủ đề ${topic} trong chương ${chapter} của lớp ${grade}
+Phần III : Bài Tập Về Nhà.
+`.trim();
+}
+
+async function generateWithGemini(prompt) {
+  if (!process.env.GEMINI_API_KEY) {
+    const error = new Error('Chưa cấu hình GEMINI_API_KEY');
+    error.status = 400;
+    throw error;
+  }
+
+  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+  const model = genAI.getGenerativeModel({
+    model: process.env.GEMINI_MODEL || 'gemini-3.5-flash',
+    generationConfig: {
+      temperature: 0.7,
+      maxOutputTokens: 5000,
+    },
+  });
+
+  const result = await model.generateContent(prompt);
+  return result.response.text();
+}
+
+async function generateWithOpenAI(prompt) {
+  if (!process.env.OPENAI_API_KEY) {
+    const error = new Error('Chưa cấu hình OPENAI_API_KEY');
+    error.status = 400;
+    throw error;
+  }
+
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+      temperature: 0.7,
+      messages: [
+        {
+          role: 'system',
+          content: 'Bạn chỉ trả về HTML hợp lệ để nhúng vào trình soạn thảo bài học.',
+        },
+        { role: 'user', content: prompt },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    let message = 'Không thể gọi OpenAI';
+    try {
+      const errorBody = await response.json();
+      message = errorBody.error?.message || message;
+    } catch {}
+    const error = new Error(message);
+    error.status = response.status;
+    throw error;
+  }
+
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content || '';
+}
+
+// POST /api/lessons/generate-content (admin)
+const generateLessonContent = async (req, res) => {
+  try {
+    const { provider, title, description, course, grade, chapter, topic } = req.body;
+    if (!['gemini', 'openai'].includes(provider)) {
+      return res.status(400).json({ message: 'Vui lòng chọn Gemini hoặc ChatGPT' });
+    }
+    if (!title?.trim()) return res.status(400).json({ message: 'Tiêu đề bài học là bắt buộc' });
+    if (!grade || !chapter || !topic) {
+      return res.status(400).json({ message: 'Vui lòng chọn lớp, phụ lục và chủ đề' });
+    }
+
+    let courseDoc = null;
+    if (course) {
+      courseDoc = await Course.findById(course).select('title description').lean();
+    }
+
+    const prompt = buildLessonPrompt({
+      title: title.trim(),
+      description,
+      courseTitle: courseDoc?.title,
+      courseDescription: courseDoc?.description,
+      grade,
+      chapter,
+      topic,
+    });
+
+    const rawContent = provider === 'gemini'
+      ? await generateWithGemini(prompt)
+      : await generateWithOpenAI(prompt);
+
+    const content = normalizeLessonHtml(rawContent);
+    if (!content) return res.status(502).json({ message: 'AI chưa trả về nội dung phù hợp' });
+
+    res.json({ content });
+  } catch (err) {
+    res.status(err.status || 500).json({ message: err.message || 'Lỗi khi sinh nội dung AI' });
+  }
+};
+
 // POST /api/lessons/:id/criteria  (thêm tiêu chí đánh giá)
 const addCriteria = async (req, res) => {
   try {
@@ -265,4 +410,4 @@ const deleteCriteria = async (req, res) => {
   }
 };
 
-module.exports = { getLessons, getLessonById, createLesson, updateLesson, deleteLesson, toggleLessonStatus, addCriteria, updateCriteria, deleteCriteria };
+module.exports = { getLessons, getLessonById, createLesson, updateLesson, deleteLesson, toggleLessonStatus, generateLessonContent, addCriteria, updateCriteria, deleteCriteria };

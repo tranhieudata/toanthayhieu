@@ -2,11 +2,22 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import api from '../../api/axios';
 import toast from 'react-hot-toast';
-import { FiArrowLeft, FiSave, FiClock, FiPlus, FiTrash2, FiEdit2, FiCheck, FiX } from 'react-icons/fi';
+import { FiArrowLeft, FiSave, FiClock, FiPlus, FiTrash2, FiEdit2, FiCheck, FiX, FiCpu, FiZap } from 'react-icons/fi';
 import RichTextEditor from '../../components/RichTextEditor';
 import PdfUploader from '../../components/PdfUploader';
+import VN_MATH_CURRICULUM from '../../utils/vnMathCurriculum';
 
 const AUTO_SAVE_INTERVAL = 30_000; // 30 giây
+
+function normalizeLessonHtml(html = '') {
+  return html
+    .replace(/<p>(?:\s|&nbsp;|<br\s*\/?>)*<\/p>/gi, '')
+    .replace(/<div>(?:\s|&nbsp;|<br\s*\/?>)*<\/div>/gi, '')
+    .replace(/(?:<br\s*\/?>\s*){2,}/gi, '<br>')
+    .replace(/>\s+</g, '><')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
 
 const emptyLesson = {
   title: '',
@@ -27,11 +38,21 @@ export default function AdminLessonEditor() {
 
   const [form, setForm] = useState(emptyLesson);
   const [courseName, setCourseName] = useState('');
+  const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(!!id);
   const [autoSaving, setAutoSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState(null);
   const [draftId, setDraftId] = useState(null); // ID bài học nháp tạo ra khi auto-save bài mới
+  const [aiForm, setAiForm] = useState({
+    provider: '',
+    grade: '',
+    chapter: '',
+    topic: '',
+    description: '',
+    mode: 'replace',
+  });
+  const [aiGenerating, setAiGenerating] = useState(false);
 
   const formRef = useRef(form);
   const draftIdRef = useRef(null);
@@ -48,6 +69,15 @@ export default function AdminLessonEditor() {
   const [critSaving, setCritSaving] = useState(false);
 
   const isEdit = !!id;
+  const currentCourseId = isEdit ? form.course : (form.course || courseId);
+  const curriculumGrades = Object.keys(VN_MATH_CURRICULUM);
+  const curriculumForGrade = aiForm.grade ? VN_MATH_CURRICULUM[aiForm.grade] : null;
+  const chapters = curriculumForGrade ? Object.keys(curriculumForGrade) : [];
+  const topics = aiForm.chapter ? curriculumForGrade?.[aiForm.chapter] || [] : [];
+
+  useEffect(() => {
+    api.get('/courses/admin/all').then(res => setCourses(res.data || [])).catch(() => setCourses([]));
+  }, []);
 
   useEffect(() => {
     if (isEdit) {
@@ -72,9 +102,24 @@ export default function AdminLessonEditor() {
         .catch(() => toast.error('Không tải được bài học'))
         .finally(() => setFetching(false));
     } else if (courseId) {
+      setForm(prev => ({ ...prev, course: courseId }));
       api.get(`/courses/${courseId}`).then(r => setCourseName(r.data.title)).catch(() => {});
     }
   }, [id, courseId, isEdit]);
+
+  useEffect(() => {
+    if (!courseName || aiForm.grade) return;
+    const match = courseName.match(/(?:lớp|lop|khối|khoi)\s*(6|7|8|9|10|11|12)\b/i) || courseName.match(/\b(6|7|8|9|10|11|12)\b/);
+    if (match?.[1] && VN_MATH_CURRICULUM[match[1]]) {
+      setAiForm(prev => ({ ...prev, grade: match[1] }));
+    }
+  }, [courseName, aiForm.grade]);
+
+  useEffect(() => {
+    if (!currentCourseId || courseId || isEdit) return;
+    const selected = courses.find(course => course._id === currentCourseId);
+    setCourseName(selected?.title || '');
+  }, [currentCourseId, courses, courseId, isEdit]);
 
   // Load criteria khi edit
   useEffect(() => {
@@ -89,7 +134,7 @@ export default function AdminLessonEditor() {
       const f = formRef.current;
       if (!f.title.trim()) return; // Không lưu nháp nếu chưa có tiêu đề
 
-      const courseIdToUse = isEdit ? f.course : courseId;
+      const courseIdToUse = isEdit ? f.course : (f.course || courseId);
       if (!courseIdToUse) return;
 
       setAutoSaving(true);
@@ -174,11 +219,45 @@ export default function AdminLessonEditor() {
     }
   };
 
+  const handleGenerateLessonContent = async () => {
+    if (!form.title.trim()) return toast.error('Nhập tiêu đề bài học trước khi tạo bằng AI');
+    if (!aiForm.provider) return toast.error('Chọn mô hình AI');
+    if (!aiForm.grade || !aiForm.chapter || !aiForm.topic) {
+      return toast.error('Chọn lớp, phụ lục và chủ đề');
+    }
+
+    setAiGenerating(true);
+    try {
+      const { data } = await api.post('/lessons/generate-content', {
+        provider: aiForm.provider,
+        title: form.title,
+        description: aiForm.description,
+        course: currentCourseId,
+        grade: aiForm.grade,
+        chapter: aiForm.chapter,
+        topic: aiForm.topic,
+      });
+
+      const generatedContent = normalizeLessonHtml(data.content || '');
+      setForm(prev => ({
+        ...prev,
+        content: aiForm.mode === 'append' && prev.content
+          ? normalizeLessonHtml(`${prev.content}<hr>${generatedContent}`)
+          : generatedContent,
+      }));
+      toast.success('Đã chèn nội dung AI vào bài học');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Không thể tạo nội dung AI');
+    } finally {
+      setAiGenerating(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     try {
-      const courseIdToUse = isEdit ? form.course : courseId;
+      const courseIdToUse = isEdit ? form.course : (form.course || courseId);
       if (!courseIdToUse) {
         toast.error('Vui lòng chọn khóa học');
         setLoading(false);
@@ -221,7 +300,7 @@ export default function AdminLessonEditor() {
       {/* Header */}
       <div className="flex items-center gap-4 mb-6">
         <button
-          onClick={() => navigate(`/admin/content?course=${isEdit ? form.course : courseId}`)}
+          onClick={() => navigate(currentCourseId ? `/admin/content?course=${currentCourseId}` : '/admin/content')}
           className="flex items-center gap-2 text-gray-500 hover:text-gray-800 text-sm transition-colors"
         >
           <FiArrowLeft size={16} /> Quay lại
@@ -257,6 +336,25 @@ export default function AdminLessonEditor() {
               required
             />
           </div>
+
+          {!isEdit && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Khóa học *</label>
+              <select
+                className="input-field"
+                value={form.course || courseId || ''}
+                onChange={e => {
+                  const selected = courses.find(course => course._id === e.target.value);
+                  setForm(prev => ({ ...prev, course: e.target.value }));
+                  setCourseName(selected?.title || '');
+                }}
+                required
+              >
+                <option value="">Chọn khóa học</option>
+                {courses.map(course => <option key={course._id} value={course._id}>{course.title}</option>)}
+              </select>
+            </div>
+          )}
 
           {/* Video URL */}
           <div>
@@ -302,6 +400,112 @@ export default function AdminLessonEditor() {
               </label>
             </div>
           </div>
+        </div>
+
+        {/* AI content generator */}
+        <div className="card p-6 space-y-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                <FiCpu className="text-blue-600" /> Tạo nội dung bằng AI
+              </h2>
+              <p className="text-xs text-gray-500 mt-1">Chọn mô hình, phụ lục và chủ đề để sinh lý thuyết kèm luyện tập nhỏ.</p>
+            </div>
+            <select
+              className="input-field max-w-[220px]"
+              value={aiForm.provider}
+              onChange={e => setAiForm(prev => ({ ...prev, provider: e.target.value }))}
+            >
+              <option value="">Tạo thủ công</option>
+              <option value="gemini">Gemini</option>
+              <option value="openai">ChatGPT</option>
+            </select>
+          </div>
+
+          {aiForm.provider && (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Mô tả chuyên đề học</label>
+                <textarea
+                  className="input-field resize-none"
+                  rows={3}
+                  placeholder="Ví dụ: Học sinh cần nắm định nghĩa, cách nhận biết và vận dụng vào bài tập cơ bản..."
+                  value={aiForm.description}
+                  onChange={e => setAiForm(prev => ({ ...prev, description: e.target.value }))}
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Lớp *</label>
+                  <select
+                    className="input-field"
+                    value={aiForm.grade}
+                    onChange={e => setAiForm(prev => ({ ...prev, grade: e.target.value, chapter: '', topic: '' }))}
+                  >
+                    <option value="">Chọn lớp</option>
+                    {curriculumGrades.map(grade => <option key={grade} value={grade}>Lớp {grade}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Phụ lục *</label>
+                  <select
+                    className="input-field"
+                    value={aiForm.chapter}
+                    onChange={e => setAiForm(prev => ({ ...prev, chapter: e.target.value, topic: '' }))}
+                    disabled={!aiForm.grade}
+                  >
+                    <option value="">Chọn phụ lục</option>
+                    {chapters.map(chapter => <option key={chapter} value={chapter}>{chapter}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Chủ đề *</label>
+                  <select
+                    className="input-field"
+                    value={aiForm.topic}
+                    onChange={e => setAiForm(prev => ({ ...prev, topic: e.target.value }))}
+                    disabled={!aiForm.chapter}
+                  >
+                    <option value="">Chọn chủ đề</option>
+                    {topics.map(topic => <option key={topic} value={topic}>{topic}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+                <div className="flex items-center gap-4 text-sm text-gray-700">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="ai-insert-mode"
+                      checked={aiForm.mode === 'replace'}
+                      onChange={() => setAiForm(prev => ({ ...prev, mode: 'replace' }))}
+                    />
+                    Ghi đè nội dung
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="ai-insert-mode"
+                      checked={aiForm.mode === 'append'}
+                      onChange={() => setAiForm(prev => ({ ...prev, mode: 'append' }))}
+                    />
+                    Nối vào cuối
+                  </label>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleGenerateLessonContent}
+                  disabled={aiGenerating || !form.title.trim() || !aiForm.grade || !aiForm.chapter || !aiForm.topic}
+                  className="btn-primary flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  <FiZap size={16} />
+                  {aiGenerating ? 'Đang tạo...' : 'Sinh và chèn nội dung'}
+                </button>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Nội dung - Rich Text Editor */}

@@ -1,9 +1,130 @@
-import { useState, useEffect } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api, { getUploadUrl } from '../api/axios';
 import toast from 'react-hot-toast';
-import { FiUpload, FiX, FiCheck, FiClock, FiBook, FiEye, FiEdit2 } from 'react-icons/fi';
+import { FiUpload, FiX, FiCheck, FiClock, FiBook, FiEye, FiEdit2, FiTrendingUp, FiTrendingDown, FiMinus, FiBarChart2 } from 'react-icons/fi';
 import { compressImageFile } from '../utils/imageCompression';
+
+function HomeworkScoreChart({ data }) {
+  const [hovered, setHovered] = useState(null);
+  const W = 640;
+  const H = 230;
+  const pL = 42;
+  const pR = 18;
+  const pT = 26;
+  const pB = 48;
+  const cW = W - pL - pR;
+  const cH = H - pT - pB;
+  const grid = [0, 2.5, 5, 7.5, 10];
+  const n = data.length;
+  const getX = (i) => n > 1 ? pL + (i / (n - 1)) * cW : pL + cW / 2;
+  const getY = (score) => pT + cH - (score / 10) * cH;
+  const fmtDate = (date) => new Date(date).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
+  const scoreColor = (score) => score >= 8 ? '#16a34a' : score >= 6.5 ? '#2563eb' : score >= 5 ? '#f59e0b' : '#ef4444';
+
+  const points = data.map((item, index) => ({ x: getX(index), y: getY(item.score10) }));
+  const linePath = points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(' ');
+  const areaPath = n > 1
+    ? `${linePath} L ${points[n - 1].x.toFixed(1)} ${(pT + cH).toFixed(1)} L ${points[0].x.toFixed(1)} ${(pT + cH).toFixed(1)} Z`
+    : '';
+
+  if (n === 0) {
+    return (
+      <div className="h-36 flex flex-col items-center justify-center gap-2 text-sm text-gray-400">
+        <FiBarChart2 size={30} className="text-gray-300" />
+        Chưa có bài tập nào được chấm điểm để vẽ biểu đồ
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative w-full overflow-visible">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full block">
+        <defs>
+          <linearGradient id="homeworkScoreFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#2563eb" stopOpacity="0.2" />
+            <stop offset="100%" stopColor="#2563eb" stopOpacity="0.02" />
+          </linearGradient>
+          <filter id="homeworkScoreShadow">
+            <feDropShadow dx="0" dy="2" stdDeviation="2" floodOpacity="0.18" />
+          </filter>
+        </defs>
+
+        {grid.map(value => (
+          <g key={value}>
+            <line
+              x1={pL}
+              y1={getY(value)}
+              x2={W - pR}
+              y2={getY(value)}
+              stroke={value === 0 ? '#d1d5db' : '#edf2f7'}
+              strokeWidth={value === 0 ? 1.5 : 1}
+            />
+            <text x={pL - 7} y={getY(value) + 4} textAnchor="end" fontSize="10" fill="#9ca3af">
+              {value}
+            </text>
+          </g>
+        ))}
+
+        {n > 1 && <path d={areaPath} fill="url(#homeworkScoreFill)" />}
+        {n > 1 && <path d={linePath} fill="none" stroke="#2563eb" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
+
+        {data.map((item, index) => {
+          const point = points[index];
+          const color = scoreColor(item.score10);
+          const isHovered = hovered === index;
+          const ttW = 170;
+          const ttH = 58;
+          let tx = point.x - ttW / 2;
+          if (tx < pL) tx = pL;
+          if (tx + ttW > W - pR) tx = W - pR - ttW;
+          const ty = point.y - ttH - 12 < pT ? point.y + 14 : point.y - ttH - 12;
+
+          return (
+            <g
+              key={item.id}
+              onMouseEnter={() => setHovered(index)}
+              onMouseLeave={() => setHovered(null)}
+              className="cursor-pointer"
+            >
+              <circle cx={point.x} cy={point.y} r={16} fill="transparent" />
+              <circle
+                cx={point.x}
+                cy={point.y}
+                r={isHovered ? 7 : 5}
+                fill="white"
+                stroke={color}
+                strokeWidth="2.5"
+                filter={isHovered ? 'url(#homeworkScoreShadow)' : undefined}
+              />
+              <text x={point.x} y={point.y - 10} textAnchor="middle" fontSize="10" fontWeight="700" fill={color}>
+                {item.score10}/10
+              </text>
+              <text x={point.x} y={H - 10} textAnchor="middle" fontSize="10" fill="#9ca3af">
+                {fmtDate(item.date)}
+              </text>
+
+              {isHovered && (
+                <g>
+                  <rect x={tx} y={ty} width={ttW} height={ttH} rx="6" fill="white" stroke="#e5e7eb" filter="url(#homeworkScoreShadow)" />
+                  <text x={tx + ttW / 2} y={ty + 17} textAnchor="middle" fontSize="11" fontWeight="700" fill={color}>
+                    {item.score}/{item.maxScore} điểm
+                  </text>
+                  <text x={tx + ttW / 2} y={ty + 33} textAnchor="middle" fontSize="10" fill="#6b7280">
+                    {item.title.length > 24 ? `${item.title.slice(0, 22)}...` : item.title}
+                  </text>
+                  <text x={tx + ttW / 2} y={ty + 48} textAnchor="middle" fontSize="9.5" fill="#9ca3af">
+                    {new Date(item.date).toLocaleDateString('vi-VN')}
+                  </text>
+                </g>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
 
 export default function StudentHomeworkPage() {
   const { user } = useAuth();
@@ -14,6 +135,87 @@ export default function StudentHomeworkPage() {
   const [expandedHw, setExpandedHw] = useState(null);
   const [uploadingImages, setUploadingImages] = useState({});
   const [previewImage, setPreviewImage] = useState(null);
+
+  const scoreChartData = useMemo(() => {
+    return homeworks
+      .map((hw) => {
+        const sub = submissions[hw._id];
+        const score = Number(sub?.score);
+        const maxScore = Number(sub?.maxScore || hw.maxScore || 10);
+        if (sub?.status !== 'graded' || !Number.isFinite(score) || !Number.isFinite(maxScore) || maxScore <= 0) {
+          return null;
+        }
+
+        const date = sub.gradedAt || sub.updatedAt || sub.submittedAt || hw.createdAt;
+        return {
+          id: hw._id,
+          title: hw.title,
+          date,
+          score,
+          maxScore,
+          score10: Math.round((score / maxScore) * 100) / 10,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => new Date(a.date) - new Date(b.date));
+  }, [homeworks, submissions]);
+
+  const scoreSummary = useMemo(() => {
+    if (scoreChartData.length === 0) {
+      return {
+        avg: 0,
+        latest: null,
+        trend: 'empty',
+        text: 'Chưa có dữ liệu',
+        note: 'Khi có bài đã chấm, biểu đồ sẽ thể hiện điểm theo thời gian.',
+        color: 'text-gray-600',
+        bg: 'bg-gray-100',
+        icon: FiBarChart2,
+      };
+    }
+
+    const avg = scoreChartData.reduce((sum, item) => sum + item.score10, 0) / scoreChartData.length;
+    const latest = scoreChartData[scoreChartData.length - 1];
+    const previous = scoreChartData[scoreChartData.length - 2];
+    const delta = previous ? latest.score10 - previous.score10 : 0;
+
+    if (!previous || Math.abs(delta) < 0.3) {
+      return {
+        avg,
+        latest,
+        trend: 'stable',
+        text: 'Đang ổn định',
+        note: previous ? 'Điểm gần đây không thay đổi nhiều so với bài trước.' : 'Cần thêm bài đã chấm để nhận xét xu hướng rõ hơn.',
+        color: 'text-blue-700',
+        bg: 'bg-blue-50',
+        icon: FiMinus,
+      };
+    }
+
+    if (delta > 0) {
+      return {
+        avg,
+        latest,
+        trend: 'up',
+        text: 'Đang tiến bộ',
+        note: `Bài gần nhất tăng ${delta.toFixed(1)} điểm trên thang 10 so với bài trước.`,
+        color: 'text-green-700',
+        bg: 'bg-green-50',
+        icon: FiTrendingUp,
+      };
+    }
+
+    return {
+      avg,
+      latest,
+      trend: 'down',
+      text: 'Có dấu hiệu giảm',
+      note: `Bài gần nhất giảm ${Math.abs(delta).toFixed(1)} điểm trên thang 10 so với bài trước.`,
+      color: 'text-amber-700',
+      bg: 'bg-amber-50',
+      icon: FiTrendingDown,
+    };
+  }, [scoreChartData]);
 
   const loadHomeworks = async () => {
     setLoading(true);
@@ -161,6 +363,8 @@ export default function StudentHomeworkPage() {
     );
   }
 
+  const TrendIcon = scoreSummary.icon;
+
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4">
       <div className="max-w-4xl mx-auto">
@@ -168,6 +372,40 @@ export default function StudentHomeworkPage() {
           <FiBook className="text-blue-600" /> Bài tập về nhà
         </h1>
         <p className="text-gray-600 mb-8">Nộp và theo dõi tiến độ bài tập của bạn</p>
+
+        <div className="bg-white rounded-lg shadow-md p-5 mb-6">
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-4">
+            <div>
+              <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <FiBarChart2 className="text-blue-600" /> Biểu đồ điểm bài tập
+              </h2>
+              <p className="text-sm text-gray-500 mt-1">Theo dõi điểm đã chấm để xem con đang tiến bộ, ổn định hay cần chú ý thêm.</p>
+            </div>
+            <div className={`rounded-lg px-4 py-3 ${scoreSummary.bg} min-w-[190px]`}>
+              <div className={`flex items-center gap-2 text-sm font-semibold ${scoreSummary.color}`}>
+                <TrendIcon size={16} /> {scoreSummary.text}
+              </div>
+              <p className="text-xs text-gray-600 mt-1">{scoreSummary.note}</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+            <div className="rounded-lg border border-gray-200 p-3">
+              <p className="text-xs text-gray-500">Bài đã chấm</p>
+              <p className="text-xl font-bold text-gray-900">{scoreChartData.length}</p>
+            </div>
+            <div className="rounded-lg border border-gray-200 p-3">
+              <p className="text-xs text-gray-500">Điểm trung bình</p>
+              <p className="text-xl font-bold text-blue-600">{scoreChartData.length ? scoreSummary.avg.toFixed(1) : '--'}/10</p>
+            </div>
+            <div className="rounded-lg border border-gray-200 p-3 col-span-2 md:col-span-1">
+              <p className="text-xs text-gray-500">Bài gần nhất</p>
+              <p className="text-xl font-bold text-green-600">{scoreSummary.latest ? `${scoreSummary.latest.score10}/10` : '--'}</p>
+            </div>
+          </div>
+
+          <HomeworkScoreChart data={scoreChartData} />
+        </div>
 
         {homeworks.length === 0 ? (
           <div className="bg-white rounded-lg shadow-md p-8 text-center text-gray-500">
