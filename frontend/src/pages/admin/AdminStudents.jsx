@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import api from '../../api/axios';
 import toast from 'react-hot-toast';
-import { FiSearch, FiTrash2, FiPlus, FiX, FiCopy, FiUser } from 'react-icons/fi';
+import { FiSearch, FiTrash2, FiPlus, FiX, FiCopy, FiUser, FiEdit2, FiRefreshCw } from 'react-icons/fi';
 
 const DEFAULT_PASSWORD = 'toanthayhieu@123';
 
@@ -34,6 +34,10 @@ export default function AdminStudents() {
   const [emailEdited, setEmailEdited] = useState(false);
   const [adding, setAdding] = useState(false);
   const [createdInfo, setCreatedInfo] = useState(null); // { email, defaultPassword }
+  const [editingUser, setEditingUser] = useState(null);
+  const [editForm, setEditForm] = useState({ name: '', email: '' });
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [resetInfo, setResetInfo] = useState(null);
 
   const load = (s = search, p = page) => {
     setLoading(true);
@@ -85,6 +89,48 @@ export default function AdminStudents() {
       toast.success('Cập nhật thành công');
       load();
     } catch { toast.error('Có lỗi xảy ra'); }
+  };
+
+  const openEditModal = (user) => {
+    setEditingUser(user);
+    setEditForm({ name: user.name || '', email: user.email || '' });
+  };
+
+  const handleSaveEdit = async (e) => {
+    e.preventDefault();
+    if (!editingUser) return;
+    if (!editForm.name.trim()) return toast.error('Vui lòng nhập tên học sinh');
+    if (!editForm.email.trim()) return toast.error('Vui lòng nhập email');
+
+    setSavingEdit(true);
+    try {
+      await api.put(`/users/${editingUser._id}`, {
+        name: editForm.name.trim(),
+        email: editForm.email.trim(),
+      });
+      toast.success('Cập nhật học sinh thành công');
+      setEditingUser(null);
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Cập nhật thất bại');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const handleResetPassword = async (user) => {
+    if (!confirm(`Reset mật khẩu của ${user.name} về mặc định?`)) return;
+    try {
+      const { data } = await api.post(`/users/${user._id}/reset-password`);
+      setResetInfo({
+        name: user.name,
+        email: user.email,
+        defaultPassword: data.defaultPassword || DEFAULT_PASSWORD,
+      });
+      toast.success('Đã reset mật khẩu');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Reset mật khẩu thất bại');
+    }
   };
 
   return (
@@ -139,7 +185,17 @@ export default function AdminStudents() {
                   </button>
                 </td>
                 <td className="px-4 py-3">
-                  <button onClick={() => handleDelete(u._id)} className="text-red-500 hover:text-red-700"><FiTrash2 /></button>
+                  <div className="flex items-center gap-3">
+                    <button onClick={() => openEditModal(u)} className="text-blue-600 hover:text-blue-800" title="Sửa thông tin">
+                      <FiEdit2 />
+                    </button>
+                    <button onClick={() => handleResetPassword(u)} className="text-amber-600 hover:text-amber-800" title="Reset mật khẩu">
+                      <FiRefreshCw />
+                    </button>
+                    <button onClick={() => handleDelete(u._id)} className="text-red-500 hover:text-red-700" title="Xóa">
+                      <FiTrash2 />
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -152,6 +208,74 @@ export default function AdminStudents() {
           <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="btn-secondary px-3 py-1 text-sm">Trước</button>
           <span className="px-3 py-1 text-sm text-gray-600">Trang {page}</span>
           <button onClick={() => setPage(p => p + 1)} disabled={page * 20 >= total} className="btn-secondary px-3 py-1 text-sm">Sau</button>
+        </div>
+      )}
+
+      {editingUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setEditingUser(null)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b">
+              <h2 className="font-semibold text-gray-800 flex items-center gap-2"><FiEdit2 /> Sửa thông tin học sinh</h2>
+              <button onClick={() => setEditingUser(null)} className="text-gray-400 hover:text-gray-700"><FiX /></button>
+            </div>
+            <form onSubmit={handleSaveEdit} className="p-5 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Họ và tên</label>
+                <input
+                  type="text"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={editForm.name}
+                  onChange={(e) => setEditForm(f => ({ ...f, name: e.target.value }))}
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email đăng nhập</label>
+                <input
+                  type="email"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={editForm.email}
+                  onChange={(e) => setEditForm(f => ({ ...f, email: e.target.value }))}
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-1">
+                <button type="button" onClick={() => setEditingUser(null)} className="text-sm text-gray-600 hover:text-gray-800 px-4 py-2">Hủy</button>
+                <button type="submit" disabled={savingEdit} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm px-5 py-2 rounded-lg font-medium transition-colors">
+                  <FiEdit2 /> {savingEdit ? 'Đang lưu...' : 'Lưu thay đổi'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {resetInfo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setResetInfo(null)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b">
+              <h2 className="font-semibold text-gray-800 flex items-center gap-2"><FiRefreshCw /> Đã reset mật khẩu</h2>
+              <button onClick={() => setResetInfo(null)} className="text-gray-400 hover:text-gray-700"><FiX /></button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-sm space-y-2">
+                <p className="font-semibold text-green-800">{resetInfo.name}</p>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-gray-600">Email:</span>
+                  <span className="font-mono font-medium text-gray-900">{resetInfo.email}</span>
+                  <button onClick={() => { navigator.clipboard.writeText(resetInfo.email); toast.success('Đã copy'); }} className="text-blue-500 hover:text-blue-700"><FiCopy /></button>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-gray-600">Mật khẩu mới:</span>
+                  <span className="font-mono font-medium text-gray-900">{resetInfo.defaultPassword}</span>
+                  <button onClick={() => { navigator.clipboard.writeText(resetInfo.defaultPassword); toast.success('Đã copy'); }} className="text-blue-500 hover:text-blue-700"><FiCopy /></button>
+                </div>
+              </div>
+              <p className="text-xs text-gray-500">Học sinh nên đổi mật khẩu sau khi đăng nhập lại.</p>
+              <div className="flex justify-end">
+                <button onClick={() => setResetInfo(null)} className="bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm px-4 py-2 rounded-lg">Đóng</button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

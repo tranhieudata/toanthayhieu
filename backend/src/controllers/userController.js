@@ -129,5 +129,55 @@ const createStudent = async (req, res) => {
   }
 };
 
-module.exports = { getUsers, getUserById, updateUser, deleteUser, getMyEnrollments, getAdminStats, createStudent };
+const updateStudentProfile = async (req, res) => {
+  try {
+    const { name, email, isActive } = req.body;
+    const $set = {};
+
+    if (name !== undefined) {
+      if (!String(name).trim()) return res.status(400).json({ message: 'Vui lòng nhập tên học sinh' });
+      $set.name = String(name).trim();
+    }
+
+    if (email !== undefined) {
+      const normalizedEmail = String(email).trim().toLowerCase();
+      if (!normalizedEmail) return res.status(400).json({ message: 'Vui lòng nhập email' });
+      const exists = await User.findOne({ email: normalizedEmail, _id: { $ne: req.params.id } });
+      if (exists) return res.status(400).json({ message: 'Email đã được sử dụng' });
+      $set.email = normalizedEmail;
+    }
+
+    if (isActive !== undefined) {
+      $set.isActive = Boolean(isActive);
+    }
+
+    const user = await User.findByIdAndUpdate(req.params.id, { $set }, { new: true, runValidators: true });
+    if (!user) return res.status(404).json({ message: 'Không tìm thấy học sinh' });
+    res.json(user);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+const resetStudentPassword = async (req, res) => {
+  try {
+    const DEFAULT_PASSWORD = 'toanthayhieu@123';
+    const user = await User.findById(req.params.id).select('+password');
+    if (!user) return res.status(404).json({ message: 'Không tìm thấy học sinh' });
+    if (user.role !== 'student') return res.status(400).json({ message: 'Chỉ có thể reset mật khẩu học sinh' });
+
+    user.password = await bcrypt.hash(DEFAULT_PASSWORD, 12);
+    await user.save();
+
+    res.json({
+      message: 'Đã reset mật khẩu học sinh',
+      defaultPassword: DEFAULT_PASSWORD,
+      user: { _id: user._id, name: user.name, email: user.email, role: user.role, isActive: user.isActive },
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+module.exports = { getUsers, getUserById, updateUser, updateStudentProfile, resetStudentPassword, deleteUser, getMyEnrollments, getAdminStats, createStudent };
 
