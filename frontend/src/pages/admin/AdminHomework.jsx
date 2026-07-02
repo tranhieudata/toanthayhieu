@@ -2,7 +2,7 @@
 import { useNavigate } from 'react-router-dom';
 import api, { getUploadUrl } from '../../api/axios';
 import toast from 'react-hot-toast';
-import { FiPlus, FiEdit2, FiTrash2, FiBook, FiList, FiChevronDown, FiChevronUp, FiUpload, FiImage, FiX, FiEdit3, FiCheckCircle, FiClock, FiEye } from 'react-icons/fi';
+import { FiPlus, FiEdit2, FiTrash2, FiBook, FiList, FiChevronDown, FiChevronUp, FiUpload, FiImage, FiX, FiEdit3, FiCheckCircle, FiClock, FiEye, FiBarChart2 } from 'react-icons/fi';
 import { compressImageFile } from '../../utils/imageCompression';
 
 
@@ -81,6 +81,7 @@ export default function AdminHomework() {
 
   // Submissions view
   const [selectedHomework, setSelectedHomework] = useState(null);
+  const [gradebookHomework, setGradebookHomework] = useState(null);
   const [classStudents, setClassStudents] = useState([]);
   const [submissions, setSubmissions] = useState([]);
   const [expandedSubmissions, setExpandedSubmissions] = useState({});
@@ -446,6 +447,29 @@ export default function AdminHomework() {
     }));
   };
 
+  const getSubmissionForStudent = (studentId) =>
+    submissions.find(sub => {
+      const submittedStudentId = sub.student?._id || sub.student;
+      return submittedStudentId?.toString() === studentId?.toString();
+    });
+
+  const closeSubmissionsModal = () => {
+    setSelectedHomework(null);
+    setClassStudents([]);
+    setSubmissions([]);
+    setExpandedSubmissions({});
+    setGradingStudent(null);
+    setGradingError('');
+    setAdminUploadingStudent(null);
+    setAdminUploadImages([]);
+  };
+
+  const closeGradebookModal = () => {
+    setGradebookHomework(null);
+    setClassStudents([]);
+    setSubmissions([]);
+  };
+
   const classMap = classes.reduce((acc, c) => ({ ...acc, [c._id]: c }), {});
   const lessonMap = lessons.reduce((acc, l) => ({ ...acc, [l._id]: l }), {});
 
@@ -511,7 +535,8 @@ export default function AdminHomework() {
                       {hw.dueDate ? new Date(hw.dueDate).toLocaleDateString('vi-VN') : 'Không có'}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-600">{hw.maxScore}</td>
-                    <td className="px-6 py-4 text-sm space-x-2 flex">
+                    <td className="px-6 py-4 text-sm">
+                      <div className="flex flex-wrap items-center gap-2">
                       <button
                         onClick={() => {
                           setSelectedHomework(hw);
@@ -521,6 +546,16 @@ export default function AdminHomework() {
                         title="Xem bài làm"
                       >
                         <FiList size={16} /> Bài làm
+                      </button>
+                      <button
+                        onClick={() => {
+                          setGradebookHomework(hw);
+                          loadSubmissions(hw._id);
+                        }}
+                        className="text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                        title="Xem bảng điểm và nhận xét"
+                      >
+                        <FiBarChart2 size={16} /> Bảng điểm
                       </button>
                       <button
                         onClick={() => openEdit(hw)}
@@ -536,6 +571,7 @@ export default function AdminHomework() {
                       >
                         <FiTrash2 size={16} />
                       </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -774,15 +810,7 @@ export default function AdminHomework() {
                 Quản lý bài làm: {selectedHomework.title}
               </h2>
               <button
-                onClick={() => {
-                  setSelectedHomework(null);
-                  setClassStudents([]);
-                  setSubmissions([]);
-                  setGradingStudent(null);
-                  setGradingError('');
-                  setAdminUploadingStudent(null);
-                  setAdminUploadImages([]);
-                }}
+                onClick={closeSubmissionsModal}
                 className="text-gray-500 hover:text-gray-700"
               >
                 <FiX size={24} />
@@ -797,7 +825,7 @@ export default function AdminHomework() {
               ) : (
                 <div className="space-y-4">
                   {classStudents.map((student) => {
-                    const submission = submissions.find(s => s.student._id === student._id);
+                    const submission = getSubmissionForStudent(student._id);
                     
                     return (
                       <div
@@ -1230,6 +1258,106 @@ export default function AdminHomework() {
                       </div>
                     );
                   })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Gradebook Modal */}
+      {gradebookHomework && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-6xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white p-6 border-b border-gray-200 flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">
+                  Bảng điểm: {gradebookHomework.title}
+                </h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  {gradebookHomework.class?.name || 'N/A'} · Điểm tối đa: {gradebookHomework.maxScore || 10}
+                </p>
+              </div>
+              <button
+                onClick={closeGradebookModal}
+                className="text-gray-500 hover:text-gray-700"
+                title="Đóng"
+              >
+                <FiX size={24} />
+              </button>
+            </div>
+
+            <div className="p-6">
+              {submissionsLoading ? (
+                <div className="text-center text-gray-500">Đang tải...</div>
+              ) : classStudents.length === 0 ? (
+                <div className="text-center text-gray-500">Lớp này không có học sinh</div>
+              ) : (
+                <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                  <table className="w-full min-w-[780px]">
+                    <thead className="bg-gray-50 border-b border-gray-200">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 w-12">STT</th>
+                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Học sinh</th>
+                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Trạng thái</th>
+                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Điểm</th>
+                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 min-w-[320px]">Chi tiết nhận xét</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {[...classStudents].sort((a, b) => {
+                        const submissionA = getSubmissionForStudent(a._id);
+                        const submissionB = getSubmissionForStudent(b._id);
+                        const gradedA = submissionA?.status === 'graded';
+                        const gradedB = submissionB?.status === 'graded';
+
+                        if (gradedA !== gradedB) return gradedA ? -1 : 1;
+                        if (!gradedA && !gradedB) {
+                          const submittedA = Boolean(submissionA);
+                          const submittedB = Boolean(submissionB);
+                          if (submittedA !== submittedB) return submittedA ? -1 : 1;
+                          return (a.name || '').localeCompare(b.name || '', 'vi');
+                        }
+
+                        return Number(submissionB.score || 0) - Number(submissionA.score || 0);
+                      }).map((student, index) => {
+                        const submission = getSubmissionForStudent(student._id);
+                        const isGraded = submission?.status === 'graded';
+                        const hasSubmitted = Boolean(submission);
+
+                        return (
+                          <tr key={student._id} className="align-top hover:bg-gray-50">
+                            <td className="px-4 py-3 text-sm text-gray-500">{index + 1}</td>
+                            <td className="px-4 py-3">
+                              <p className="text-sm font-medium text-gray-900">{student.name}</p>
+                              <p className="text-xs text-gray-500">{student.email}</p>
+                            </td>
+                            <td className="px-4 py-3 text-sm">
+                              {isGraded ? (
+                                <span className="inline-flex items-center gap-1 text-green-700 font-medium">
+                                  <FiCheckCircle size={15} /> Đã chấm
+                                </span>
+                              ) : hasSubmitted ? (
+                                <span className="inline-flex items-center gap-1 text-yellow-700 font-medium">
+                                  <FiClock size={15} /> Chưa chấm
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-gray-500">
+                                  <FiUpload size={15} /> Chưa nộp
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-sm font-semibold text-gray-900">
+                              {isGraded ? `${submission.score}/${submission.maxScore || gradebookHomework.maxScore || 10}` : '-'}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-700 whitespace-pre-wrap">
+                              {submission?.feedback?.trim() || '-'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </div>

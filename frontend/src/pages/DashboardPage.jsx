@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   FiBookOpen, FiAward, FiTrendingUp, FiLayers, FiClock,
   FiCheckCircle, FiXCircle, FiChevronDown, FiChevronRight,
-  FiPlay, FiLock, FiBook,
+  FiPlay, FiLock, FiBook, FiClipboard,
 } from 'react-icons/fi';
 
 // ─── Biểu đồ đường tiến độ điểm ────────────────────────────────────────────
@@ -65,7 +65,7 @@ function ProgressLineChart({ data }) {
   if (n === 0) return (
     <div className="flex flex-col items-center justify-center h-32 text-gray-400 text-sm gap-1">
       <FiTrendingUp size={28} className="text-gray-300" />
-      Chưa có bài kiểm tra nào được chấm điểm
+      Chưa có bài kiểm tra hoặc bài tập nào được chấm điểm
     </div>
   );
 
@@ -143,7 +143,7 @@ function ProgressLineChart({ data }) {
                   </text>
                   <text x={tx + ttW / 2} y={ty + 47} textAnchor="middle"
                     fontSize="9.5" fill="#9ca3af">
-                    Ngày chấm: {fmtFull(d.date)}
+                    {d.typeLabel || 'Kết quả'} · {fmtFull(d.date)}
                   </text>
                 </g>
               )}
@@ -168,11 +168,13 @@ const CLASS_STATUS_ICON = {
 };
 
 export default function DashboardPage() {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const navigate = useNavigate();
   const [classEnrollments, setClassEnrollments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [exams, setExams] = useState([]);
+  const [homeworks, setHomeworks] = useState([]);
+  const [homeworkSubmissions, setHomeworkSubmissions] = useState({});
   const [chartFilter, setChartFilter] = useState('all'); // 'all' | 'month' | 'range'
   const [filterMonth, setFilterMonth] = useState('');    // YYYY-MM
   const [filterFrom, setFilterFrom] = useState('');
@@ -188,13 +190,31 @@ export default function DashboardPage() {
     api.get('/exams/student')
       .then(r => setExams(r.data || []))
       .catch(err => console.error('[Dashboard] exams/student error:', err?.response?.data || err.message));
+    api.get('/homeworks/student/list')
+      .then(async (r) => {
+        const homeworkList = r.data || [];
+        setHomeworks(homeworkList);
+
+        const submissionPairs = await Promise.all(
+          homeworkList.map(async (homework) => {
+            try {
+              const { data } = await api.get(`/homeworks/${homework._id}/my-submission`);
+              return [homework._id, data];
+            } catch {
+              return [homework._id, null];
+            }
+          })
+        );
+        setHomeworkSubmissions(Object.fromEntries(submissionPairs));
+      })
+      .catch(err => console.error('[Dashboard] homeworks/student/list error:', err?.response?.data || err.message));
   }, []);
 
   // Lấy thời gian tạo từ ObjectId (fallback cho record cũ không có createdAt)
   const dateFromObjId = id => new Date(parseInt(id.substring(0, 8), 16) * 1000);
 
   // Dữ liệu biểu đồ tiến độ
-  const chartData = exams
+  const examChartData = exams
     .filter(e => e.myResult?.status === 'graded')
     .map(e => ({
       date: new Date(e.myResult.gradedAt || e.myResult.createdAt || dateFromObjId(e.myResult._id)),
@@ -202,8 +222,34 @@ export default function DashboardPage() {
       title: e.title,
       score: e.myResult.totalScore,
       maxScore: e.myResult.maxScore,
+      type: 'exam',
+      typeLabel: 'Bài kiểm tra',
     }))
-    .filter(e => !isNaN(e.date.getTime()))
+    .filter(e => !isNaN(e.date.getTime()));
+
+  const homeworkChartData = homeworks
+    .map(homework => {
+      const submission = homeworkSubmissions[homework._id];
+      const score = Number(submission?.score);
+      const maxScore = Number(submission?.maxScore || homework.maxScore || 10);
+      if (submission?.status !== 'graded' || !Number.isFinite(score) || !Number.isFinite(maxScore) || maxScore <= 0) {
+        return null;
+      }
+
+      return {
+        date: new Date(submission.gradedAt || submission.updatedAt || submission.submittedAt || homework.createdAt),
+        score10: Math.round((score / maxScore) * 100) / 10,
+        title: homework.title,
+        score,
+        maxScore,
+        type: 'homework',
+        typeLabel: 'Bài tập về nhà',
+      };
+    })
+    .filter(Boolean)
+    .filter(e => !isNaN(e.date.getTime()));
+
+  const chartData = [...examChartData, ...homeworkChartData]
     .sort((a, b) => a.date - b.date);
 
   const filteredChartData = chartData.filter(e => {
@@ -263,6 +309,29 @@ export default function DashboardPage() {
           </div>
         </div>
 
+        {!isAdmin && (
+          <div className="grid grid-cols-2 gap-3 mb-8 md:hidden">
+            <Link
+              to="/homeworks"
+              className="bg-white rounded-xl border border-blue-100 shadow-sm p-4 flex flex-col items-center gap-2 text-center active:scale-[0.98] transition"
+            >
+              <div className="w-11 h-11 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center">
+                <FiBookOpen size={22} />
+              </div>
+              <span className="text-sm font-semibold text-gray-900">Bài tập</span>
+            </Link>
+            <Link
+              to="/exams"
+              className="bg-white rounded-xl border border-indigo-100 shadow-sm p-4 flex flex-col items-center gap-2 text-center active:scale-[0.98] transition"
+            >
+              <div className="w-11 h-11 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                <FiClipboard size={22} />
+              </div>
+              <span className="text-sm font-semibold text-gray-900">Đề kiểm tra</span>
+            </Link>
+          </div>
+        )}
+
         {/* Stats */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
           {[
@@ -284,7 +353,7 @@ export default function DashboardPage() {
         <div className="bg-white rounded-xl shadow-sm p-5 mb-8">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
             <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-              <FiTrendingUp className="text-blue-600" /> Biểu đồ tiến độ điểm kiểm tra
+              <FiTrendingUp className="text-blue-600" /> Biểu đồ tiến độ điểm kiểm tra và bài tập
             </h2>
             {/* Filter controls */}
             <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -311,7 +380,8 @@ export default function DashboardPage() {
           </div>
           <ProgressLineChart data={filteredChartData} />
           {filteredChartData.length > 0 && (
-            <div className="flex items-center gap-4 mt-3 text-xs text-gray-400 justify-end">
+            <div className="flex flex-wrap items-center gap-4 mt-3 text-xs text-gray-400 justify-end">
+              <span className="font-medium text-gray-500">Gồm bài kiểm tra và bài tập về nhà</span>
               <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{background:'#7c3aed'}} /> 9–10 Xuất sắc</span>
               <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block" /> 8–8.9 Giỏi</span>
               <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block" /> 7–7.9 Khá</span>

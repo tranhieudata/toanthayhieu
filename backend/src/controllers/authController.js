@@ -67,10 +67,42 @@ const getMe = async (req, res) => {
   });
 };
 
+// PUT /api/auth/change-password
+const changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ message: 'Mật khẩu mới phải có ít nhất 6 ký tự' });
+    }
+
+    const user = await User.findById(req.user._id).select('+password');
+    if (!user) return res.status(404).json({ message: 'Không tìm thấy tài khoản' });
+
+    if (user.password) {
+      if (!currentPassword) {
+        return res.status(400).json({ message: 'Vui lòng nhập mật khẩu hiện tại' });
+      }
+
+      const isMatch = await bcrypt.compare(currentPassword, user.password);
+      if (!isMatch) {
+        return res.status(400).json({ message: 'Mật khẩu hiện tại không đúng' });
+      }
+    }
+
+    user.password = await bcrypt.hash(newPassword, 12);
+    await user.save();
+
+    res.json({ message: 'Đổi mật khẩu thành công' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 // OAuth callback helper
 const oauthCallback = (req, res) => {
   const token = generateToken(req.user._id);
   res.redirect(`${process.env.CLIENT_URL}/oauth-success?token=${token}&role=${req.user.role}`);
 };
 
-module.exports = { register, login, getMe, oauthCallback };
+module.exports = { register, login, getMe, changePassword, oauthCallback };

@@ -15,6 +15,7 @@ import DashboardPage from './pages/DashboardPage';
 import ClassesPage from './pages/ClassesPage';
 import ClassDetailPage from './pages/ClassDetailPage';
 import StudentHomeworkPage from './pages/StudentHomeworkPage';
+import ChangePasswordPage from './pages/ChangePasswordPage';
 
 // Admin pages
 import AdminLayout from './pages/admin/AdminLayout';
@@ -49,19 +50,27 @@ const AdminRoute = ({ children }) => {
   return children;
 };
 
+const GuestHomeRoute = () => {
+  const { user, loading, isAdmin } = useAuth();
+  if (loading) return <div className="flex items-center justify-center h-screen"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div></div>;
+  if (user) return <Navigate to={isAdmin ? '/admin' : '/dashboard'} replace />;
+  return <HomePage />;
+};
+
 function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
         <Toaster position="top-right" />
         <Routes>
-          <Route path="/" element={<HomePage />} />
+          <Route path="/" element={<GuestHomeRoute />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/classes" element={<ClassesPage />} />
           <Route path="/courses/:id" element={<CourseDetailPage />} />
           <Route path="/oauth-success" element={<OAuthSuccess />} />
           <Route path="/dashboard" element={<PrivateRoute><DashboardPage /></PrivateRoute>} />
+          <Route path="/change-password" element={<PrivateRoute><ChangePasswordPage /></PrivateRoute>} />
           <Route path="/class/:classId" element={<PrivateRoute><ClassDetailPage /></PrivateRoute>} />
           <Route path="/lesson/:lessonId" element={<PrivateRoute><LessonDetailPage /></PrivateRoute>} />
           <Route path="/lessons/:id" element={<PrivateRoute><LessonPage /></PrivateRoute>} />

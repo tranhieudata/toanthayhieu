@@ -2,8 +2,62 @@ import { useMemo, useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api, { getUploadUrl } from '../api/axios';
 import toast from 'react-hot-toast';
-import { FiUpload, FiX, FiCheck, FiClock, FiBook, FiEye, FiEdit2, FiTrendingUp, FiTrendingDown, FiMinus, FiBarChart2 } from 'react-icons/fi';
+import Navbar from '../components/Navbar';
+import { FiUpload, FiX, FiCheck, FiClock, FiBook, FiEye, FiEdit2, FiTrendingUp, FiTrendingDown, FiMinus, FiBarChart2, FiHelpCircle } from 'react-icons/fi';
 import { compressImageFile } from '../utils/imageCompression';
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function renderLatexText(value) {
+  const text = String(value || '')
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+    .join('\n');
+  const mathPattern = /(\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)|\$[^$\n]+?\$)/g;
+  let cursor = 0;
+  let html = '';
+
+  text.replace(mathPattern, (match, _full, offset) => {
+    html += escapeHtml(text.slice(cursor, offset)).replace(/\n/g, '<br />');
+
+    let tex = match;
+    let displayMode = false;
+    if (match.startsWith('$$') && match.endsWith('$$')) {
+      tex = match.slice(2, -2);
+      displayMode = true;
+    } else if (match.startsWith('\\[') && match.endsWith('\\]')) {
+      tex = match.slice(2, -2);
+      displayMode = true;
+    } else if (match.startsWith('\\(') && match.endsWith('\\)')) {
+      tex = match.slice(2, -2);
+    } else if (match.startsWith('$') && match.endsWith('$')) {
+      tex = match.slice(1, -1);
+    }
+
+    try {
+      html += katex.renderToString(tex.trim(), { displayMode, throwOnError: false });
+    } catch {
+      html += escapeHtml(match);
+    }
+
+    cursor = offset + match.length;
+    return match;
+  });
+
+  html += escapeHtml(text.slice(cursor)).replace(/\n/g, '<br />');
+  return html;
+}
 
 function HomeworkScoreChart({ data }) {
   const [hovered, setHovered] = useState(null);
@@ -354,10 +408,13 @@ export default function StudentHomeworkPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50">
+        <Navbar />
+        <div className="flex items-center justify-center min-h-[calc(100vh-4rem)]">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
           <p className="text-gray-600">Đang tải bài tập...</p>
+        </div>
         </div>
       </div>
     );
@@ -366,8 +423,9 @@ export default function StudentHomeworkPage() {
   const TrendIcon = scoreSummary.icon;
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8 px-4">
-      <div className="max-w-4xl mx-auto">
+    <div className="min-h-screen bg-gray-50">
+      <Navbar />
+      <div className="max-w-4xl mx-auto py-8 px-4">
         <h1 className="text-3xl font-bold text-gray-900 mb-2 flex items-center gap-2">
           <FiBook className="text-blue-600" /> Bài tập về nhà
         </h1>
@@ -463,11 +521,11 @@ export default function StudentHomeworkPage() {
                         <div className="mb-6">
                           <h3 className="font-medium text-gray-900 mb-2">Ảnh đề bài:</h3>
                           <button
-                            onClick={() => setPreviewImage(getUploadUrl(`${import.meta.env.VITE_API_URL}/${hw.questionImage.url}`))}
+                            onClick={() => setPreviewImage(getUploadUrl(hw.questionImage.url))}
                             className="relative inline-block group"
                           >
                             <img
-                              src={getUploadUrl(`${import.meta.env.VITE_API_URL}/${hw.questionImage.url}`)}
+                              src={getUploadUrl(hw.questionImage.url)}
                               alt="Question"
                               className="max-w-md h-auto rounded border border-gray-300 cursor-pointer hover:opacity-75 transition"
                             />
@@ -488,11 +546,12 @@ export default function StudentHomeworkPage() {
                             {sub.submissionImages.map((img, idx) => (
                               <div key={idx} className="relative group">
                                 <button
-                                  onClick={() => setPreviewImage(getUploadUrl(`${import.meta.env.VITE_API_URL}/${img.url}`))}
+                                  onClick={() => setPreviewImage(getUploadUrl(img.url))}
                                   className="w-full relative"
                                 >
+                                   
                                   <img
-                                    src={getUploadUrl(`${import.meta.env.VITE_API_URL}/${img.url}`)}
+                                    src={getUploadUrl(img.url)}
                                     alt={`Submission ${idx + 1}`}
                                     className="w-full h-32 object-cover rounded border border-gray-300 cursor-pointer hover:opacity-75 transition"
                                   />
@@ -594,6 +653,48 @@ export default function StudentHomeworkPage() {
                               <p className="text-sm text-gray-700 bg-gray-50 p-3 rounded whitespace-pre-wrap">
                                 {sub.feedback}
                               </p>
+                            </div>
+                          )}
+                          {(hw.answerKey?.trim() || hw.solutionImages?.length > 0) && (
+                            <div className="mt-4 border-t border-green-100 pt-4">
+                              <h3 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
+                                <FiHelpCircle className="text-blue-600" /> Gợi ý đáp án
+                              </h3>
+
+                              {hw.answerKey?.trim() && (
+                                <div className="mb-4">
+                                  <p className="text-sm font-medium text-gray-700 mb-2">Đáp án tham khảo:</p>
+                                  <div
+                                    className="lesson-content text-sm text-gray-700 bg-blue-50 border border-blue-100 p-2 rounded leading-6 overflow-x-auto"
+                                    dangerouslySetInnerHTML={{ __html: renderLatexText(hw.answerKey) }}
+                                  />
+                                </div>
+                              )}
+
+                              {hw.solutionImages?.length > 0 && (
+                                <div>
+                                  <p className="text-sm font-medium text-gray-700 mb-2">Ảnh lời giải mẫu:</p>
+                                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                    {hw.solutionImages.map((img, idx) => (
+                                      <button
+                                        key={`${img.url}-${idx}`}
+                                        type="button"
+                                        onClick={() => setPreviewImage(getUploadUrl(img.url))}
+                                        className="relative group"
+                                      >
+                                        <img
+                                          src={getUploadUrl(img.url)}
+                                          alt={`Gợi ý đáp án ${idx + 1}`}
+                                          className="w-full h-32 object-cover rounded border border-blue-100 cursor-pointer hover:opacity-75 transition"
+                                        />
+                                        <span className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
+                                          <FiEye className="text-white" size={20} />
+                                        </span>
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>

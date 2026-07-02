@@ -1,6 +1,6 @@
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { FiHome, FiBook, FiUsers, FiLayers, FiCalendar, FiFileText, FiLogOut, FiMenu, FiX, FiCheckSquare, FiFile, FiDollarSign, FiSettings, FiTrendingUp, FiClipboard, FiBookOpen } from 'react-icons/fi';
+import { FiHome, FiBook, FiUsers, FiLayers, FiCalendar, FiFileText, FiLogOut, FiMenu, FiX, FiCheckSquare, FiFile, FiDollarSign, FiSettings, FiTrendingUp, FiClipboard, FiBookOpen, FiLock } from 'react-icons/fi';
 import { useState } from 'react';
 
 const navItems = [
@@ -57,6 +57,9 @@ export default function AdminLayout() {
               <div className="text-xs text-gray-400">Admin</div>
             </div>
           </div>
+          <Link to="/change-password" className="flex items-center gap-2 text-gray-400 hover:text-blue-400 text-sm w-full mb-2">
+            <FiLock /> Đổi mật khẩu
+          </Link>
           <button onClick={logout} className="flex items-center gap-2 text-gray-400 hover:text-red-400 text-sm w-full">
             <FiLogOut /> Đăng xuất
           </button>
