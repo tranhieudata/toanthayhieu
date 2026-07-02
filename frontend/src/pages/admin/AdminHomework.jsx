@@ -2,7 +2,7 @@
 import { useNavigate } from 'react-router-dom';
 import api, { getUploadUrl } from '../../api/axios';
 import toast from 'react-hot-toast';
-import { FiPlus, FiEdit2, FiTrash2, FiBook, FiList, FiChevronDown, FiChevronUp, FiUpload, FiImage, FiX, FiEdit3, FiCheckCircle, FiClock, FiEye, FiBarChart2 } from 'react-icons/fi';
+import { FiPlus, FiEdit2, FiTrash2, FiBook, FiList, FiChevronDown, FiChevronUp, FiUpload, FiImage, FiX, FiEdit3, FiCheckCircle, FiClock, FiEye, FiBarChart2, FiDownload } from 'react-icons/fi';
 import { compressImageFile } from '../../utils/imageCompression';
 
 
@@ -468,6 +468,135 @@ export default function AdminHomework() {
     setGradebookHomework(null);
     setClassStudents([]);
     setSubmissions([]);
+  };
+
+  const getSortedGradebookRows = () => {
+    return [...classStudents]
+      .sort((a, b) => {
+        const submissionA = getSubmissionForStudent(a._id);
+        const submissionB = getSubmissionForStudent(b._id);
+        const gradedA = submissionA?.status === 'graded';
+        const gradedB = submissionB?.status === 'graded';
+
+        if (gradedA !== gradedB) return gradedA ? -1 : 1;
+        if (!gradedA && !gradedB) {
+          const submittedA = Boolean(submissionA);
+          const submittedB = Boolean(submissionB);
+          if (submittedA !== submittedB) return submittedA ? -1 : 1;
+          return (a.name || '').localeCompare(b.name || '', 'vi');
+        }
+
+        return Number(submissionB.score || 0) - Number(submissionA.score || 0);
+      })
+      .map((student, index) => {
+        const submission = getSubmissionForStudent(student._id);
+        const isGraded = submission?.status === 'graded';
+        const hasSubmitted = Boolean(submission);
+        return {
+          index: index + 1,
+          student,
+          submission,
+          isGraded,
+          hasSubmitted,
+          statusText: isGraded ? 'Đã chấm' : hasSubmitted ? 'Chưa chấm' : 'Chưa nộp',
+          scoreText: isGraded ? `${submission.score}/${submission.maxScore || gradebookHomework?.maxScore || 10}` : '-',
+          feedbackText: submission?.feedback?.trim() || '-',
+        };
+      });
+  };
+
+  const escapeHtml = (value) => String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+  const handleExportGradebookPdf = () => {
+    if (!gradebookHomework) return;
+    const rows = getSortedGradebookRows();
+    const className = gradebookHomework.class?.name || 'N/A';
+    const maxScore = gradebookHomework.maxScore || 10;
+    const generatedAt = new Date().toLocaleString('vi-VN');
+    const parentGuide = 'Phụ huynh có thể xem điểm bài tập hằng ngày, sự tiến bộ của con bằng cách đăng nhập trang toanthayhieu.com với tài khoản là email học sinh. Pass mặc định là toanthayhieu@123';
+
+    const html = `
+      <!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>Bảng điểm - ${escapeHtml(gradebookHomework.title)}</title>
+          <style>
+            @page { size: A4 landscape; margin: 12mm; }
+            * { box-sizing: border-box; }
+            body { font-family: Arial, sans-serif; color: #111827; margin: 0; font-size: 12px; }
+            h1 { font-size: 22px; margin: 0 0 6px; }
+            .meta { color: #4b5563; margin-bottom: 12px; line-height: 1.5; }
+            .guide { border: 1px solid #bfdbfe; background: #eff6ff; color: #1e3a8a; padding: 10px 12px; border-radius: 6px; margin: 12px 0 14px; line-height: 1.5; font-weight: 600; }
+            table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+            th, td { border: 1px solid #d1d5db; padding: 7px 8px; vertical-align: top; }
+            th { background: #f3f4f6; text-align: left; font-weight: 700; }
+            .stt { width: 42px; text-align: center; }
+            .student { width: 190px; }
+            .status { width: 86px; }
+            .score { width: 72px; }
+            .feedback { white-space: pre-wrap; line-height: 1.45; }
+            .email { color: #6b7280; font-size: 11px; margin-top: 2px; }
+            .footer { color: #6b7280; font-size: 10px; margin-top: 10px; text-align: right; }
+          </style>
+        </head>
+        <body>
+          <h1>Bảng điểm: ${escapeHtml(gradebookHomework.title)}</h1>
+          <div class="meta">
+            Lớp: ${escapeHtml(className)}<br />
+            Điểm tối đa: ${escapeHtml(maxScore)}<br />
+            Thời gian xuất: ${escapeHtml(generatedAt)}
+          </div>
+          <div class="guide">${escapeHtml(parentGuide)}</div>
+          <table>
+            <thead>
+              <tr>
+                <th class="stt">STT</th>
+                <th class="student">Học sinh</th>
+                <th class="status">Trạng thái</th>
+                <th class="score">Điểm</th>
+                <th>Chi tiết nhận xét</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.map(row => `
+                <tr>
+                  <td class="stt">${row.index}</td>
+                  <td class="student">
+                    <strong>${escapeHtml(row.student.name)}</strong>
+                    <div class="email">${escapeHtml(row.student.email)}</div>
+                  </td>
+                  <td class="status">${escapeHtml(row.statusText)}</td>
+                  <td class="score">${escapeHtml(row.scoreText)}</td>
+                  <td class="feedback">${escapeHtml(row.feedbackText)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          <div class="footer">toanthayhieu.com</div>
+          <script>
+            window.onload = () => {
+              window.focus();
+              window.print();
+            };
+          </script>
+        </body>
+      </html>
+    `;
+
+    const printWindow = window.open('', '_blank', 'width=1200,height=800');
+    if (!printWindow) {
+      toast.error('Trình duyệt đã chặn cửa sổ xuất PDF');
+      return;
+    }
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
   };
 
   const classMap = classes.reduce((acc, c) => ({ ...acc, [c._id]: c }), {});
@@ -1278,13 +1407,24 @@ export default function AdminHomework() {
                   {gradebookHomework.class?.name || 'N/A'} · Điểm tối đa: {gradebookHomework.maxScore || 10}
                 </p>
               </div>
-              <button
-                onClick={closeGradebookModal}
-                className="text-gray-500 hover:text-gray-700"
-                title="Đóng"
-              >
-                <FiX size={24} />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleExportGradebookPdf}
+                  disabled={submissionsLoading || classStudents.length === 0}
+                  className="inline-flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                  title="Xuất file PDF"
+                >
+                  <FiDownload size={16} /> Xuất PDF
+                </button>
+                <button
+                  onClick={closeGradebookModal}
+                  className="text-gray-500 hover:text-gray-700"
+                  title="Đóng"
+                >
+                  <FiX size={24} />
+                </button>
+              </div>
             </div>
 
             <div className="p-6">
@@ -1305,39 +1445,20 @@ export default function AdminHomework() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
-                      {[...classStudents].sort((a, b) => {
-                        const submissionA = getSubmissionForStudent(a._id);
-                        const submissionB = getSubmissionForStudent(b._id);
-                        const gradedA = submissionA?.status === 'graded';
-                        const gradedB = submissionB?.status === 'graded';
-
-                        if (gradedA !== gradedB) return gradedA ? -1 : 1;
-                        if (!gradedA && !gradedB) {
-                          const submittedA = Boolean(submissionA);
-                          const submittedB = Boolean(submissionB);
-                          if (submittedA !== submittedB) return submittedA ? -1 : 1;
-                          return (a.name || '').localeCompare(b.name || '', 'vi');
-                        }
-
-                        return Number(submissionB.score || 0) - Number(submissionA.score || 0);
-                      }).map((student, index) => {
-                        const submission = getSubmissionForStudent(student._id);
-                        const isGraded = submission?.status === 'graded';
-                        const hasSubmitted = Boolean(submission);
-
+                      {getSortedGradebookRows().map((row) => {
                         return (
-                          <tr key={student._id} className="align-top hover:bg-gray-50">
-                            <td className="px-4 py-3 text-sm text-gray-500">{index + 1}</td>
+                          <tr key={row.student._id} className="align-top hover:bg-gray-50">
+                            <td className="px-4 py-3 text-sm text-gray-500">{row.index}</td>
                             <td className="px-4 py-3">
-                              <p className="text-sm font-medium text-gray-900">{student.name}</p>
-                              <p className="text-xs text-gray-500">{student.email}</p>
+                              <p className="text-sm font-medium text-gray-900">{row.student.name}</p>
+                              <p className="text-xs text-gray-500">{row.student.email}</p>
                             </td>
                             <td className="px-4 py-3 text-sm">
-                              {isGraded ? (
+                              {row.isGraded ? (
                                 <span className="inline-flex items-center gap-1 text-green-700 font-medium">
                                   <FiCheckCircle size={15} /> Đã chấm
                                 </span>
-                              ) : hasSubmitted ? (
+                              ) : row.hasSubmitted ? (
                                 <span className="inline-flex items-center gap-1 text-yellow-700 font-medium">
                                   <FiClock size={15} /> Chưa chấm
                                 </span>
@@ -1348,10 +1469,10 @@ export default function AdminHomework() {
                               )}
                             </td>
                             <td className="px-4 py-3 text-sm font-semibold text-gray-900">
-                              {isGraded ? `${submission.score}/${submission.maxScore || gradebookHomework.maxScore || 10}` : '-'}
+                              {row.scoreText}
                             </td>
                             <td className="px-4 py-3 text-sm text-gray-700 whitespace-pre-wrap">
-                              {submission?.feedback?.trim() || '-'}
+                              {row.feedbackText}
                             </td>
                           </tr>
                         );
