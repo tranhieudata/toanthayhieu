@@ -5,6 +5,17 @@ import { FiSearch, FiTrash2, FiPlus, FiX, FiCopy, FiUser, FiEdit2, FiRefreshCw }
 
 const DEFAULT_PASSWORD = 'toanthayhieu@123';
 
+function formatLastLogin(value) {
+  if (!value) return 'Chưa login';
+  return new Date(value).toLocaleString('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 function generateEmail(name) {
   const slug = name.toLowerCase()
     .replace(/[àáạảãâầấậẩẫăằắặẳẵ]/g, 'a')
@@ -157,14 +168,14 @@ export default function AdminStudents() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b">
             <tr>
-              {['Học sinh', 'Email', 'Ngày tham gia', 'Trạng thái', 'Thao tác'].map(h => (
+              {['Học sinh', 'Email', 'Ngày tham gia', 'Login gần nhất', 'Số lần', 'Trạng thái', 'Thao tác'].map(h => (
                 <th key={h} className="text-left px-4 py-3 font-medium text-gray-600">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y">
             {loading ? (
-              <tr><td colSpan={5} className="text-center py-8 text-gray-400">Đang tải...</td></tr>
+              <tr><td colSpan={7} className="text-center py-8 text-gray-400">Đang tải...</td></tr>
             ) : users.map(u => (
               <tr key={u._id} className="hover:bg-gray-50">
                 <td className="px-4 py-3">
@@ -179,6 +190,8 @@ export default function AdminStudents() {
                 </td>
                 <td className="px-4 py-3 text-gray-600">{u.email}</td>
                 <td className="px-4 py-3 text-gray-600">{new Date(u.createdAt).toLocaleDateString('vi-VN')}</td>
+                <td className="px-4 py-3 text-gray-600">{formatLastLogin(u.lastLoginAt)}</td>
+                <td className="px-4 py-3 text-gray-600">{u.loginCount || 0}</td>
                 <td className="px-4 py-3">
                   <button onClick={() => handleToggleActive(u)} className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer ${u.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
                     {u.isActive ? 'Hoạt động' : 'Bị khóa'}

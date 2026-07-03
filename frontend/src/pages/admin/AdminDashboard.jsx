@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../../api/axios';
-import { FiUsers, FiBook, FiTrendingUp, FiCalendar } from 'react-icons/fi';
+import { FiUsers, FiBook, FiTrendingUp, FiCalendar, FiLogIn, FiUserCheck, FiUserX, FiClock } from 'react-icons/fi';
 
 // ─── Weekly Schedule ─────────────────────────────────────────────────────────
 
@@ -151,7 +151,15 @@ function WeeklySchedule({ classes }) {
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
 export default function AdminDashboard() {
-  const [stats, setStats] = useState({ totalUsers: 0, totalCourses: 0, totalEnrollments: 0 });
+  const [stats, setStats] = useState({
+    totalUsers: 0,
+    activeUsers: 0,
+    inactiveUsers: 0,
+    loggedInToday: 0,
+    todayLoginUsers: [],
+    totalCourses: 0,
+    totalEnrollments: 0,
+  });
   const [classes, setClasses] = useState([]);
 
   useEffect(() => {
@@ -162,9 +170,17 @@ export default function AdminDashboard() {
   const cards = [
     { icon: <FiBook className="text-green-600 text-3xl" />, label: 'Quản lý nội dung', value: stats.totalCourses, to: '/admin/content', bg: 'bg-green-50 border-green-200' },
     { icon: <FiUsers className="text-blue-600 text-3xl" />, label: 'Học sinh', value: stats.totalUsers, to: '/admin/students', bg: 'bg-blue-50 border-blue-200' },
+    { icon: <FiLogIn className="text-emerald-600 text-3xl" />, label: 'Login hôm nay', value: stats.loggedInToday, to: '/admin/students', bg: 'bg-emerald-50 border-emerald-200' },
+    { icon: <FiUserCheck className="text-cyan-600 text-3xl" />, label: 'Đang hoạt động', value: stats.activeUsers, to: '/admin/students', bg: 'bg-cyan-50 border-cyan-200' },
+    { icon: <FiUserX className="text-rose-600 text-3xl" />, label: 'Bị khóa', value: stats.inactiveUsers, to: '/admin/students', bg: 'bg-rose-50 border-rose-200' },
     { icon: <FiTrendingUp className="text-purple-600 text-3xl" />, label: 'Đăng ký học', value: stats.totalEnrollments, to: '/admin/enrollments', bg: 'bg-purple-50 border-purple-200' },
     { icon: <FiCalendar className="text-orange-600 text-3xl" />, label: 'Lớp học', value: classes.length, to: '/admin/classes', bg: 'bg-orange-50 border-orange-200' },
   ];
+
+  const formatLoginTime = (value) => {
+    if (!value) return '';
+    return new Date(value).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+  };
 
   return (
     <div>
@@ -180,6 +196,47 @@ export default function AdminDashboard() {
             </div>
           </Link>
         ))}
+      </div>
+
+      <div className="card p-5 mb-6">
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <h2 className="font-semibold text-gray-900 flex items-center gap-2">
+            <FiLogIn className="text-emerald-500" />
+            Học sinh login hôm nay
+          </h2>
+          <span className="text-sm text-gray-500">{stats.loggedInToday || 0} học sinh</span>
+        </div>
+
+        {stats.todayLoginUsers?.length ? (
+          <div className="divide-y divide-gray-100">
+            {stats.todayLoginUsers.map((user) => (
+              <div key={user._id} className="flex items-center justify-between gap-3 py-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  {user.avatar ? (
+                    <img src={user.avatar} alt={user.name} className="w-9 h-9 rounded-full object-cover" />
+                  ) : (
+                    <div className="w-9 h-9 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-sm font-semibold">
+                      {user.name?.charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <div className="font-medium text-gray-900 truncate">{user.name}</div>
+                    <div className="text-xs text-gray-500 truncate">{user.email}</div>
+                  </div>
+                </div>
+                <div className="text-right shrink-0">
+                  <div className="text-sm font-medium text-gray-800 flex items-center justify-end gap-1">
+                    <FiClock className="text-gray-400" />
+                    {formatLoginTime(user.lastLoginAt)}
+                  </div>
+                  <div className="text-xs text-gray-400">{user.loginCount || 0} lần login</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-8 text-sm text-gray-400">Chưa có học sinh nào login hôm nay.</div>
+        )}
       </div>
 
       {/* Weekly schedule */}

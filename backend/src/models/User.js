@@ -11,6 +11,8 @@ const userSchema = new mongoose.Schema(
     facebookId: { type: String },
     phone: { type: String, default: '' },
     isActive: { type: Boolean, default: true },
+    lastLoginAt: { type: Date },
+    loginCount: { type: Number, default: 0 },
   },
   { timestamps: true }
 );

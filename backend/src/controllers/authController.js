@@ -5,6 +5,26 @@ const User = require('../models/User');
 const generateToken = (id) =>
   jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '7d' });
 
+const recordLogin = async (user) => {
+  const lastLoginAt = new Date();
+  await User.updateOne(
+    { _id: user._id },
+    { $set: { lastLoginAt }, $inc: { loginCount: 1 } }
+  );
+  user.lastLoginAt = lastLoginAt;
+  user.loginCount = (user.loginCount || 0) + 1;
+};
+
+const touchStudentSession = async (user) => {
+  if (user.role !== 'student') return;
+  const lastLoginAt = new Date();
+  await User.updateOne(
+    { _id: user._id },
+    { $set: { lastLoginAt } }
+  );
+  user.lastLoginAt = lastLoginAt;
+};
+
 // POST /api/auth/register
 const register = async (req, res) => {
   try {
@@ -50,6 +70,7 @@ const login = async (req, res) => {
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(400).json({ message: 'Mật khẩu không đúng' });
 
+    await recordLogin(user);
     const token = generateToken(user._id);
     res.json({
       token,
@@ -62,9 +83,14 @@ const login = async (req, res) => {
 
 // GET /api/auth/me
 const getMe = async (req, res) => {
-  res.json({
-    user: { _id: req.user._id, name: req.user.name, email: req.user.email, phone: req.user.phone, role: req.user.role, avatar: req.user.avatar },
-  });
+  try {
+    await touchStudentSession(req.user);
+    res.json({
+      user: { _id: req.user._id, name: req.user.name, email: req.user.email, phone: req.user.phone, role: req.user.role, avatar: req.user.avatar },
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 };
 
 // PUT /api/auth/change-password
@@ -100,9 +126,14 @@ const changePassword = async (req, res) => {
 };
 
 // OAuth callback helper
-const oauthCallback = (req, res) => {
-  const token = generateToken(req.user._id);
-  res.redirect(`${process.env.CLIENT_URL}/oauth-success?token=${token}&role=${req.user.role}`);
+const oauthCallback = async (req, res) => {
+  try {
+    await recordLogin(req.user);
+    const token = generateToken(req.user._id);
+    res.redirect(`${process.env.CLIENT_URL}/oauth-success?token=${token}&role=${req.user.role}`);
+  } catch (err) {
+    res.redirect(`${process.env.CLIENT_URL}/login`);
+  }
 };
 
 module.exports = { register, login, getMe, changePassword, oauthCallback };

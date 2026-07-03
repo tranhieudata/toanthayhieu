@@ -2,6 +2,19 @@ const bcrypt = require('bcryptjs');
 const User = require('../models/User');
 const Enrollment = require('../models/Enrollment');
 
+const getVietnamTodayRange = () => {
+  const now = new Date();
+  const vietnamNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Bangkok' }));
+  const year = vietnamNow.getFullYear();
+  const month = vietnamNow.getMonth();
+  const date = vietnamNow.getDate();
+
+  return {
+    start: new Date(Date.UTC(year, month, date, -7, 0, 0, 0)),
+    end: new Date(Date.UTC(year, month, date + 1, -7, 0, 0, 0)),
+  };
+};
+
 // GET /api/users (admin)
 const getUsers = async (req, res) => {
   try {
@@ -72,12 +85,43 @@ const getMyEnrollments = async (req, res) => {
 // GET /api/admin/stats
 const getAdminStats = async (req, res) => {
   try {
-    const [totalUsers, totalCourses, totalEnrollments] = await Promise.all([
+    const { start, end } = getVietnamTodayRange();
+    const todayLoginFilter = {
+      role: 'student',
+      lastLoginAt: { $gte: start, $lt: end },
+    };
+
+    const [
+      totalUsers,
+      activeUsers,
+      inactiveUsers,
+      loggedInToday,
+      todayLoginUsers,
+      totalCourses,
+      totalEnrollments,
+    ] = await Promise.all([
       User.countDocuments({ role: 'student' }),
+      User.countDocuments({ role: 'student', isActive: true }),
+      User.countDocuments({ role: 'student', isActive: false }),
+      User.countDocuments(todayLoginFilter),
+      User.find(todayLoginFilter)
+        .select('name email avatar lastLoginAt loginCount isActive')
+        .sort({ lastLoginAt: -1 })
+        .limit(12),
       require('../models/Course').countDocuments(),
       Enrollment.countDocuments(),
     ]);
-    res.json({ totalUsers, totalCourses, totalEnrollments });
+
+    res.json({
+      totalUsers,
+      activeUsers,
+      inactiveUsers,
+      loggedInToday,
+      todayLoginUsers,
+      totalCourses,
+      totalEnrollments,
+      todayRange: { start, end, timezone: 'Asia/Bangkok' },
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
