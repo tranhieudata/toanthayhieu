@@ -12,6 +12,7 @@ const {
   getStudentSubmission,
   submitHomework,
   gradeSubmission,
+  bulkGradeSubmissions,
   autoCreateSubmissions,
   getClassStudents,
   adminSubmitHomework,
@@ -34,6 +35,7 @@ router.get('/:id/submissions', protect, adminOnly, getHomeworkSubmissions);
 router.get('/:id/class-students', protect, adminOnly, getClassStudents);
 router.post('/:id/auto-create-submissions', protect, adminOnly, autoCreateSubmissions);
 router.post('/:id/submissions/admin-submit', protect, adminOnly, adminSubmitHomework);
+router.post('/:id/submissions/bulk-grade', protect, adminOnly, bulkGradeSubmissions);
 router.post('/:id/submissions/:studentId/grade', protect, adminOnly, gradeSubmission);
 
 module.exports = router;

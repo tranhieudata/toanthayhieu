@@ -301,47 +301,13 @@ Return valid JSON only:
 }
 
 async function generateAnswerKeyChatGPT(homework) {
-//   const prompt = `You are an experienced Vietnamese math teacher. Create a detailed reference solution for this homework.
+  const prompt = `You are an experienced Vietnamese math teacher. Create a detailed reference solution for this homework.
 
-// Homework title: ${homework.title}
-// Homework description: ${homework.description || ''}
-// Attached images: homework question image first if available, then teacher solution/reference images if available. Use teacher solution images as the answer key when present.
+Homework title: ${homework.title}
+Homework description: ${homework.description || ''}
+Attached images: homework question image first if available, then teacher solution/reference images if available. Use teacher solution images as the answer key when present.
 
-// Return only the reference solution text in Vietnamese.`;
-      const prompt = `Bạn là một giáo viên dạy học đáng tin cậy. Hãy viết một nhận xét ngắn gọn (3-5 dòng) cho học sinh về kết quả kiểm tra của em.
-
-      Thông tin bài kiểm tra:
-      - Tên đề: ${homework.title}
-      - Chủ đề: ${homework.lesson?.title || 'Không xác định'}
-    
-
-      Thông tin kết quả học sinh:
-      - Tên học sinh: ${student?.name || 'Học sinh'}
-      - Tổng điểm: ${totalScore.toFixed(2)}/10 (%)
-
-
-      Hướng dẫn viết nhận xét:
-      - Viết để cho Phụ huynh cũng có thể đọc được và hiểu được tình hình học tập của con mình.
-      - Gửi kết quả có số điểm, cụ thể mức độ nào làm tốt, mức độ nào cần cải thiện.
-      - Viết tự nhiên như giáo viên đang nhận xét trực tiếp.
-      - Chú ý các trường hợp đặc biệt:
-        + Sai bài dễ nhưng đúng bài vừa hoặc khó → có thể do thiếu cẩn thận hoặc bỏ sót dữ kiện.
-        + Đúng phần lý thuyết nhưng sai phần vận dụng → kiến thức nền tốt nhưng cần luyện áp dụng.
-        + Đúng bài khó nhưng sai bài cơ bản → kiểm tra lại sự tập trung và cách đọc đề.
-        + Làm đúng nhiều bài cùng dạng nhưng sai dạng mới → cần tăng khả năng linh hoạt.
-      - Chỉ nhận xét những điều có dữ liệu hỗ trợ, không suy đoán quá mức.
-      - kết hợp với tiêu chí được gán cho từng mức độ (nếu có) để đưa ra nhận xét chính xác hơn.
-      - Không viết dạng báo cáo khô cứng.
-      - Không dùng từ: yếu, kém, dở.
-      - Nêu điểm mạnh trước, sau đó góp ý cải thiện.
-      - Độ dài khoảng 50–80 từ.
-      - Dựa trên cài đặt mức độ khó của admin (nếu có) để đưa ra nhận xét phù hợp.
-      - Dùng từ thầy và con thông qua gọi tên học sinh để tạo sự gần gũi.
-      - Viết để cho Phụ huynh cũng có thể đọc được và hiểu được tình hình học tập của con mình.
-      - ví dụ : Em chào C . Em gửi kết quả học tập của con bài kiểm tra vừa rồi con được 8,5 điểm . Con nắm vững kiến thức
-      và kỹ năng ở mức độ Nhận biết và Thông hiểu, tuy nhiên con cần luyện tập thêm một số dạng bài ở mức độ Vận dụng cao để cải thiện hơn nữa.
-
-      Viết bằng tiếng Việt, lời lẽ thân thiện, phù hợp với học sinh.`;
+Return only the reference solution text in Vietnamese.`;
   
   const answerKey = await callOpenAIWithImages(prompt, [
     homework.questionImage,
@@ -408,6 +374,75 @@ async function generateAIFeedbackByModel(homework, student, submissionImages, an
     return generateAIFeedbackChatGPT(homework, student, submissionImages, answerKey);
   }
   return generateAIFeedbackGemini(homework, student, submissionImages, answerKey);
+}
+
+async function gradeHomeworkSubmission({ homework, submission, student, graderId, aiModel, score, feedback }) {
+  let finalScore = score;
+  let finalFeedback = feedback;
+  let usedAI = false;
+  const selectedAiModel = aiModel || 'manual';
+
+  if (!['manual', 'gemini', 'chatgpt'].includes(selectedAiModel)) {
+    const err = new Error('AI model không hợp lệ');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  if (selectedAiModel !== 'manual') {
+    if (!submission.submissionImages || submission.submissionImages.length === 0) {
+      const err = new Error('Bài làm chưa có ảnh để AI chấm');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    if (!homework.answerKey || homework.answerKey.trim() === '') {
+      const generatedAnswerKey = await generateAnswerKeyByModel(homework, selectedAiModel);
+
+      if (generatedAnswerKey) {
+        homework.answerKey = generatedAnswerKey;
+        homework.answerKeyGeneratedBy = selectedAiModel;
+        homework.answerKeyGeneratedAt = new Date();
+        await homework.save();
+      }
+    }
+
+    const aiResult = await generateAIFeedbackByModel(
+      homework,
+      student,
+      submission.submissionImages,
+      homework.answerKey || 'No reference answer',
+      selectedAiModel
+    );
+
+    finalScore = aiResult.score !== undefined ? aiResult.score : score;
+    finalFeedback = aiResult.feedback || feedback;
+    usedAI = true;
+  } else {
+    finalScore = clampScore(score, homework.maxScore);
+    if (finalScore === null || Number(score) !== finalScore) {
+      const err = new Error(`Điểm phải từ 0-${homework.maxScore}`);
+      err.statusCode = 400;
+      throw err;
+    }
+    finalFeedback = typeof feedback === 'string' ? feedback : '';
+  }
+
+  submission.score = finalScore;
+  submission.maxScore = homework.maxScore;
+  submission.feedback = finalFeedback;
+  submission.gradedBy = graderId;
+  submission.gradedAt = new Date();
+  submission.status = 'graded';
+  submission.aiModel = selectedAiModel;
+
+  await submission.save();
+  await submission.populate('student', 'name email');
+  await submission.populate('gradedBy', 'name');
+
+  return {
+    ...submission.toObject(),
+    aiUsed: usedAI
+  };
 }
 
 // GET /api/homeworks/student/list - Get homeworks for the current student
@@ -669,73 +704,109 @@ const gradeSubmission = async (req, res) => {
       return res.status(404).json({ message: 'Không tìm thấy bài tập' });
     }
 
-    // AI grading
-    let finalScore = score;
-    let finalFeedback = feedback;
-    let usedAI = false;
-    const selectedAiModel = aiModel || 'manual';
-
-    if (!['manual', 'gemini', 'chatgpt'].includes(selectedAiModel)) {
-      return res.status(400).json({ message: 'AI model không hợp lệ' });
-    }
-
-    if (selectedAiModel !== 'manual') {
-      const student = await User.findById(studentId);
-      
-      
-      // Generate a reference answer first if missing
-      if (!homework.answerKey || homework.answerKey.trim() === '') {
-       
-        const generatedAnswerKey = await generateAnswerKeyByModel(homework, selectedAiModel);
-        
-        if (generatedAnswerKey) {
-          homework.answerKey = generatedAnswerKey;
-          homework.answerKeyGeneratedBy = selectedAiModel;
-          homework.answerKeyGeneratedAt = new Date();
-          await homework.save();
-          
-        }
-      }
-
-      // Grade with AI based on the reference answer
-      const aiResult = await generateAIFeedbackByModel(
-        homework,
-        student,
-        submission.submissionImages,
-        homework.answerKey || 'No reference answer',
-        selectedAiModel
-      );
-      
-      finalScore = aiResult.score !== undefined ? aiResult.score : score;
-      finalFeedback = aiResult.feedback || feedback;
-      usedAI = true;
-     
-    } else {
-      finalScore = clampScore(score, homework.maxScore);
-      if (finalScore === null || Number(score) !== finalScore) {
-        return res.status(400).json({ message: `Điểm phải từ 0-${homework.maxScore}` });
-      }
-      finalFeedback = typeof feedback === 'string' ? feedback : '';
-    }
-
-    submission.score = finalScore;
-    submission.maxScore = homework.maxScore;
-    submission.feedback = finalFeedback;
-    submission.gradedBy = req.user._id;
-    submission.gradedAt = new Date();
-    submission.status = 'graded';
-    submission.aiModel = selectedAiModel;
-
-    await submission.save();
-    await submission.populate('student', 'name email');
-    await submission.populate('gradedBy', 'name');
-
-    res.json({
-      ...submission.toObject(),
-      aiUsed: usedAI
+    const student = await User.findById(studentId);
+    const gradedSubmission = await gradeHomeworkSubmission({
+      homework,
+      submission,
+      student,
+      graderId: req.user._id,
+      aiModel,
+      score,
+      feedback,
     });
+
+    res.json(gradedSubmission);
   } catch (err) {
     console.error('Grade submission error:', err);
+    res.status(err.statusCode || 400).json({ message: err.message });
+  }
+};
+
+// POST /api/homeworks/:id/submissions/bulk-grade - Grade all submitted class homework with AI
+const bulkGradeSubmissions = async (req, res) => {
+  try {
+    const { id: homeworkId } = req.params;
+    const { aiModel = 'gemini', onlyPending = true, studentIds } = req.body;
+
+    if (!['gemini', 'chatgpt'].includes(aiModel)) {
+      return res.status(400).json({ message: 'Chấm hàng loạt chỉ hỗ trợ Gemini hoặc ChatGPT' });
+    }
+
+    const homework = await Homework.findById(homeworkId).populate('class', 'students');
+    if (!homework) {
+      return res.status(404).json({ message: 'Không tìm thấy bài tập' });
+    }
+
+    const classStudentIds = (homework.class?.students || []).map(id => id.toString());
+    const requestedStudentIds = Array.isArray(studentIds) && studentIds.length > 0
+      ? studentIds.map(id => id.toString()).filter(id => classStudentIds.includes(id))
+      : classStudentIds;
+
+    const filter = {
+      homework: homeworkId,
+      student: { $in: requestedStudentIds },
+      submissionImages: { $exists: true, $ne: [] },
+    };
+    if (onlyPending) filter.status = { $ne: 'graded' };
+
+    const submissions = await HomeworkSubmission.find(filter)
+      .populate('student', 'name email')
+      .sort({ createdAt: 1 });
+
+    const results = [];
+    let graded = 0;
+    let failed = 0;
+
+    for (const submission of submissions) {
+      try {
+        const gradedSubmission = await gradeHomeworkSubmission({
+          homework,
+          submission,
+          student: submission.student,
+          graderId: req.user._id,
+          aiModel,
+        });
+
+        graded += 1;
+        results.push({
+          studentId: submission.student?._id || submission.student,
+          studentName: submission.student?.name || '',
+          status: 'graded',
+          score: gradedSubmission.score,
+          maxScore: gradedSubmission.maxScore,
+        });
+      } catch (error) {
+        failed += 1;
+        results.push({
+          studentId: submission.student?._id || submission.student,
+          studentName: submission.student?.name || '',
+          status: 'failed',
+          message: error.message,
+        });
+      }
+    }
+
+    const submissionsWithImagesCount = await HomeworkSubmission.countDocuments({
+      homework: homeworkId,
+      student: { $in: requestedStudentIds },
+      submissionImages: { $exists: true, $ne: [] },
+    });
+    const skipped = Math.max(submissionsWithImagesCount - submissions.length, 0);
+
+    res.json({
+      message: `Đã chấm ${graded} bài làm`,
+      totalStudents: requestedStudentIds.length,
+      submittedWithImages: submissionsWithImagesCount,
+      processed: submissions.length,
+      graded,
+      failed,
+      skipped,
+      onlyPending,
+      aiModel,
+      results,
+    });
+  } catch (err) {
+    console.error('Bulk grade submissions error:', err);
     res.status(400).json({ message: err.message });
   }
 };
@@ -874,6 +945,7 @@ module.exports = {
   getStudentSubmission,
   submitHomework,
   gradeSubmission,
+  bulkGradeSubmissions,
   getClassStudents,
   adminSubmitHomework,
   autoCreateSubmissions,

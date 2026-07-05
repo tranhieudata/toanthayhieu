@@ -96,6 +96,9 @@ export default function AdminHomework() {
   const [adminUploadImages, setAdminUploadImages] = useState([]);
   const [gradingLoading, setGradingLoading] = useState(false);
   const [gradingError, setGradingError] = useState('');
+  const [bulkGrading, setBulkGrading] = useState(false);
+  const [bulkGradeForm, setBulkGradeForm] = useState({ aiModel: 'gemini', onlyPending: true });
+  const [bulkGradeResult, setBulkGradeResult] = useState(null);
   const [previewImage, setPreviewImage] = useState(null);
   const [cameraModal, setCameraModal] = useState({
     open: false,
@@ -565,12 +568,40 @@ export default function AdminHomework() {
     setGradingError('');
     setAdminUploadingStudent(null);
     setAdminUploadImages([]);
+    setBulkGradeResult(null);
+    setBulkGradeForm({ aiModel: 'gemini', onlyPending: true });
   };
 
   const closeGradebookModal = () => {
     setGradebookHomework(null);
     setClassStudents([]);
     setSubmissions([]);
+  };
+
+  const handleBulkGrade = async () => {
+    if (!selectedHomework) return;
+    const aiLabel = bulkGradeForm.aiModel === 'chatgpt' ? 'ChatGPT' : 'Gemini';
+    const confirmMessage = bulkGradeForm.onlyPending
+      ? `Chấm hàng loạt các bài chưa chấm bằng ${aiLabel}?`
+      : `Chấm lại toàn bộ bài đã nộp bằng ${aiLabel}?`;
+    if (!window.confirm(confirmMessage)) return;
+
+    setBulkGrading(true);
+    setBulkGradeResult(null);
+    const statusToast = toast.loading(`Đang chấm hàng loạt bằng ${aiLabel}...`);
+
+    try {
+      const { data } = await api.post(`/homeworks/${selectedHomework._id}/submissions/bulk-grade`, bulkGradeForm);
+      setBulkGradeResult(data);
+      toast.success(`Đã chấm ${data.graded || 0} bài, lỗi ${data.failed || 0}`);
+      await loadSubmissions(selectedHomework._id);
+    } catch (err) {
+      console.error('Bulk grade error:', err);
+      toast.error(err.response?.data?.message || 'Lỗi chấm hàng loạt');
+    } finally {
+      toast.dismiss(statusToast);
+      setBulkGrading(false);
+    }
   };
 
   const getSortedGradebookRows = () => {
@@ -709,6 +740,12 @@ export default function AdminHomework() {
   const filteredHomeworks = filterClass
     ? homeworks.filter(hw => hw.class?._id === filterClass)
     : homeworks;
+
+  const submittedWithImagesCount = submissions.filter(sub => (sub.submissionImages || []).length > 0).length;
+  const pendingWithImagesCount = submissions.filter(
+    sub => sub.status !== 'graded' && (sub.submissionImages || []).length > 0
+  ).length;
+  const gradedCount = submissions.filter(sub => sub.status === 'graded').length;
 
   return (
     <div className="space-y-6">
@@ -1050,6 +1087,79 @@ export default function AdminHomework() {
             </div>
 
             <div className="p-6">
+              {!submissionsLoading && classStudents.length > 0 && (
+                <div className="mb-5 rounded-lg border border-blue-200 bg-blue-50 p-4">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                    <div>
+                      <h3 className="font-semibold text-gray-900">Chấm hàng loạt cho cả lớp</h3>
+                      <p className="mt-1 text-sm text-gray-600">
+                        Đã nộp ảnh: {submittedWithImagesCount}/{classStudents.length} · Chưa chấm: {pendingWithImagesCount} · Đã chấm: {gradedCount}
+                      </p>
+                    </div>
+
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">AI chấm</label>
+                        <select
+                          value={bulkGradeForm.aiModel}
+                          onChange={(e) => setBulkGradeForm(prev => ({ ...prev, aiModel: e.target.value }))}
+                          disabled={bulkGrading}
+                          className="w-full sm:w-36 px-3 py-2 border border-blue-200 rounded-lg bg-white focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="gemini">Gemini</option>
+                          <option value="chatgpt">ChatGPT</option>
+                        </select>
+                      </div>
+
+                      <label className="flex items-center gap-2 text-sm text-gray-700 bg-white border border-blue-200 rounded-lg px-3 py-2">
+                        <input
+                          type="checkbox"
+                          checked={bulkGradeForm.onlyPending}
+                          onChange={(e) => setBulkGradeForm(prev => ({ ...prev, onlyPending: e.target.checked }))}
+                          disabled={bulkGrading}
+                        />
+                        Chỉ chấm bài chưa chấm
+                      </label>
+
+                      <button
+                        type="button"
+                        onClick={handleBulkGrade}
+                        disabled={bulkGrading || submittedWithImagesCount === 0 || (bulkGradeForm.onlyPending && pendingWithImagesCount === 0)}
+                        className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {bulkGrading ? (
+                          <>
+                            <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            Đang chấm...
+                          </>
+                        ) : (
+                          <>
+                            <FiCheckCircle /> Chấm hàng loạt
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {bulkGradeResult && (
+                    <div className="mt-4 rounded-lg border border-blue-200 bg-white p-3 text-sm text-gray-700">
+                      <p className="font-medium text-gray-900">
+                        Kết quả: chấm thành công {bulkGradeResult.graded || 0}, lỗi {bulkGradeResult.failed || 0}, bỏ qua {bulkGradeResult.skipped || 0}
+                      </p>
+                      {bulkGradeResult.results?.some(item => item.status === 'failed') && (
+                        <div className="mt-2 max-h-28 overflow-y-auto text-xs text-red-700">
+                          {bulkGradeResult.results
+                            .filter(item => item.status === 'failed')
+                            .map(item => (
+                              <p key={item.studentId}>{item.studentName || 'Học sinh'}: {item.message}</p>
+                            ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {submissionsLoading ? (
                 <div className="text-center text-gray-500">Đang tải...</div>
               ) : classStudents.length === 0 ? (
