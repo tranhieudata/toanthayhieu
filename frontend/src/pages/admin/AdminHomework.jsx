@@ -1,8 +1,9 @@
 ﻿import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useRef } from 'react';
 import api, { getUploadUrl } from '../../api/axios';
 import toast from 'react-hot-toast';
-import { FiPlus, FiEdit2, FiTrash2, FiBook, FiList, FiChevronDown, FiChevronUp, FiUpload, FiImage, FiX, FiEdit3, FiCheckCircle, FiClock, FiEye, FiBarChart2, FiDownload } from 'react-icons/fi';
+import { FiPlus, FiEdit2, FiTrash2, FiBook, FiList, FiChevronDown, FiChevronUp, FiUpload, FiImage, FiX, FiEdit3, FiCheckCircle, FiClock, FiEye, FiBarChart2, FiDownload, FiCamera } from 'react-icons/fi';
 import { compressImageFile } from '../../utils/imageCompression';
 
 
@@ -66,6 +67,9 @@ function getClipboardImageFiles(event) {
 
 export default function AdminHomework() {
   const navigate = useNavigate();
+  const videoRef = useRef(null);
+  const cameraStreamRef = useRef(null);
+  const cameraCaptureHandlerRef = useRef(null);
   const [homeworks, setHomeworks] = useState([]);
   const [classes, setClasses] = useState([]);
   const [lessons, setLessons] = useState([]);
@@ -93,6 +97,13 @@ export default function AdminHomework() {
   const [gradingLoading, setGradingLoading] = useState(false);
   const [gradingError, setGradingError] = useState('');
   const [previewImage, setPreviewImage] = useState(null);
+  const [cameraModal, setCameraModal] = useState({
+    open: false,
+    title: '',
+    loading: false,
+    capturing: false,
+    error: '',
+  });
 
   const loadHomeworks = async () => {
     setLoading(true);
@@ -134,6 +145,98 @@ export default function AdminHomework() {
   useEffect(() => {
     loadHomeworks();
   }, [filterClass]);
+
+  const closeAdminCamera = (closeModal = true) => {
+    if (cameraStreamRef.current) {
+      cameraStreamRef.current.getTracks().forEach(track => track.stop());
+      cameraStreamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    if (closeModal) {
+      cameraCaptureHandlerRef.current = null;
+      setCameraModal({
+        open: false,
+        title: '',
+        loading: false,
+        capturing: false,
+        error: '',
+      });
+    }
+  };
+
+  const openAdminCamera = async (title, onCapture) => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      toast.error('Trình duyệt không hỗ trợ chụp ảnh trực tiếp');
+      return;
+    }
+
+    closeAdminCamera(false);
+    cameraCaptureHandlerRef.current = onCapture;
+    setCameraModal({
+      open: true,
+      title,
+      loading: true,
+      capturing: false,
+      error: '',
+    });
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+        audio: false,
+      });
+      cameraStreamRef.current = stream;
+      setCameraModal(prev => ({ ...prev, loading: false }));
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(() => {});
+        }
+      }, 0);
+    } catch (err) {
+      console.error('Camera open error:', err);
+      setCameraModal(prev => ({
+        ...prev,
+        loading: false,
+        error: 'Không mở được camera. Vui lòng kiểm tra quyền camera của trình duyệt.',
+      }));
+    }
+  };
+
+  const captureAdminCameraImage = async () => {
+    const video = videoRef.current;
+    if (!video || !cameraCaptureHandlerRef.current) return;
+    if (!video.videoWidth || !video.videoHeight) {
+      toast.error('Camera chưa sẵn sàng, vui lòng thử lại');
+      return;
+    }
+
+    setCameraModal(prev => ({ ...prev, capturing: true, error: '' }));
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      const blob = await new Promise(resolve => {
+        canvas.toBlob(resolve, 'image/jpeg', 0.9);
+      });
+      if (!blob) throw new Error('Không tạo được ảnh từ camera');
+
+      const file = new File([blob], `camera-homework-${Date.now()}.jpg`, { type: 'image/jpeg' });
+      await cameraCaptureHandlerRef.current(file);
+    } catch (err) {
+      console.error('Camera capture error:', err);
+      toast.error(err.response?.data?.message || 'Lỗi chụp ảnh');
+    } finally {
+      setCameraModal(prev => ({ ...prev, capturing: false }));
+    }
+  };
+
+  useEffect(() => () => closeAdminCamera(), []);
 
   const handleImageUpload = async (file) => {
     if (!file) return;
@@ -1009,19 +1112,31 @@ export default function AdminHomework() {
                                         <p className="font-medium text-gray-700">Bài làm:</p>
                                         <p className="text-xs text-gray-400">Bấm vào vùng này rồi Ctrl+V để dán ảnh</p>
                                       </div>
-                                      <label className="inline-flex items-center gap-1 px-3 py-1.5 text-sm bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 cursor-pointer">
-                                        <FiUpload size={14} /> Thêm ảnh
-                                        <input
-                                          type="file"
-                                          accept="image/*"
-                                          multiple
-                                          onChange={(e) => {
-                                            handleAddSubmissionImages(Array.from(e.target.files || []), student, submission);
-                                            e.target.value = '';
-                                          }}
-                                          className="hidden"
-                                        />
-                                      </label>
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => openAdminCamera(
+                                            `Chụp bài làm của ${student.name}`,
+                                            (file) => handleAddSubmissionImages([file], student, submission)
+                                          )}
+                                          className="inline-flex items-center gap-1 px-3 py-1.5 text-sm bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100"
+                                        >
+                                          <FiCamera size={14} /> Chụp ảnh
+                                        </button>
+                                        <label className="inline-flex items-center gap-1 px-3 py-1.5 text-sm bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 cursor-pointer">
+                                          <FiUpload size={14} /> Thêm ảnh
+                                          <input
+                                            type="file"
+                                            accept="image/*"
+                                            multiple
+                                            onChange={(e) => {
+                                              handleAddSubmissionImages(Array.from(e.target.files || []), student, submission);
+                                              e.target.value = '';
+                                            }}
+                                            className="hidden"
+                                          />
+                                        </label>
+                                      </div>
                                     </div>
                                     <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                                       {submission.submissionImages.map((img, idx) => (
@@ -1041,18 +1156,20 @@ export default function AdminHomework() {
                                             </span>
                                           </button>
                                           <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition">
-                                            <label className="bg-white text-blue-600 rounded-full p-1 shadow cursor-pointer hover:bg-blue-50" title="Đổi ảnh">
+                                            <button
+                                              type="button"
+                                              onClick={() => openAdminCamera(
+                                                `Chụp đổi ảnh của ${student.name}`,
+                                                async (file) => {
+                                                  await handleReplaceSubmissionImage(file, student, submission, idx);
+                                                  closeAdminCamera();
+                                                }
+                                              )}
+                                              className="bg-white text-blue-600 rounded-full p-1 shadow cursor-pointer hover:bg-blue-50"
+                                              title="Chụp đổi ảnh"
+                                            >
                                               <FiEdit2 size={14} />
-                                              <input
-                                                type="file"
-                                                accept="image/*"
-                                                onChange={(e) => {
-                                                  handleReplaceSubmissionImage(e.target.files?.[0], student, submission, idx);
-                                                  e.target.value = '';
-                                                }}
-                                                className="hidden"
-                                              />
-                                            </label>
+                                            </button>
                                             <button
                                               type="button"
                                               onClick={() => handleRemoveSubmissionImage(student, submission, idx)}
@@ -1077,19 +1194,31 @@ export default function AdminHomework() {
                                     <FiImage size={28} className="mx-auto text-gray-400 mb-2" />
                                     <p className="text-sm text-gray-600 mb-3">Bài làm chưa có ảnh</p>
                                     <p className="mb-3 text-xs text-gray-400">Bấm vào khung rồi Ctrl+V để dán ảnh</p>
-                                    <label className="inline-flex items-center gap-2 px-3 py-2 bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 cursor-pointer">
-                                      <FiUpload /> Thêm ảnh
-                                      <input
-                                        type="file"
-                                        accept="image/*"
-                                        multiple
-                                        onChange={(e) => {
-                                          handleAddSubmissionImages(Array.from(e.target.files || []), student, submission);
-                                          e.target.value = '';
-                                        }}
-                                        className="hidden"
-                                      />
-                                    </label>
+                                    <div className="flex flex-wrap justify-center gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => openAdminCamera(
+                                          `Chụp bài làm của ${student.name}`,
+                                          (file) => handleAddSubmissionImages([file], student, submission)
+                                        )}
+                                        className="inline-flex items-center gap-2 px-3 py-2 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100"
+                                      >
+                                        <FiCamera /> Chụp ảnh
+                                      </button>
+                                      <label className="inline-flex items-center gap-2 px-3 py-2 bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 cursor-pointer">
+                                        <FiUpload /> Thêm ảnh
+                                        <input
+                                          type="file"
+                                          accept="image/*"
+                                          multiple
+                                          onChange={(e) => {
+                                            handleAddSubmissionImages(Array.from(e.target.files || []), student, submission);
+                                            e.target.value = '';
+                                          }}
+                                          className="hidden"
+                                        />
+                                      </label>
+                                    </div>
                                   </div>
                                 )}
 
@@ -1281,7 +1410,7 @@ export default function AdminHomework() {
                                 {/* Admin upload for students without submission */}
                                 {adminUploadingStudent?._id === student._id ? (
                                   <div className="bg-blue-50 p-4 rounded-lg space-y-3">
-                                    <p className="font-medium text-gray-700">Upload bài làm cho {student.name}</p>
+                                    <p className="font-medium text-gray-700">Chụp hoặc upload bài làm cho {student.name}</p>
                                     
                                     <div>
                                       <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1292,26 +1421,39 @@ export default function AdminHomework() {
                                         onPaste={handlePasteAdminUploadImages}
                                         className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center cursor-pointer hover:border-blue-500 outline-none focus:ring-2 focus:ring-blue-300"
                                       >
-                                        <input
-                                          type="file"
-                                          accept="image/*"
-                                          multiple
-                                          onChange={(e) => {
-                                            const files = e.target.files;
-                                            if (files) {
-                                              Array.from(files).forEach(file => {
-                                                handleAdminImageUpload(file);
-                                              });
-                                            }
-                                          }}
-                                          className="hidden"
-                                          id={`admin-upload-${student._id}`}
-                                        />
-                                        <label htmlFor={`admin-upload-${student._id}`} className="cursor-pointer block">
-                                          <FiImage size={32} className="mx-auto text-gray-400 mb-2" />
-                                          <p className="text-sm text-gray-600">Tải lên ảnh bài làm</p>
-                                          <p className="mt-1 text-xs text-gray-400">Hoặc bấm vào khung rồi Ctrl+V để dán ảnh</p>
-                                        </label>
+                                        <FiImage size={32} className="mx-auto text-gray-400 mb-2" />
+                                        <p className="text-sm text-gray-600">Chụp hoặc tải ảnh bài làm</p>
+                                        <p className="mt-1 text-xs text-gray-400">Hoặc bấm vào khung rồi Ctrl+V để dán ảnh</p>
+                                        <div className="mt-3 flex flex-wrap justify-center gap-2">
+                                          <button
+                                            type="button"
+                                            onClick={() => openAdminCamera(
+                                              `Chụp bài làm của ${student.name}`,
+                                              handleAdminImageUpload
+                                            )}
+                                            className="inline-flex items-center gap-2 px-3 py-2 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100"
+                                          >
+                                            <FiCamera /> Chụp ảnh
+                                          </button>
+                                          <label className="inline-flex items-center gap-2 px-3 py-2 bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 cursor-pointer">
+                                            <FiUpload /> Thêm ảnh
+                                            <input
+                                              type="file"
+                                              accept="image/*"
+                                              multiple
+                                              onChange={(e) => {
+                                                const files = e.target.files;
+                                                if (files) {
+                                                  Array.from(files).forEach(file => {
+                                                    handleAdminImageUpload(file);
+                                                  });
+                                                }
+                                                e.target.value = '';
+                                              }}
+                                              className="hidden"
+                                            />
+                                          </label>
+                                        </div>
                                       </div>
                                     </div>
 
@@ -1377,7 +1519,7 @@ export default function AdminHomework() {
                                     }}
                                     className="w-full px-3 py-2 bg-green-50 text-green-600 border border-green-300 rounded-lg hover:bg-green-100 flex items-center justify-center gap-2"
                                   >
-                                    <FiUpload /> Upload bài làm
+                                    <FiCamera /> Chụp / Upload bài làm
                                   </button>
                                 )}
                               </>
@@ -1481,6 +1623,59 @@ export default function AdminHomework() {
                   </table>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {cameraModal.open && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-[70] p-4">
+          <div className="bg-white rounded-lg w-full max-w-2xl overflow-hidden">
+            <div className="p-4 border-b border-gray-200 flex items-center justify-between gap-3">
+              <h3 className="font-semibold text-gray-900">{cameraModal.title || 'Chụp ảnh bài làm'}</h3>
+              <button
+                type="button"
+                onClick={() => closeAdminCamera()}
+                className="text-gray-500 hover:text-gray-700"
+                title="Đóng camera"
+              >
+                <FiX size={22} />
+              </button>
+            </div>
+
+            <div className="bg-black aspect-[4/3] flex items-center justify-center">
+              {cameraModal.loading ? (
+                <div className="text-white text-sm">Đang mở camera...</div>
+              ) : cameraModal.error ? (
+                <div className="text-white text-sm text-center px-6">{cameraModal.error}</div>
+              ) : (
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-full h-full object-contain"
+                />
+              )}
+            </div>
+
+            <div className="p-4 flex flex-col sm:flex-row gap-2">
+              <button
+                type="button"
+                onClick={captureAdminCameraImage}
+                disabled={cameraModal.loading || cameraModal.capturing || !!cameraModal.error}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                <FiCamera />
+                {cameraModal.capturing ? 'Đang chụp và tải lên...' : 'Chụp và tải lên'}
+              </button>
+              <button
+                type="button"
+                onClick={() => closeAdminCamera()}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+              >
+                Xong
+              </button>
             </div>
           </div>
         </div>
