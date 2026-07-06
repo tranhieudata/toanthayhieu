@@ -26,6 +26,11 @@ const examSchema = new mongoose.Schema(
     levels: [levelSchema],
     isTemplate: { type: Boolean, default: false }, // true = thuộc ngân hàng đề
     note: { type: String, default: '' },
+    pdfAttachments: [{
+      url: { type: String },
+      filename: { type: String },
+      uploadedAt: { type: Date, default: Date.now },
+    }],
     examPackage: { type: mongoose.Schema.Types.Mixed, default: null },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     sharedPractice: { type: String, default: '' }, // JSON: { generatedAt, stats, exercises:[{level, questions:[{q,hint}]}] }

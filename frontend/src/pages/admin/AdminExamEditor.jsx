@@ -4,6 +4,7 @@ import api from '../../api/axios';
 import toast from 'react-hot-toast';
 import { FiArrowLeft, FiSave, FiPlus, FiTrash2, FiRefreshCw } from 'react-icons/fi';
 import RichTextEditor from '../../components/RichTextEditor';
+import PdfUploader from '../../components/PdfUploader';
 import VN_MATH_CURRICULUM from '../../utils/vnMathCurriculum';
 
 const FALLBACK_LEVELS = [
@@ -239,6 +240,7 @@ export default function AdminExamEditor() {
     totalQuestions: '',
     isTemplate: false,
     note: '',
+    pdfAttachments: [],
     classSchedules: [],
     matrix: createDefaultMatrix(FALLBACK_LEVELS, 6),
     examPackage: null,
@@ -286,6 +288,7 @@ export default function AdminExamEditor() {
           totalQuestions: exam.totalQuestions || '',
           isTemplate: exam.isTemplate || false,
           note: exam.note || '',
+          pdfAttachments: exam.pdfAttachments || [],
           classSchedules: (exam.classSchedules || []).map(schedule => ({
             class: schedule.class?._id || schedule.class || '',
             startDate: toLocalDatetimeInput(schedule.startDate),
@@ -345,6 +348,7 @@ export default function AdminExamEditor() {
         level: '',
         totalQuestions: '',
         note: '',
+        pdfAttachments: [],
         classSchedules: [],
         matrix: createDefaultMatrix(cognitiveLevels, curriculumGrade),
         examPackage: null,
@@ -366,6 +370,7 @@ export default function AdminExamEditor() {
         totalQuestions: exam.totalQuestions || '',
         isTemplate: false,
         note: exam.note ? `Sao chép từ ngân hàng đề: ${exam.title}` : f.note,
+        pdfAttachments: exam.pdfAttachments || [],
         classSchedules: [],
         matrix: matrixFromExam(exam, levels, grade),
         examPackage: exam.examPackage || null,
@@ -447,6 +452,7 @@ export default function AdminExamEditor() {
         totalQuestions: totals.totalQuestions,
         isTemplate: form.isTemplate,
         note: form.note,
+        pdfAttachments: form.pdfAttachments || [],
         levels: buildLevelsFromMatrix(matrixWithTotals, cognitiveLevels),
         examPackage,
         classSchedules: form.classSchedules
@@ -656,6 +662,14 @@ export default function AdminExamEditor() {
             value={form.content}
             onChange={html => setForm(f => ({ ...f, content: html }))}
             placeholder="Nhập nội dung đề kiểm tra. Dùng nút ƒx để chèn công thức toán..."
+          />
+        </div>
+
+        <div className="space-y-3 rounded-xl bg-white p-6 shadow-sm">
+          <h2 className="font-semibold text-gray-800">File PDF đề bài</h2>
+          <PdfUploader
+            attachments={form.pdfAttachments || []}
+            onAttachmentsChange={atts => setForm(f => ({ ...f, pdfAttachments: atts }))}
           />
         </div>
 

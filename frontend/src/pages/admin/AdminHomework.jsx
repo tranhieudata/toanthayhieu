@@ -5,6 +5,7 @@ import api, { getUploadUrl } from '../../api/axios';
 import toast from 'react-hot-toast';
 import { FiPlus, FiEdit2, FiTrash2, FiBook, FiList, FiChevronDown, FiChevronUp, FiUpload, FiImage, FiX, FiEdit3, FiCheckCircle, FiClock, FiEye, FiBarChart2, FiDownload, FiCamera } from 'react-icons/fi';
 import { compressImageFile } from '../../utils/imageCompression';
+import PdfUploader from '../../components/PdfUploader';
 
 
 const emptyForm = {
@@ -15,7 +16,9 @@ const emptyForm = {
   questionImage: { url: '' },
   sourceExam: '',
   examPackage: null,
+  pdfAttachments: [],
   solutionImages: [],
+  solutionPdfAttachments: [],
   answerKey: '',
   maxScore: 10,
   dueDate: '',
@@ -272,6 +275,14 @@ export default function AdminHomework() {
     }
   };
 
+  const handlePasteQuestionImage = async (event) => {
+    const files = getClipboardImageFiles(event);
+    if (files.length === 0) return;
+    event.preventDefault();
+    setImageFile(files[0]);
+    await handleImageUpload(files[0]);
+  };
+
   const openCreate = () => {
     setForm(emptyForm);
     setEditId(null);
@@ -288,7 +299,9 @@ export default function AdminHomework() {
       questionImage: hw.questionImage || { url: '' },
       sourceExam: hw.sourceExam?._id || hw.sourceExam || '',
       examPackage: hw.examPackage || null,
+      pdfAttachments: hw.pdfAttachments || [],
       solutionImages: hw.solutionImages || [],
+      solutionPdfAttachments: hw.solutionPdfAttachments || [],
       answerKey: hw.answerKey || '',
       maxScore: hw.maxScore || 10,
       dueDate: hw.dueDate ? hw.dueDate.substring(0, 10) : '',
@@ -299,7 +312,7 @@ export default function AdminHomework() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.title || !form.classId || (!form.questionImage?.url && !form.description?.trim() && !form.sourceExam)) {
+    if (!form.title || !form.classId || (!form.questionImage?.url && !form.description?.trim() && !form.sourceExam && !form.pdfAttachments?.length)) {
       return toast.error('Vui lòng nhập đề bài, chọn từ ngân hàng đề hoặc tải ảnh đề');
     }
 
@@ -413,6 +426,7 @@ export default function AdminHomework() {
       description: description || f.description,
       sourceExam: selectedExam._id,
       examPackage: selectedExam.examPackage || null,
+      pdfAttachments: selectedExam.pdfAttachments || f.pdfAttachments || [],
       answerKey: f.answerKey || answerKey,
       maxScore: selectedExam.levels?.reduce((sum, level) => sum + (level.totalPoints || 0), 0) || f.maxScore,
     }));
@@ -434,6 +448,13 @@ export default function AdminHomework() {
       console.error('Solution image upload error:', err);
       toast.error(err.response?.data?.message || 'Lỗi tải ảnh lời giải');
     }
+  };
+
+  const handlePasteSolutionImages = async (event) => {
+    const files = getClipboardImageFiles(event);
+    if (files.length === 0) return;
+    event.preventDefault();
+    await handleSolutionImageUpload(files);
   };
 
   const removeSolutionImage = (index) => {
@@ -935,7 +956,11 @@ export default function AdminHomework() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Ảnh đề bài</label>
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center cursor-pointer hover:border-blue-500">
+                <div
+                  tabIndex={0}
+                  onPaste={handlePasteQuestionImage}
+                  className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center cursor-pointer hover:border-blue-500 outline-none focus:ring-2 focus:ring-blue-300"
+                >
                   <input
                     type="file"
                     accept="image/*"
@@ -961,10 +986,19 @@ export default function AdminHomework() {
                       <div className="space-y-2">
                         <FiImage size={32} className="mx-auto text-gray-400" />
                         <p className="text-sm text-gray-600">Tải lên ảnh đề bài</p>
+                        <p className="text-xs text-gray-400">Hoặc bấm vào khung rồi Ctrl+V để dán ảnh</p>
                       </div>
                     )}
                   </label>
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">File PDF đề bài</label>
+                <PdfUploader
+                  attachments={form.pdfAttachments || []}
+                  onAttachmentsChange={(atts) => setForm(f => ({ ...f, pdfAttachments: atts }))}
+                />
               </div>
 
               <div>
@@ -980,7 +1014,11 @@ export default function AdminHomework() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Ảnh lời giải mẫu</label>
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-4">
+                <div
+                  tabIndex={0}
+                  onPaste={handlePasteSolutionImages}
+                  className="border-2 border-dashed border-gray-300 rounded-lg p-4 outline-none focus:ring-2 focus:ring-blue-300"
+                >
                   <label className="flex items-center justify-center gap-2 text-sm text-blue-700 cursor-pointer hover:text-blue-800">
                     <FiUpload />
                     Tải ảnh lời giải
@@ -995,6 +1033,7 @@ export default function AdminHomework() {
                       }}
                     />
                   </label>
+                  <p className="mt-2 text-center text-xs text-gray-400">Hoặc bấm vào khung rồi Ctrl+V để dán ảnh lời giải</p>
                   {form.solutionImages?.length > 0 && (
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-3">
                       {form.solutionImages.map((img, index) => (
@@ -1023,6 +1062,14 @@ export default function AdminHomework() {
                     </div>
                   )}
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">File PDF lời giải mẫu</label>
+                <PdfUploader
+                  attachments={form.solutionPdfAttachments || []}
+                  onAttachmentsChange={(atts) => setForm(f => ({ ...f, solutionPdfAttachments: atts }))}
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-4">

@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import api, { getUploadUrl } from '../api/axios';
 import toast from 'react-hot-toast';
 import Navbar from '../components/Navbar';
-import { FiUpload, FiX, FiCheck, FiClock, FiBook, FiEye, FiEdit2, FiTrendingUp, FiTrendingDown, FiMinus, FiBarChart2, FiHelpCircle } from 'react-icons/fi';
+import { FiUpload, FiX, FiCheck, FiClock, FiBook, FiEye, FiEdit2, FiTrendingUp, FiTrendingDown, FiMinus, FiBarChart2, FiHelpCircle, FiDownload } from 'react-icons/fi';
 import { compressImageFile } from '../utils/imageCompression';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
@@ -536,6 +536,26 @@ export default function StudentHomeworkPage() {
                         </div>
                       )}
 
+                      {hw.pdfAttachments?.length > 0 && (
+                        <div className="mb-6">
+                          <h3 className="font-medium text-gray-900 mb-2">File PDF đề bài:</h3>
+                          <div className="space-y-2">
+                            {hw.pdfAttachments.map((file, index) => (
+                              <a
+                                key={`${file.url}-${index}`}
+                                href={getUploadUrl(file.url)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center justify-between gap-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-700 hover:bg-blue-100"
+                              >
+                                <span className="truncate">{file.filename || `De bai ${index + 1}.pdf`}</span>
+                                <FiDownload className="shrink-0" size={15} />
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
                       {/* Current Submission Images */}
                       {sub?.submissionImages && sub.submissionImages.length > 0 && (
                         <div className="mb-6">
@@ -655,7 +675,7 @@ export default function StudentHomeworkPage() {
                               </p>
                             </div>
                           )}
-                          {(hw.answerKey?.trim() || hw.solutionImages?.length > 0) && (
+                          {(hw.answerKey?.trim() || hw.solutionImages?.length > 0 || hw.solutionPdfAttachments?.length > 0) && (
                             <div className="mt-4 border-t border-green-100 pt-4">
                               <h3 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
                                 <FiHelpCircle className="text-blue-600" /> Gợi ý đáp án
@@ -691,6 +711,26 @@ export default function StudentHomeworkPage() {
                                           <FiEye className="text-white" size={20} />
                                         </span>
                                       </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {hw.solutionPdfAttachments?.length > 0 && (
+                                <div className="mt-4">
+                                  <p className="text-sm font-medium text-gray-700 mb-2">File PDF lời giải mẫu:</p>
+                                  <div className="space-y-2">
+                                    {hw.solutionPdfAttachments.map((file, index) => (
+                                      <a
+                                        key={`${file.url}-${index}`}
+                                        href={getUploadUrl(file.url)}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="flex items-center justify-between gap-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-700 hover:bg-blue-100"
+                                      >
+                                        <span className="truncate">{file.filename || `Loi giai ${index + 1}.pdf`}</span>
+                                        <FiDownload className="shrink-0" size={15} />
+                                      </a>
                                     ))}
                                   </div>
                                 </div>

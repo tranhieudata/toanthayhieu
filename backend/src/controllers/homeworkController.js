@@ -513,9 +513,9 @@ const getHomeworkById = async (req, res) => {
 // POST /api/homeworks - Create homework
 const createHomework = async (req, res) => {
   try {
-    const { title, description, classId, lessonId, questionImage, answerKey, maxScore, dueDate, sourceExam, examPackage, solutionImages } = req.body;
+    const { title, description, classId, lessonId, questionImage, answerKey, maxScore, dueDate, sourceExam, examPackage, pdfAttachments, solutionImages, solutionPdfAttachments } = req.body;
 
-    if (!title || !classId || (!questionImage?.url && !description?.trim() && !sourceExam)) {
+    if (!title || !classId || (!questionImage?.url && !description?.trim() && !sourceExam && !pdfAttachments?.length)) {
       return res.status(400).json({ message: 'Thiếu thông tin bắt buộc (title, classId và đề bài)' });
     }
 
@@ -527,7 +527,9 @@ const createHomework = async (req, res) => {
       questionImage: questionImage?.url ? questionImage : { url: '' },
       sourceExam: sourceExam || undefined,
       examPackage: examPackage || null,
+      pdfAttachments: Array.isArray(pdfAttachments) ? pdfAttachments : [],
       solutionImages: Array.isArray(solutionImages) ? solutionImages : [],
+      solutionPdfAttachments: Array.isArray(solutionPdfAttachments) ? solutionPdfAttachments : [],
       answerKey,
       maxScore: maxScore || 10,
       createdBy: req.user._id,
@@ -551,7 +553,7 @@ const createHomework = async (req, res) => {
 // PUT /api/homeworks/:id - Cập nhật bài tập
 const updateHomework = async (req, res) => {
   try {
-    const allowed = ['title', 'description', 'classId', 'lessonId', 'questionImage', 'answerKey', 'maxScore', 'dueDate', 'isPublished', 'sourceExam', 'examPackage', 'solutionImages'];
+    const allowed = ['title', 'description', 'classId', 'lessonId', 'questionImage', 'answerKey', 'maxScore', 'dueDate', 'isPublished', 'sourceExam', 'examPackage', 'pdfAttachments', 'solutionImages', 'solutionPdfAttachments'];
     const $set = {};
     
     allowed.forEach(field => {

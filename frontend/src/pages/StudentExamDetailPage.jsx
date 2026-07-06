@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import api from '../api/axios';
 import Navbar from '../components/Navbar';
 import toast from 'react-hot-toast';
-import { FiArrowLeft, FiCheckCircle, FiClock, FiAward, FiCamera, FiX, FiUpload, FiImage, FiLock, FiBookOpen, FiChevronDown, FiChevronUp } from 'react-icons/fi';
+import { FiArrowLeft, FiCheckCircle, FiClock, FiAward, FiCamera, FiX, FiUpload, FiImage, FiLock, FiBookOpen, FiChevronDown, FiChevronUp, FiDownload } from 'react-icons/fi';
 import 'katex/dist/katex.min.css';
 import 'quill/dist/quill.snow.css';
 import katex from 'katex';
@@ -532,6 +532,28 @@ export default function StudentExamDetailPage() {
         </div>
 
         {/* Nội dung đề */}
+        {exam.pdfAttachments?.length > 0 && (
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <h2 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+              <FiDownload className="text-blue-500" /> File PDF đề bài
+            </h2>
+            <div className="space-y-2">
+              {exam.pdfAttachments.map((file, index) => (
+                <a
+                  key={`${file.url}-${index}`}
+                  href={getUploadUrl(file.url)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-between gap-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-700 hover:bg-blue-100"
+                >
+                  <span className="truncate">{file.filename || `De bai ${index + 1}.pdf`}</span>
+                  <FiDownload className="shrink-0" size={15} />
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+
         {exam.content ? (
           <div className="bg-white rounded-xl border border-gray-200 p-6">
             <h2 className="font-semibold text-gray-500 mb-4 pb-2 border-b border-gray-100 italic text-xs">Toán Thầy Hiếu - 038.2468.988</h2>

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import api from '../../api/axios';
+import api, { getUploadUrl } from '../../api/axios';
 import toast from 'react-hot-toast';
 import { FiPlus, FiEdit2, FiTrash2, FiBook, FiArchive, FiCalendar, FiLayers, FiClock, FiEye, FiDownload, FiPrinter, FiX } from 'react-icons/fi';
 import AdminExamComposer from './AdminExamComposer';
@@ -595,13 +595,36 @@ export default function AdminExams() {
                 <div className="flex justify-center py-12">
                   <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
                 </div>
-              ) : previewExam?.examPackage ? (
-                <PaperPreview paper={previewExam.examPackage} />
-              ) : previewExam?.content ? (
-                <div
-                  className="prose max-w-none"
-                  dangerouslySetInnerHTML={{ __html: previewExam.content }}
-                />
+              ) : previewExam?.examPackage || previewExam?.content || previewExam?.pdfAttachments?.length ? (
+                <div className="space-y-5">
+                  {previewExam?.pdfAttachments?.length > 0 && (
+                    <div className="rounded-lg border border-blue-100 bg-blue-50 p-3">
+                      <p className="mb-2 text-sm font-semibold text-blue-900">File PDF đề bài</p>
+                      <div className="space-y-2">
+                        {previewExam.pdfAttachments.map((file, index) => (
+                          <a
+                            key={`${file.url}-${index}`}
+                            href={getUploadUrl(file.url)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-2 text-sm text-blue-700 hover:underline"
+                          >
+                            <FiDownload size={14} />
+                            {file.filename || `De bai ${index + 1}.pdf`}
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {previewExam?.examPackage ? (
+                    <PaperPreview paper={previewExam.examPackage} />
+                  ) : previewExam?.content ? (
+                    <div
+                      className="prose max-w-none"
+                      dangerouslySetInnerHTML={{ __html: previewExam.content }}
+                    />
+                  ) : null}
+                </div>
               ) : (
                 <div className="text-center text-gray-400 py-12">
                   Đề này chưa có nội dung để hiển thị.

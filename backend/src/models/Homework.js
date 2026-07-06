@@ -12,7 +12,17 @@ const homeworkSchema = new mongoose.Schema(
     },
     sourceExam: { type: mongoose.Schema.Types.ObjectId, ref: 'Exam' },
     examPackage: { type: mongoose.Schema.Types.Mixed, default: null },
+    pdfAttachments: [{
+      url: { type: String },
+      filename: { type: String },
+      uploadedAt: { type: Date, default: Date.now },
+    }],
     solutionImages: [{ url: { type: String }, uploadedAt: { type: Date, default: Date.now } }],
+    solutionPdfAttachments: [{
+      url: { type: String },
+      filename: { type: String },
+      uploadedAt: { type: Date, default: Date.now },
+    }],
     answerKey: { type: String, default: '' }, // Đáp án của giáo viên
     answerKeyGeneratedBy: { type: String, enum: ['gemini', 'chatgpt', 'manual'], default: 'manual' },
     answerKeyGeneratedAt: { type: Date },

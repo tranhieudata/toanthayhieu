@@ -143,7 +143,7 @@ Hướng dẫn viết nhận xét:
 - Dựa trên cài đặt mức độ khó của admin (nếu có) để đưa ra nhận xét phù hợp.
 - Dùng từ thầy và con thông qua gọi tên học sinh để tạo sự gần gũi.
 - Viết để cho Phụ huynh cũng có thể đọc được và hiểu được tình hình học tập của con mình.
-- ví dụ : Em chào C . Em gửi kết quả học tập của con bài kiểm tra vừa rồi con được 8,5 điểm . Con nắm vững kiến thức
+- ví dụ : Kết quả học tập của con bài kiểm tra vừa rồi con được 8,5 điểm . Con nắm vững kiến thức
 và kỹ năng ở mức độ Nhận biết và Thông hiểu, tuy nhiên con cần luyện tập thêm một số dạng bài ở mức độ Vận dụng cao để cải thiện hơn nữa.
 
 Viết bằng tiếng Việt, lời lẽ thân thiện, phù hợp với học sinh.`;
@@ -335,7 +335,7 @@ const getExamById = async (req, res) => {
 const createExam = async (req, res) => {
   try {
     console.log('[createExam] classSchedules received:', JSON.stringify(req.body.classSchedules));
-    const allowed = ['title', 'content', 'lesson', 'level', 'totalQuestions', 'isTemplate', 'note', 'levels', 'classSchedules', 'examPackage'];
+    const allowed = ['title', 'content', 'lesson', 'level', 'totalQuestions', 'isTemplate', 'note', 'pdfAttachments', 'levels', 'classSchedules', 'examPackage'];
     const data = {};
     allowed.forEach(field => { if (field in req.body) data[field] = req.body[field]; });
     data.createdBy = req.user._id;
@@ -350,7 +350,7 @@ const createExam = async (req, res) => {
 const updateExam = async (req, res) => {
   try {
     console.log('[updateExam] classSchedules received:', JSON.stringify(req.body.classSchedules));
-    const allowed = ['title', 'content', 'lesson', 'level', 'totalQuestions', 'isTemplate', 'note', 'levels', 'classSchedules', 'examPackage'];
+    const allowed = ['title', 'content', 'lesson', 'level', 'totalQuestions', 'isTemplate', 'note', 'pdfAttachments', 'levels', 'classSchedules', 'examPackage'];
     const $set = {};
     allowed.forEach(field => {
       if (field in req.body) $set[field] = req.body[field];

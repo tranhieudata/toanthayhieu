@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import Quill from 'quill';
 import katex from 'katex';
+import api, { getUploadUrl } from '../api/axios';
 import 'quill/dist/quill.snow.css';
 import 'katex/dist/katex.min.css';
 
@@ -16,6 +17,18 @@ export default function RichTextEditor({ value, onChange, placeholder = 'Nhập 
   const containerRef = useRef(null);
   const quillRef = useRef(null);
   const onChangeRef = useRef(onChange);
+
+  const uploadAndInsertImage = async (file, index) => {
+    if (!file?.type?.startsWith('image/')) return;
+    const formData = new FormData();
+    formData.append('file', file);
+    const { data } = await api.post('/upload/image', formData);
+    const quill = quillRef.current;
+    if (!quill) return;
+    const insertAt = typeof index === 'number' ? index : quill.getSelection(true)?.index ?? quill.getLength();
+    quill.insertEmbed(insertAt, 'image', getUploadUrl(data.url), 'user');
+    quill.setSelection(insertAt + 1, 0);
+  };
 
   // Luôn giữ onChangeRef trỏ đến hàm onChange mới nhất (tránh stale closure)
   useEffect(() => {
@@ -45,6 +58,23 @@ export default function RichTextEditor({ value, onChange, placeholder = 'Nhập 
             ['formula'],
             ['clean'],
           ],
+          handlers: {
+            image: () => {
+              const input = document.createElement('input');
+              input.type = 'file';
+              input.accept = 'image/*';
+              input.onchange = async () => {
+                const file = input.files?.[0];
+                if (!file) return;
+                try {
+                  await uploadAndInsertImage(file);
+                } catch (error) {
+                  window.alert(error.response?.data?.message || 'Khong tai duoc anh');
+                }
+              };
+              input.click();
+            },
+          },
         },
       },
     });
@@ -62,9 +92,45 @@ export default function RichTextEditor({ value, onChange, placeholder = 'Nhập 
 
     quillRef.current.on('text-change', handleChange);
 
+    const handlePaste = async (event) => {
+      const items = Array.from(event.clipboardData?.items || []);
+      const imageItems = items.filter(item => item.type?.startsWith('image/'));
+      if (imageItems.length === 0) return;
+      event.preventDefault();
+      const index = quillRef.current.getSelection(true)?.index ?? quillRef.current.getLength();
+      for (let i = 0; i < imageItems.length; i += 1) {
+        const file = imageItems[i].getAsFile();
+        if (!file) continue;
+        try {
+          await uploadAndInsertImage(file, index + i);
+        } catch (error) {
+          window.alert(error.response?.data?.message || 'Khong tai duoc anh');
+        }
+      }
+    };
+
+    const handleDrop = async (event) => {
+      const files = Array.from(event.dataTransfer?.files || []).filter(file => file.type?.startsWith('image/'));
+      if (files.length === 0) return;
+      event.preventDefault();
+      const index = quillRef.current.getSelection(true)?.index ?? quillRef.current.getLength();
+      for (let i = 0; i < files.length; i += 1) {
+        try {
+          await uploadAndInsertImage(files[i], index + i);
+        } catch (error) {
+          window.alert(error.response?.data?.message || 'Khong tai duoc anh');
+        }
+      }
+    };
+
+    quillRef.current.root.addEventListener('paste', handlePaste);
+    quillRef.current.root.addEventListener('drop', handleDrop);
+
     return () => {
       if (quillRef.current) {
         quillRef.current.off('text-change', handleChange);
+        quillRef.current.root.removeEventListener('paste', handlePaste);
+        quillRef.current.root.removeEventListener('drop', handleDrop);
         // Reset ref để React Strict Mode có thể khởi tạo lại đúng cách
         quillRef.current = null;
       }
