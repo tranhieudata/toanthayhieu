@@ -3,10 +3,11 @@ const router = express.Router();
 const { protect, adminOnly, optionalProtect } = require('../middleware/auth');
 const {
   getClasses, getClassById, createClass, updateClass, deleteClass,
-  addStudentToClass, removeStudentFromClass, toggleClassLesson,
+  addStudentToClass, removeStudentFromClass, toggleClassLesson, getClassStats,
 } = require('../controllers/classController');
 
 router.get('/', optionalProtect, getClasses);
+router.get('/:id/stats', protect, adminOnly, getClassStats);
 router.get('/:id', optionalProtect, getClassById);
 router.post('/', protect, adminOnly, createClass);
 router.put('/:id', protect, adminOnly, updateClass);

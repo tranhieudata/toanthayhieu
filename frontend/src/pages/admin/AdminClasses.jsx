@@ -1,7 +1,7 @@
 ﻿import { useEffect, useState } from 'react';
 import api from '../../api/axios';
 import toast from 'react-hot-toast';
-import { FiPlus, FiEdit2, FiTrash2, FiX, FiUsers, FiArrowLeft, FiToggleLeft, FiToggleRight, FiBook, FiChevronDown, FiChevronRight, FiSearch, FiUserPlus } from 'react-icons/fi';
+import { FiPlus, FiEdit2, FiTrash2, FiX, FiUsers, FiArrowLeft, FiToggleLeft, FiToggleRight, FiBook, FiChevronDown, FiChevronRight, FiSearch, FiUserPlus, FiBarChart2 } from 'react-icons/fi';
 
 const days = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
 
@@ -16,6 +16,44 @@ function isLessonOpen(setting) {
   if (!setting) return false;
   if (setting.isVisible) return true;
   return !!setting.autoOpenAt && new Date(setting.autoOpenAt) <= new Date();
+}
+
+function formatScore(value) {
+  if (value == null || Number.isNaN(Number(value))) return '-';
+  return Number(value).toLocaleString('vi-VN', { maximumFractionDigits: 1 });
+}
+
+function StudentScoreChart({ scores, color = 'blue' }) {
+  const barColor = color === 'emerald' ? 'bg-emerald-500' : 'bg-blue-500';
+  const softColor = color === 'emerald' ? 'bg-emerald-50 border-emerald-100' : 'bg-blue-50 border-blue-100';
+
+  if (!scores.length) {
+    return <div className="text-xs text-gray-400">Chưa có dữ liệu</div>;
+  }
+
+  return (
+    <div className={`h-24 rounded-lg border ${softColor} px-3 py-2 overflow-x-auto`}>
+      <div className="flex h-full min-w-max items-end gap-2">
+        {scores.map((item) => {
+          const maxScore = Number(item.maxScore) || 10;
+          const hasScore = item.score != null;
+          const percent = hasScore ? Math.max(4, Math.min(100, (Number(item.score) / maxScore) * 100)) : 4;
+          return (
+            <div key={item.homework || item.exam} className="flex w-8 flex-col items-center justify-end gap-1">
+              <div
+                title={`${item.title}: ${hasScore ? `${formatScore(item.score)}/${formatScore(maxScore)}` : 'Chưa chấm'}`}
+                className={`w-5 rounded-t ${hasScore ? barColor : 'bg-gray-300'}`}
+                style={{ height: `${percent}%` }}
+              />
+              <span className="w-8 truncate text-center text-[10px] font-medium text-gray-500">
+                {hasScore ? formatScore(item.score) : '-'}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 const emptyForm = {
@@ -42,6 +80,8 @@ export default function AdminClasses() {
   const [expandedCourses, setExpandedCourses] = useState({});
   const [detailLoading, setDetailLoading] = useState(false);
   const [lessonScheduleDrafts, setLessonScheduleDrafts] = useState({});
+  const [classStats, setClassStats] = useState(null);
+  const [statsLoading, setStatsLoading] = useState(false);
 
   // Add student to class modal
   const [showAddStudent, setShowAddStudent] = useState(false);
@@ -55,6 +95,12 @@ export default function AdminClasses() {
     load();
     api.get('/courses/admin/all').then(res => setCourses(res.data));
   }, []);
+
+  useEffect(() => {
+    if (selectedClass && activeTab === 'stats' && !classStats && !statsLoading) {
+      loadClassStats(selectedClass._id);
+    }
+  }, [selectedClass, activeTab, classStats, statsLoading]);
 
   const openCreate = () => { setForm(emptyForm); setEditId(null); setModal(true); };
   const openEdit = (c) => {
@@ -108,6 +154,7 @@ export default function AdminClasses() {
     setClassLessonsMap({});
     setClassEnrollments([]);
     setExpandedCourses({});
+    setClassStats(null);
     try {
       const [detailRes, enrollRes] = await Promise.all([
         api.get(`/classes/${cls._id}`),
@@ -142,6 +189,19 @@ export default function AdminClasses() {
       toast.error('Không thể tải dữ liệu lớp học');
     } finally {
       setDetailLoading(false);
+    }
+  };
+
+  const loadClassStats = async (classId = selectedClass?._id) => {
+    if (!classId) return;
+    setStatsLoading(true);
+    try {
+      const { data } = await api.get(`/classes/${classId}/stats`);
+      setClassStats(data);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Không thể tải thống kê lớp');
+    } finally {
+      setStatsLoading(false);
     }
   };
 
@@ -225,6 +285,7 @@ export default function AdminClasses() {
       toast.success('Đã thêm học sinh vào lớp');
       const { data } = await api.get(`/class-enrollments?classId=${selectedClass._id}&status=approved`);
       setClassEnrollments(data.enrollments || []);
+      setClassStats(null);
     } catch (err) {
       toast.error(err.response?.data?.message || 'Lỗi thêm học sinh');
     }
@@ -237,6 +298,7 @@ export default function AdminClasses() {
       toast.success('Đã xóa học sinh khỏi lớp');
       const { data } = await api.get(`/class-enrollments?classId=${selectedClass._id}&status=approved`);
       setClassEnrollments(data.enrollments || []);
+      setClassStats(null);
     } catch (err) {
       toast.error(err.response?.data?.message || 'Lỗi xóa học sinh');
     }
@@ -267,7 +329,7 @@ export default function AdminClasses() {
 
         {/* Tabs */}
         <div className="flex gap-1 mb-6 border-b">
-          {[['lessons', 'Bài học theo lớp'], ['students', 'Học sinh']].map(([key, label]) => (
+          {[['lessons', 'Bài học theo lớp'], ['students', 'Học sinh'], ['stats', 'Thống kê']].map(([key, label]) => (
             <button
               key={key}
               onClick={() => setActiveTab(key)}
@@ -421,6 +483,90 @@ export default function AdminClasses() {
                     </table>
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* Stats tab */}
+            {activeTab === 'stats' && (
+              <div className="space-y-4">
+                {statsLoading ? (
+                  <div className="text-center py-12 text-gray-500">Đang tải thống kê...</div>
+                ) : !classStats ? (
+                  <div className="card p-8 text-center text-gray-500">
+                    <FiBarChart2 size={40} className="mx-auto mb-3 text-gray-300" />
+                    <p>Chưa tải được thống kê</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <div className="card p-4">
+                        <p className="text-xs font-medium uppercase text-gray-400">Học sinh</p>
+                        <p className="mt-1 text-2xl font-bold text-gray-900">{classStats.students?.length || 0}</p>
+                      </div>
+                      <div className="card p-4">
+                        <p className="text-xs font-medium uppercase text-gray-400">Bài tập</p>
+                        <p className="mt-1 text-2xl font-bold text-blue-600">{classStats.homeworks?.length || 0}</p>
+                      </div>
+                      <div className="card p-4">
+                        <p className="text-xs font-medium uppercase text-gray-400">Bài kiểm tra</p>
+                        <p className="mt-1 text-2xl font-bold text-emerald-600">{classStats.exams?.length || 0}</p>
+                      </div>
+                    </div>
+
+                    <div className="card overflow-hidden">
+                      {(classStats.students || []).length === 0 ? (
+                        <div className="p-8 text-center text-gray-500">
+                          <FiUsers size={40} className="mx-auto mb-3 text-gray-300" />
+                          <p>Chưa có học sinh nào trong lớp</p>
+                        </div>
+                      ) : (
+                        <div className="divide-y">
+                          <div className="hidden bg-gray-50 px-4 py-3 text-xs font-semibold uppercase text-gray-500 lg:grid lg:grid-cols-[240px_1fr_1fr_110px] lg:gap-4">
+                            <span>Học sinh</span>
+                            <span>Điểm bài tập</span>
+                            <span>Điểm kiểm tra</span>
+                            <span>Trung bình</span>
+                          </div>
+                          {classStats.students.map(student => (
+                            <div key={student._id} className="grid gap-4 px-4 py-4 lg:grid-cols-[240px_1fr_1fr_110px] lg:items-center">
+                              <div className="flex items-center gap-3">
+                                {student.avatar ? (
+                                  <img src={student.avatar} className="h-9 w-9 rounded-full object-cover" alt="" />
+                                ) : (
+                                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-100 text-sm font-bold text-blue-600">
+                                    {student.name?.[0]?.toUpperCase() || '?'}
+                                  </div>
+                                )}
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-semibold text-gray-900">{student.name}</p>
+                                  <p className="truncate text-xs text-gray-400">{student.email}</p>
+                                </div>
+                              </div>
+                              <div>
+                                <p className="mb-1 text-xs font-medium text-gray-500 lg:hidden">Điểm bài tập</p>
+                                <StudentScoreChart scores={student.homeworkScores || []} color="blue" />
+                              </div>
+                              <div>
+                                <p className="mb-1 text-xs font-medium text-gray-500 lg:hidden">Điểm kiểm tra</p>
+                                <StudentScoreChart scores={student.examScores || []} color="emerald" />
+                              </div>
+                              <div className="flex gap-2 lg:block">
+                                <div className="rounded-lg bg-blue-50 px-3 py-2 text-center">
+                                  <p className="text-[10px] font-medium uppercase text-blue-400">BT</p>
+                                  <p className="text-sm font-bold text-blue-700">{formatScore(student.averageHomework)}</p>
+                                </div>
+                                <div className="rounded-lg bg-emerald-50 px-3 py-2 text-center lg:mt-2">
+                                  <p className="text-[10px] font-medium uppercase text-emerald-400">KT</p>
+                                  <p className="text-sm font-bold text-emerald-700">{formatScore(student.averageExam)}</p>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </>

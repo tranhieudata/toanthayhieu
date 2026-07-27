@@ -1,5 +1,9 @@
 const Class = require('../models/Class');
 const ClassEnrollment = require('../models/ClassEnrollment');
+const Homework = require('../models/Homework');
+const HomeworkSubmission = require('../models/HomeworkSubmission');
+const Exam = require('../models/Exam');
+const ExamResult = require('../models/ExamResult');
 
 // GET /api/classes
 const getClasses = async (req, res) => {
@@ -97,6 +101,117 @@ const getClassById = async (req, res) => {
       students: undefined,
       myEnrollmentStatus: myEnrollment?.status || null,
       myEnrollmentId: myEnrollment?._id || null,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// GET /api/classes/:id/stats (admin)
+const getClassStats = async (req, res) => {
+  try {
+    const classId = req.params.id;
+    const cls = await Class.findById(classId).populate('students', 'name email avatar');
+    if (!cls) return res.status(404).json({ message: 'KhÃ´ng tÃ¬m tháº¥y lá»›p há»c' });
+
+    const students = cls.students || [];
+    const studentIds = students.map(student => student._id);
+
+    const [homeworks, exams] = await Promise.all([
+      Homework.find({ class: classId })
+        .select('title maxScore dueDate createdAt')
+        .sort({ dueDate: 1, createdAt: 1 }),
+      Exam.find({ 'classSchedules.class': classId })
+        .select('title levels createdAt')
+        .sort({ createdAt: 1 }),
+    ]);
+
+    const homeworkIds = homeworks.map(hw => hw._id);
+    const examIds = exams.map(exam => exam._id);
+
+    const [homeworkSubmissions, examResults] = await Promise.all([
+      homeworkIds.length
+        ? HomeworkSubmission.find({ homework: { $in: homeworkIds }, student: { $in: studentIds } })
+          .select('homework student score maxScore status gradedAt submittedAt')
+        : [],
+      examIds.length
+        ? ExamResult.find({ exam: { $in: examIds }, student: { $in: studentIds } })
+          .select('exam student totalScore maxScore status gradedAt submittedAt')
+        : [],
+    ]);
+
+    const homeworkSubmissionMap = new Map(
+      homeworkSubmissions.map(sub => [`${sub.student}:${sub.homework}`, sub])
+    );
+    const examResultMap = new Map(
+      examResults.map(result => [`${result.student}:${result.exam}`, result])
+    );
+
+    const homeworkItems = homeworks.map(hw => ({
+      _id: hw._id,
+      title: hw.title,
+      maxScore: hw.maxScore || 10,
+      date: hw.dueDate || hw.createdAt,
+    }));
+
+    const examItems = exams.map(exam => ({
+      _id: exam._id,
+      title: exam.title,
+      maxScore: (exam.levels || []).reduce((sum, level) => sum + (Number(level.totalPoints) || 0), 0) || 10,
+      date: exam.createdAt,
+    }));
+
+    const normalizeAverage = (items) => {
+      const graded = items.filter(item => item.score != null && item.maxScore > 0);
+      if (!graded.length) return null;
+      const total = graded.reduce((sum, item) => sum + (Number(item.score) / Number(item.maxScore)) * 10, 0);
+      return Math.round((total / graded.length) * 10) / 10;
+    };
+
+    const statsStudents = students.map(student => {
+      const homeworkScores = homeworkItems.map(hw => {
+        const submission = homeworkSubmissionMap.get(`${student._id}:${hw._id}`);
+        return {
+          homework: hw._id,
+          title: hw.title,
+          score: submission?.status === 'graded' ? submission.score : null,
+          maxScore: submission?.maxScore || hw.maxScore,
+          status: submission?.status || 'missing',
+          gradedAt: submission?.gradedAt || null,
+          submittedAt: submission?.submittedAt || null,
+        };
+      });
+
+      const examScores = examItems.map(exam => {
+        const result = examResultMap.get(`${student._id}:${exam._id}`);
+        return {
+          exam: exam._id,
+          title: exam.title,
+          score: result?.status === 'graded' ? result.totalScore : null,
+          maxScore: result?.maxScore || exam.maxScore,
+          status: result?.status || 'missing',
+          gradedAt: result?.gradedAt || null,
+          submittedAt: result?.submittedAt || null,
+        };
+      });
+
+      return {
+        _id: student._id,
+        name: student.name,
+        email: student.email,
+        avatar: student.avatar,
+        homeworkScores,
+        examScores,
+        averageHomework: normalizeAverage(homeworkScores),
+        averageExam: normalizeAverage(examScores),
+      };
+    });
+
+    res.json({
+      class: { _id: cls._id, name: cls.name },
+      homeworks: homeworkItems,
+      exams: examItems,
+      students: statsStudents,
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -216,4 +331,4 @@ const toggleClassLesson = async (req, res) => {
   }
 };
 
-module.exports = { getClasses, getClassById, createClass, updateClass, deleteClass, addStudentToClass, removeStudentFromClass, toggleClassLesson };
+module.exports = { getClasses, getClassById, getClassStats, createClass, updateClass, deleteClass, addStudentToClass, removeStudentFromClass, toggleClassLesson };
