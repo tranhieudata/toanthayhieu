@@ -52,6 +52,7 @@ export default function AdminTuition() {
 
   // All-class receipt modal
   const [showAllReceipt, setShowAllReceipt] = useState(false);
+  const [allReceiptMode, setAllReceiptMode] = useState('compact');
   const printAllRef = useRef();
 
   // Load classes + settings
@@ -117,6 +118,7 @@ export default function AdminTuition() {
   };
 
   const totalRevenue = studentAdjustments.reduce((sum, a) => sum + calcStudentFee(a), 0);
+  const allReceiptBaseFee = effectiveSessions * feePerSession;
 
   const handleAdjChange = (idx, field, value) => {
     setStudentAdjustments((prev) => {
@@ -162,6 +164,7 @@ export default function AdminTuition() {
 
   const handlePrintAll = () => {
     if (!studentAdjustments.length) return toast.error('Chưa có học sinh trong lớp');
+    setAllReceiptMode('compact');
     setShowAllReceipt(true);
   };
 
@@ -184,6 +187,9 @@ export default function AdminTuition() {
       .bank{font-size:12px;color:#555}
       .sig{display:flex;justify-content:flex-end;margin-top:28px;font-size:12px;color:#555;text-align:center}
       .sig div{min-width:160px}
+      .summary{max-width:520px;margin:0 auto 8px}
+      .summary td:first-child{color:#555}
+      .summary td:last-child{text-align:right;font-weight:bold}
       @media print{body{padding:16px}}
     </style></head><body>${el.innerHTML}</body></html>`);
     w.document.close();
@@ -463,7 +469,6 @@ export default function AdminTuition() {
                     </tr>
                   </tbody>
                 </table>
-
                 {receiptAdj.note && (
                   <p className="text-xs text-gray-500 mt-1">Ghi chú: {receiptAdj.note}</p>
                 )}
@@ -504,6 +509,12 @@ export default function AdminTuition() {
               <span className="font-semibold text-gray-800">Bảng học phí — Tháng {month}/{year} · {classData?.name}</span>
               <div className="flex items-center gap-2">
                 <button
+                  onClick={() => setAllReceiptMode((mode) => mode === 'compact' ? 'detail' : 'compact')}
+                  className="flex items-center gap-1 text-xs border border-gray-300 text-gray-700 px-3 py-1.5 rounded hover:bg-gray-50"
+                >
+                  {allReceiptMode === 'compact' ? <><FiUsers /> Hiển thị chi tiết</> : <><FiInfo /> Hiển thị gọn</>}
+                </button>
+                <button
                   onClick={handlePrintAllWindow}
                   className="flex items-center gap-1 text-xs bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700"
                 ><FiPrinter /> In / Lưu PDF</button>
@@ -520,9 +531,27 @@ export default function AdminTuition() {
                   <span>Lớp: <strong className="text-gray-800">{classData?.name}</strong></span>
                   <span>Học phí/buổi: <strong className="text-gray-800">{formatVND(feePerSession)}</strong></span>
                   <span>Buổi thực học: <strong className="text-gray-800">{effectiveSessions}</strong>{holidaySessions > 0 ? ` (tổng ${totalSessions}, nghỉ ${holidaySessions})` : ` / ${totalSessions} buổi`}</span>
-                  <span>Sĩ số: <strong className="text-gray-800">{studentAdjustments.length}</strong></span>
+                
                 </div>
 
+                {allReceiptMode === 'compact' ? (
+                  <table className="summary w-full text-sm border-collapse">
+                    <tbody>
+                      <tr>
+                        <td className="py-2 px-3 border border-gray-200">Số buổi</td>
+                        <td className="py-2 px-3 border border-gray-200">{effectiveSessions} buổi</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2 px-3 border border-gray-200">Số tiền / buổi</td>
+                        <td className="py-2 px-3 border border-gray-200">{formatVND(feePerSession)}</td>
+                      </tr>
+                      <tr className="bg-gray-50">
+                        <td className="py-2 px-3 border border-gray-200 font-semibold">Tổng tiền mỗi học sinh</td>
+                        <td className="py-2 px-3 border border-gray-200 text-green-700">{formatVND(allReceiptBaseFee)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                ) : (
                 <table className="w-full text-sm border-collapse">
                   <thead>
                     <tr className="bg-gray-50">
@@ -568,6 +597,7 @@ export default function AdminTuition() {
                     </tr>
                   </tfoot> */}
                 </table>
+                )}
 
                 {recordNote && <p className="text-xs text-gray-500 mt-2">Ghi chú: {recordNote}</p>}
 

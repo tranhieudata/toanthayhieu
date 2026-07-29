@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../../api/axios';
 import toast from 'react-hot-toast';
-import { FiBook, FiFileText, FiLayers, FiPlus, FiEdit2, FiTrash2, FiX, FiChevronRight, FiArrowLeft, FiDownload, FiEye, FiToggleLeft, FiToggleRight } from 'react-icons/fi';
+import { FiBook, FiFileText, FiLayers, FiPlus, FiEdit2, FiTrash2, FiX, FiChevronRight, FiArrowLeft, FiDownload, FiEye, FiToggleLeft, FiToggleRight, FiPrinter } from 'react-icons/fi';
 import 'katex/dist/katex.min.css';
 import katex from 'katex';
 
@@ -225,6 +225,46 @@ export default function AdminContentManager() {
       setLessons(prev => prev.map(l => l._id === id ? res.data : l));
       toast.success(res.data.isPublished ? 'Đã bật hiển thị' : 'Đã tắt hiển thị');
     } catch { toast.error('Không thể thay đổi trạng thái'); }
+  };
+
+  const handlePrintLesson = () => {
+    if (!selectedLesson) return;
+    if (!selectedLesson.content) return toast.error('Bài học chưa có nội dung để in');
+
+    const printableContent = renderLessonContentHtml(selectedLesson.content);
+    const headAssets = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+      .map(node => node.outerHTML)
+      .join('');
+    const w = window.open('', '_blank', 'width=900,height=720');
+    if (!w) return toast.error('Trình duyệt đang chặn cửa sổ in');
+
+    w.document.write(`
+      <html>
+        <head>
+          <title>${escapeHtml(selectedLesson.title || 'Bài học')}</title>
+          ${headAssets}
+          <style>
+            body{font-family:Arial,sans-serif;color:#111827;padding:32px;font-size:15px;line-height:1.7}
+            h1{font-size:22px;margin:0 0 4px;text-align:center}
+            .print-meta{text-align:center;color:#6b7280;font-size:13px;margin-bottom:24px}
+            .admin-lesson-content{max-width:800px;margin:0 auto}
+            .admin-lesson-content .ql-editor{padding:0;border:none}
+            .admin-lesson-content img,.admin-lesson-content table,.katex-display{page-break-inside:avoid}
+            .katex-display{overflow-x:visible}
+            @media print{body{padding:18px}.admin-lesson-content{max-width:none}}
+          </style>
+        </head>
+        <body>
+          <h1>${escapeHtml(selectedLesson.title || 'Bài học')}</h1>
+          <div class="print-meta">${escapeHtml(selectedCourse?.title || '')}</div>
+          <div class="admin-lesson-content">
+            <div class="ql-editor">${printableContent}</div>
+          </div>
+        </body>
+      </html>
+    `);
+    w.document.close();
+    printWhenReady(w);
   };
 
   // Exercise operations
@@ -468,9 +508,17 @@ export default function AdminContentManager() {
               <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
                 <div className="flex justify-between items-center p-6 border-b sticky top-0 bg-white">
                   <h2 className="font-bold text-lg">{selectedLesson.title}</h2>
-                  <button onClick={() => { setSelectedLesson(null); setExercises([]); }}>
-                    <FiX size={24} />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handlePrintLesson}
+                      className="flex items-center gap-1 text-xs bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700"
+                    >
+                      <FiPrinter size={14} /> In bài
+                    </button>
+                    <button onClick={() => { setSelectedLesson(null); setExercises([]); }}>
+                      <FiX size={24} />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="p-6">
@@ -799,6 +847,110 @@ function toEmbedUrl(url) {
   const shortMatch = url.match(/youtu\.be\/([^?]+)/);
   if (shortMatch) return `https://www.youtube.com/embed/${shortMatch[1]}`;
   return url;
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+async function printWhenReady(printWindow) {
+  const doc = printWindow.document;
+  const waitForLoad = doc.readyState === 'complete'
+    ? Promise.resolve()
+    : new Promise(resolve => {
+        printWindow.addEventListener('load', resolve, { once: true });
+        setTimeout(resolve, 1200);
+      });
+  const waitForFonts = doc.fonts?.ready?.catch?.(() => {}) || Promise.resolve();
+  const waitForImages = Promise.all(
+    Array.from(doc.images).map(img => (
+      img.complete
+        ? Promise.resolve()
+        : new Promise(resolve => {
+            img.onload = resolve;
+            img.onerror = resolve;
+          })
+    ))
+  );
+
+  await waitForLoad;
+  await waitForFonts;
+  await waitForImages;
+  await new Promise(resolve => setTimeout(resolve, 150));
+
+  printWindow.focus();
+  printWindow.print();
+}
+
+function renderLessonContentHtml(content) {
+  const wrapper = document.createElement('div');
+  wrapper.innerHTML = content;
+
+  wrapper.querySelectorAll('.ql-formula').forEach(span => {
+    const formula = span.getAttribute('data-value') || span.textContent;
+    if (!formula) return;
+    try {
+      span.outerHTML = katex.renderToString(formula.trim(), { throwOnError: false });
+    } catch {}
+  });
+
+  const walker = document.createTreeWalker(
+    wrapper,
+    NodeFilter.SHOW_TEXT,
+    {
+      acceptNode(node) {
+        let el = node.parentElement;
+        while (el && el !== wrapper) {
+          if (
+            el.classList.contains('ql-formula') ||
+            el.classList.contains('katex') ||
+            el.classList.contains('katex-display') ||
+            ['CODE', 'PRE'].includes(el.tagName)
+          ) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          el = el.parentElement;
+        }
+        return /\$|\\\(|\\\[/.test(node.textContent) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+      },
+    }
+  );
+
+  const textNodes = [];
+  let node;
+  while ((node = walker.nextNode())) textNodes.push(node);
+
+  textNodes.forEach(textNode => {
+    const html = renderLatexInText(textNode.textContent);
+    if (html === textNode.textContent) return;
+    const span = document.createElement('span');
+    span.innerHTML = html;
+    textNode.parentNode.replaceChild(span, textNode);
+  });
+
+  return wrapper.innerHTML;
+}
+
+function renderLatexInText(text) {
+  return text
+    .replace(/\\\[([\s\S]+?)\\\]/g, (match, formula) => renderFormula(formula, true, match))
+    .replace(/\$\$([\s\S]+?)\$\$/g, (match, formula) => renderFormula(formula, true, match))
+    .replace(/\\\(([\s\S]+?)\\\)/g, (match, formula) => renderFormula(formula, false, match))
+    .replace(/\$([^$\n]+?)\$/g, (match, formula) => renderFormula(formula, false, match));
+}
+
+function renderFormula(formula, displayMode, fallback) {
+  if (!formula.trim()) return fallback;
+  try {
+    return katex.renderToString(formula.trim(), { displayMode, throwOnError: false });
+  } catch {
+    return fallback;
+  }
 }
 
 /* ───── Quill content styles for admin lesson preview ───── */
