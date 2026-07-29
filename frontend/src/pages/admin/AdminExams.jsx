@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api, { getUploadUrl } from '../../api/axios';
 import toast from 'react-hot-toast';
-import { FiPlus, FiEdit2, FiTrash2, FiBook, FiArchive, FiCalendar, FiLayers, FiClock, FiEye, FiDownload, FiPrinter, FiX } from 'react-icons/fi';
+import { FiPlus, FiEdit2, FiTrash2, FiBook, FiArchive, FiCalendar, FiLayers, FiClock, FiEye, FiDownload, FiPrinter, FiX, FiChevronLeft, FiChevronRight } from 'react-icons/fi';
 import AdminExamComposer from './AdminExamComposer';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
@@ -20,6 +20,8 @@ const TIME_STATUS = {
   active:   { label: 'Đang mở', cls: 'bg-green-100 text-green-700' },
   ended:    { label: 'Đã đóng', cls: 'bg-red-100 text-red-600' },
 };
+
+const EXAMS_PER_PAGE = 36;
 
 function fmtDate(d) {
   if (!d) return '';
@@ -300,6 +302,7 @@ export default function AdminExams() {
   const [activeTab, setActiveTab] = useState('list');
   const [previewExam, setPreviewExam] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
 
   const loadExams = async () => {
     setLoading(true);
@@ -311,6 +314,7 @@ export default function AdminExams() {
       if (filterLevel) params.levelId = filterLevel;
       const { data } = await api.get('/exams', { params });
       setExams(data);
+      setCurrentPage(1);
     } catch {
       toast.error('Không tải được danh sách đề');
     } finally {
@@ -351,6 +355,11 @@ export default function AdminExams() {
   };
 
   const totalPoints = (exam) => exam.levels?.reduce((s, l) => s + l.totalPoints, 0) ?? 0;
+  const totalPages = Math.max(1, Math.ceil(exams.length / EXAMS_PER_PAGE));
+  const page = Math.min(currentPage, totalPages);
+  const pageStart = (page - 1) * EXAMS_PER_PAGE;
+  const pageEnd = Math.min(pageStart + EXAMS_PER_PAGE, exams.length);
+  const paginatedExams = exams.slice(pageStart, pageEnd);
 
   const openPreview = async (examId) => {
     setPreviewLoading(true);
@@ -480,7 +489,9 @@ export default function AdminExams() {
             {classLevels.map(l => <option key={l._id} value={l._id}>{l.name}</option>)}
           </select>
         </div>
-        <div className="ml-auto text-sm text-gray-500">{exams.length} đề</div>
+        <div className="ml-auto text-sm text-gray-500">
+          {exams.length ? `${pageStart + 1}-${pageEnd} / ${exams.length} đề` : '0 đề'}
+        </div>
       </div>
 
       {/* List */}
@@ -492,61 +503,63 @@ export default function AdminExams() {
           <p>Chưa có đề kiểm tra nào</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {exams.map(exam => (
-            <div
-              key={exam._id}
-              onClick={() => openPreview(exam._id)}
-              className="bg-white rounded-xl shadow-sm p-5 flex flex-col gap-3 hover:shadow-md transition-shadow cursor-pointer"
+        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+          <div className="divide-y divide-gray-100">
+            {paginatedExams.map((exam, index) => (
+              <div
+                key={exam._id}
+                onClick={() => openPreview(exam._id)}
+                className="group flex items-center gap-3 px-3 py-2 hover:bg-blue-50/60 cursor-pointer"
+              >
+                <span className="w-9 shrink-0 text-right text-xs text-gray-400">{pageStart + index + 1}</span>
+                <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900 group-hover:text-blue-700">
+                  {exam.title || 'Đề kiểm tra'}
+                </span>
+                <div className="flex shrink-0 items-center gap-1">
+                  <button onClick={(e) => { e.stopPropagation(); openPreview(exam._id); }} className="p-1.5 text-emerald-600 hover:bg-emerald-100 rounded" title="Xem đề"><FiEye size={15} /></button>
+                  <button onClick={(e) => { e.stopPropagation(); navigate(`/admin/exams/${exam._id}/edit`); }} className="p-1.5 text-blue-500 hover:bg-blue-100 rounded" title="Sửa"><FiEdit2 size={15} /></button>
+                  <button onClick={(e) => { e.stopPropagation(); navigate(`/admin/exams/${exam._id}/grade`); }} className="p-1.5 text-green-600 hover:bg-green-100 rounded" title="Chấm điểm"><FiLayers size={15} /></button>
+                  <button onClick={(e) => { e.stopPropagation(); handleDelete(exam._id); }} disabled={deleting === exam._id} className="p-1.5 text-red-400 hover:bg-red-100 rounded disabled:opacity-40" title="Xóa"><FiTrash2 size={15} /></button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {!loading && exams.length > EXAMS_PER_PAGE && (
+        <div className="flex items-center justify-between bg-white rounded-xl shadow-sm px-4 py-3">
+          <span className="text-sm text-gray-500">Trang {page} / {totalPages}</span>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={page === 1}
+              className="p-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+              title="Trang trước"
             >
-              {/* Header */}
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-semibold text-gray-900 truncate">{exam.title}</span>
-                    {exam.isTemplate && (
-                      <span className="shrink-0 text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full flex items-center gap-1"><FiArchive size={10} /> Ngân hàng</span>
-                    )}
-                    {(() => { const s = getExamTimeStatus(exam); return s ? <span className={`shrink-0 text-xs px-2 py-0.5 rounded-full ${TIME_STATUS[s].cls}`}>{TIME_STATUS[s].label}</span> : null; })()}
-                  </div>
-                  {exam.lesson && <p className="text-xs text-gray-500 mt-0.5 flex items-center gap-1"><FiBook size={11} /> {exam.lesson.title}</p>}
-                  {exam.class && <p className="text-xs text-gray-500 flex items-center gap-1"><FiCalendar size={11} /> {exam.class.name}</p>}
-                  {exam.level && <p className={`text-xs px-2 py-0.5 rounded-full flex items-center gap-1 mt-0.5 ${exam.level.bgColor} ${exam.level.textColor}`}>{exam.level.name}</p>}
-                  {(exam.startDate || exam.endDate) && (
-                    <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
-                      <FiClock size={10} />
-                      {exam.startDate ? fmtDate(exam.startDate) : '∞'} → {exam.endDate ? fmtDate(exam.endDate) : '∞'}
-                    </p>
-                  )}
-                </div>
-                <div className="flex gap-1 shrink-0">
-                  <button onClick={(e) => { e.stopPropagation(); openPreview(exam._id); }} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded" title="Xem đề"><FiEye size={15} /></button>
-                  <button onClick={(e) => { e.stopPropagation(); navigate(`/admin/exams/${exam._id}/edit`); }} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded" title="Sửa"><FiEdit2 size={15} /></button>
-                  <button onClick={(e) => { e.stopPropagation(); handleDelete(exam._id); }} disabled={deleting === exam._id} className="p-1.5 text-red-400 hover:bg-red-50 rounded" title="Xóa"><FiTrash2 size={15} /></button>
-                </div>
-              </div>
-
-              {/* Levels */}
-              <div className="flex flex-wrap gap-1.5">
-                {exam.levels?.map((l, i) => (
-                  <span key={i} className={`text-xs px-2 py-0.5 rounded-full ${levelColors[l.name] || 'bg-gray-100 text-gray-600'}`}>
-                    {l.name}: C{l.fromQuestion}–C{l.toQuestion} ({l.totalPoints}đ)
-                  </span>
-                ))}
-              </div>
-
-              {/* Footer */}
-              <div className="flex items-center justify-between text-xs text-gray-500 pt-2 border-t border-gray-100">
-                <span className="flex items-center gap-1"><FiLayers size={11} /> {exam.totalQuestions} câu · {totalPoints(exam)} điểm</span>
-                <button
-                  onClick={(e) => { e.stopPropagation(); navigate(`/admin/exams/${exam._id}/grade`); }}
-                  className="text-xs bg-green-50 text-green-700 hover:bg-green-100 px-2 py-1 rounded font-medium"
-                >
-                  Chấm điểm
-                </button>
-              </div>
-            </div>
-          ))}
+              <FiChevronLeft size={16} />
+            </button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1)
+              .filter(p => p === 1 || p === totalPages || Math.abs(p - page) <= 1)
+              .map((p, idx, arr) => (
+                <span key={p} className="flex items-center">
+                  {idx > 0 && p - arr[idx - 1] > 1 && <span className="px-2 text-gray-400">...</span>}
+                  <button
+                    onClick={() => setCurrentPage(p)}
+                    className={`min-w-9 rounded-lg px-3 py-1.5 text-sm font-medium ${p === page ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                  >
+                    {p}
+                  </button>
+                </span>
+              ))}
+            <button
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              disabled={page === totalPages}
+              className="p-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+              title="Trang sau"
+            >
+              <FiChevronRight size={16} />
+            </button>
+          </div>
         </div>
       )}
         </>
