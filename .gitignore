@@ -4,3 +4,4 @@ logs/
 build/
 dist/
 backend/uploads/
+frontend/dist/
