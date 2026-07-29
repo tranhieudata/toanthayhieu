@@ -434,18 +434,20 @@ export default function AdminExamEditor() {
           ratio: totals.totalPoints > 0 ? round2((rt.points / totals.totalPoints) * 100) : 0,
         };
       });
-      const syncedPackage = syncQuestionsWithMatrix(form.examPackage, matrixWithTotals, cognitiveLevels);
-      const examPackage = {
-        ...(syncedPackage || {}),
+      const syncedPackage = form.examPackage?.questions
+        ? syncQuestionsWithMatrix(form.examPackage, matrixWithTotals, cognitiveLevels)
+        : null;
+      const examPackage = syncedPackage ? {
+        ...syncedPackage,
         cognitiveLevels,
         matrix: matrixWithTotals,
         totals,
         meta: {
-          ...(syncedPackage?.meta || {}),
+          ...(syncedPackage.meta || {}),
           grade: curriculumGrade,
           totalPoints: totals.totalPoints,
         },
-      };
+      } : null;
       const payload = {
         title: form.title,
         content: form.content,

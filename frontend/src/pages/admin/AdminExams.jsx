@@ -56,6 +56,60 @@ function escapeHtml(value) {
   }[ch]));
 }
 
+function hasMeaningfulHtml(html) {
+  if (!html) return false;
+  const text = String(html)
+    .replace(/<br\s*\/?>/gi, '')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .trim();
+  return Boolean(text || /<(img|iframe|table|span|math)\b/i.test(html));
+}
+
+function renderStoredExamContentHtml(content) {
+  if (typeof document === 'undefined') return content || '';
+  const wrapper = document.createElement('div');
+  wrapper.innerHTML = content || '';
+
+  wrapper.querySelectorAll('.ql-formula').forEach(span => {
+    const formula = span.getAttribute('data-value') || span.textContent;
+    if (!formula) return;
+    try {
+      span.outerHTML = katex.renderToString(formula.trim(), { throwOnError: false });
+    } catch {}
+  });
+
+  const walker = document.createTreeWalker(wrapper, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      let el = node.parentElement;
+      while (el && el !== wrapper) {
+        if (
+          el.classList.contains('katex') ||
+          el.classList.contains('katex-display') ||
+          ['CODE', 'PRE'].includes(el.tagName)
+        ) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        el = el.parentElement;
+      }
+      return /\$|\\\(|\\\[/.test(node.textContent) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+    },
+  });
+
+  const textNodes = [];
+  let node;
+  while ((node = walker.nextNode())) textNodes.push(node);
+  textNodes.forEach(textNode => {
+    const rendered = renderMathHtml(textNode.textContent);
+    if (rendered === escapeHtml(textNode.textContent)) return;
+    const span = document.createElement('span');
+    span.innerHTML = rendered;
+    textNode.parentNode.replaceChild(span, textNode);
+  });
+
+  return wrapper.innerHTML;
+}
+
 function pointText(value) {
   return Number(value || 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 });
 }
@@ -74,15 +128,16 @@ function getPaperLevels(paper) {
 
 function renderMathText(text) {
   const source = String(text || '');
-  const parts = source.split(/(\\\(.+?\\\)|\$\$.+?\$\$|\$.+?\$)/g);
+  const parts = source.split(/(\\\(.+?\\\)|\\\[.+?\\\]|\$\$.+?\$\$|\$.+?\$)/g);
   return parts.map((part, idx) => {
     const display = part.startsWith('$$') && part.endsWith('$$');
+    const displayBracket = part.startsWith('\\[') && part.endsWith('\\]');
     const inlineParen = part.startsWith('\\(') && part.endsWith('\\)');
     const inlineDollar = part.startsWith('$') && part.endsWith('$') && !display;
-    if (!display && !inlineParen && !inlineDollar) return <span key={idx}>{part}</span>;
-    const tex = display ? part.slice(2, -2) : inlineParen ? part.slice(2, -2) : part.slice(1, -1);
+    if (!display && !displayBracket && !inlineParen && !inlineDollar) return <span key={idx}>{part}</span>;
+    const tex = (display || displayBracket || inlineParen) ? part.slice(2, -2) : part.slice(1, -1);
     try {
-      return <span key={idx} dangerouslySetInnerHTML={{ __html: katex.renderToString(tex, { displayMode: display, throwOnError: false }) }} />;
+      return <span key={idx} dangerouslySetInnerHTML={{ __html: katex.renderToString(tex, { displayMode: display || displayBracket, throwOnError: false }) }} />;
     } catch {
       return <span key={idx}>{part}</span>;
     }
@@ -91,15 +146,16 @@ function renderMathText(text) {
 
 function renderMathHtml(text) {
   const source = String(text || '');
-  const parts = source.split(/(\\\(.+?\\\)|\$\$.+?\$\$|\$.+?\$)/g);
+  const parts = source.split(/(\\\(.+?\\\)|\\\[.+?\\\]|\$\$.+?\$\$|\$.+?\$)/g);
   return parts.map((part) => {
     const display = part.startsWith('$$') && part.endsWith('$$');
+    const displayBracket = part.startsWith('\\[') && part.endsWith('\\]');
     const inlineParen = part.startsWith('\\(') && part.endsWith('\\)');
     const inlineDollar = part.startsWith('$') && part.endsWith('$') && !display;
-    if (!display && !inlineParen && !inlineDollar) return escapeHtml(part);
-    const tex = display ? part.slice(2, -2) : inlineParen ? part.slice(2, -2) : part.slice(1, -1);
+    if (!display && !displayBracket && !inlineParen && !inlineDollar) return escapeHtml(part);
+    const tex = (display || displayBracket || inlineParen) ? part.slice(2, -2) : part.slice(1, -1);
     try {
-      return katex.renderToString(tex, { displayMode: display, throwOnError: false });
+      return katex.renderToString(tex, { displayMode: display || displayBracket, throwOnError: false });
     } catch {
       return escapeHtml(part);
     }
@@ -137,9 +193,12 @@ function buildPrintableExamHtml(paper) {
 }
 
 function printExamContent(exam) {
-  const html = exam.examPackage
-    ? buildPrintableExamHtml(exam.examPackage)
-    : (exam.content || '');
+  const html = hasMeaningfulHtml(exam.content)
+    ? renderStoredExamContentHtml(exam.content)
+    : exam.examPackage
+      ? buildPrintableExamHtml(exam.examPackage)
+      : '';
+  if (!html) return toast.error('Đề này chưa có nội dung để in');
   const inheritedStyles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
     .map(node => node.outerHTML)
     .join('\n');
@@ -157,6 +216,7 @@ function printExamContent(exam) {
         <title>${exam.title}</title>
         ${inheritedStyles}
         <style>
+          @page { margin: 18mm 14mm 14mm; }
           body { font-family: "Times New Roman", serif; font-size: 13pt; line-height: 1.45; color: #111; }
           .header { text-align: center; border-bottom: 1px solid #ddd; padding-bottom: 12px; margin-bottom: 18px; }
           .header h2 { font-size: 16pt; margin: 8px 0; }
@@ -608,7 +668,7 @@ export default function AdminExams() {
                 <div className="flex justify-center py-12">
                   <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
                 </div>
-              ) : previewExam?.examPackage || previewExam?.content || previewExam?.pdfAttachments?.length ? (
+              ) : previewExam?.examPackage || hasMeaningfulHtml(previewExam?.content) || previewExam?.pdfAttachments?.length ? (
                 <div className="space-y-5">
                   {previewExam?.pdfAttachments?.length > 0 && (
                     <div className="rounded-lg border border-blue-100 bg-blue-50 p-3">
@@ -629,13 +689,13 @@ export default function AdminExams() {
                       </div>
                     </div>
                   )}
-                  {previewExam?.examPackage ? (
-                    <PaperPreview paper={previewExam.examPackage} />
-                  ) : previewExam?.content ? (
+                  {hasMeaningfulHtml(previewExam?.content) ? (
                     <div
                       className="prose max-w-none"
-                      dangerouslySetInnerHTML={{ __html: previewExam.content }}
+                      dangerouslySetInnerHTML={{ __html: renderStoredExamContentHtml(previewExam.content) }}
                     />
+                  ) : previewExam?.examPackage ? (
+                    <PaperPreview paper={previewExam.examPackage} />
                   ) : null}
                 </div>
               ) : (

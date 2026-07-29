@@ -244,6 +244,7 @@ export default function AdminContentManager() {
           <title>${escapeHtml(selectedLesson.title || 'Bài học')}</title>
           ${headAssets}
           <style>
+            @page{margin:18mm 14mm 14mm}
             body{font-family:Arial,sans-serif;color:#111827;padding:32px;font-size:15px;line-height:1.7}
             h1{font-size:22px;margin:0 0 4px;text-align:center}
             .print-meta{text-align:center;color:#6b7280;font-size:13px;margin-bottom:24px}
