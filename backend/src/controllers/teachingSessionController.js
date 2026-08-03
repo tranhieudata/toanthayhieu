@@ -15,6 +15,31 @@ function lessonIdOf(session) {
   return session?.actualLesson?._id || session?.actualLesson || session?.plannedLesson?._id || session?.plannedLesson;
 }
 
+function lessonSessionFilter(classId, lessonId, excludeId) {
+  const filter = {
+    class: classId,
+    $or: [{ actualLesson: lessonId }, { plannedLesson: lessonId }],
+  };
+  if (excludeId) filter._id = { $ne: excludeId };
+  return filter;
+}
+
+function populateTeachingSession(query) {
+  return query
+    .populate('class', 'name')
+    .populate('plannedLesson', 'title order course')
+    .populate('actualLesson', 'title order course')
+    .populate('previousSession', 'date status summary')
+    .populate('homeworks', 'title dueDate pdfAttachments')
+    .populate('exams', 'title pdfAttachments')
+    .populate('nextRecommendation.lesson', 'title order course');
+}
+
+async function findCurrentSession(classId, lessonId, excludeId) {
+  if (!classId || !lessonId) return null;
+  return TeachingSession.findOne(lessonSessionFilter(classId, lessonId, excludeId)).sort({ updatedAt: -1, createdAt: -1 });
+}
+
 function stripHtml(html = '') {
   return String(html)
     .replace(/<style[\s\S]*?<\/style>/gi, '')
@@ -280,17 +305,24 @@ const getTeachingSessions = async (req, res) => {
       filter.$or = [{ plannedLesson: req.query.lessonId }, { actualLesson: req.query.lessonId }];
     }
 
-    const sessions = await TeachingSession.find(filter)
-      .populate('class', 'name')
-      .populate('plannedLesson', 'title order course')
-      .populate('actualLesson', 'title order course')
-      .populate('previousSession', 'date status summary')
-      .populate('homeworks', 'title dueDate pdfAttachments')
-      .populate('exams', 'title pdfAttachments')
-      .populate('nextRecommendation.lesson', 'title order course')
-      .sort({ date: -1, createdAt: -1 });
+    const sessions = await populateTeachingSession(TeachingSession.find(filter))
+      .sort({ updatedAt: -1, createdAt: -1 });
 
-    res.json(sessions);
+    const uniqueSessionsByLesson = new Map();
+    sessions.forEach((session) => {
+      const classId = session.class?._id || session.class;
+      const lessonId = lessonIdOf(session);
+      const key = `${classId || 'no-class'}:${lessonId || session._id}`;
+      if (!uniqueSessionsByLesson.has(key)) uniqueSessionsByLesson.set(key, session);
+    });
+
+    const uniqueSessions = Array.from(uniqueSessionsByLesson.values()).sort((a, b) => {
+      const dateDiff = new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime();
+      if (dateDiff) return dateDiff;
+      return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+    });
+
+    res.json(uniqueSessions);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -322,10 +354,18 @@ const getTeachingPlanner = async (req, res) => {
     const previousSession = await findPreviousSession(classId, sessionDate);
     const selectedLessonId = lessonId || lessonIdOf(previousSession);
     const nextLesson = await findNextLessonForClass(classId, selectedLessonId);
-    const materials = await loadLessonMaterials({ lessonId: lessonId || nextLesson?._id, classId, createdBy: req.user._id });
+    const plannerLessonId = lessonId || nextLesson?._id;
+    const [materials, currentSession] = await Promise.all([
+      loadLessonMaterials({ lessonId: plannerLessonId, classId, createdBy: req.user._id }),
+      findCurrentSession(classId, plannerLessonId),
+    ]);
+    const populatedCurrentSession = currentSession
+      ? await populateTeachingSession(TeachingSession.findById(currentSession._id))
+      : null;
 
     res.json({
       previousSession,
+      currentSession: populatedCurrentSession,
       suggestedLesson: nextLesson,
       lesson: materials.lesson,
       homeworks: materials.homeworks,
@@ -373,20 +413,21 @@ const createTeachingSession = async (req, res) => {
       }
     }
 
-    const session = await TeachingSession.create(data);
+    let session = await findCurrentSession(data.class, lessonId);
+    const statusCode = session ? 200 : 201;
+    if (session) {
+      Object.assign(session, data);
+      await session.save();
+    } else {
+      session = await TeachingSession.create(data);
+    }
+
     if (['completed', 'partial'].includes(data.status)) {
       await markLessonOpenForClass(data.class, lessonId);
     }
-    const populated = await TeachingSession.findById(session._id)
-      .populate('class', 'name')
-      .populate('plannedLesson', 'title order course')
-      .populate('actualLesson', 'title order course')
-      .populate('previousSession', 'date status summary')
-      .populate('homeworks', 'title dueDate pdfAttachments')
-      .populate('exams', 'title pdfAttachments')
-      .populate('nextRecommendation.lesson', 'title order course');
+    const populated = await populateTeachingSession(TeachingSession.findById(session._id));
 
-    res.status(201).json(populated);
+    res.status(statusCode).json(populated);
   } catch (err) {
     res.status(400).json({ message: err.message });
   }

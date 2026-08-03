@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import api, { getUploadUrl } from '../../api/axios';
 import toast from 'react-hot-toast';
 import {
@@ -37,25 +37,30 @@ const statusClass = {
   skipped: 'bg-gray-50 text-gray-600 border-gray-100',
 };
 
-function stripHtml(html = '') {
-  return String(html)
-    .replace(/<style[\s\S]*?<\/style>/gi, '')
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function shortLessonSummary(lesson) {
-  const text = stripHtml(lesson?.content);
-  if (!text) return 'Chưa có nội dung tóm tắt. Thầy có thể nhập tóm tắt riêng khi lưu buổi dạy.';
-  return text.length > 320 ? `${text.slice(0, 320)}...` : text;
-}
-
 function formatDate(date) {
   if (!date) return '';
   return new Date(date).toLocaleDateString('vi-VN');
+}
+
+function sortSessionsByTeachingDate(items = []) {
+  return [...items].sort((a, b) => {
+    const dateA = a?.date ? new Date(a.date).getTime() : 0;
+    const dateB = b?.date ? new Date(b.date).getTime() : 0;
+    if (dateA !== dateB) return dateB - dateA;
+    return new Date(b?.createdAt || 0).getTime() - new Date(a?.createdAt || 0).getTime();
+  });
+}
+
+function upsertSessionByLesson(items = [], nextSession) {
+  if (!nextSession?._id) return sortSessionsByTeachingDate(items);
+  const nextClassId = nextSession.class?._id || nextSession.class;
+  const nextLessonId = nextSession.actualLesson?._id || nextSession.actualLesson || nextSession.plannedLesson?._id || nextSession.plannedLesson;
+  const filtered = items.filter((session) => {
+    const classId = session.class?._id || session.class;
+    const lessonId = session.actualLesson?._id || session.actualLesson || session.plannedLesson?._id || session.plannedLesson;
+    return String(classId) !== String(nextClassId) || String(lessonId) !== String(nextLessonId);
+  });
+  return sortSessionsByTeachingDate([nextSession, ...filtered]);
 }
 
 function PdfLinks({ files }) {
@@ -126,10 +131,12 @@ export default function AdminTeachingSessions() {
   const [sessionDate, setSessionDate] = useState(todayInputValue());
   const [planner, setPlanner] = useState(null);
   const [sessions, setSessions] = useState([]);
+  const [currentSession, setCurrentSession] = useState(null);
   const [loadingPlanner, setLoadingPlanner] = useState(false);
   const [saving, setSaving] = useState(false);
   const [generatingSummary, setGeneratingSummary] = useState(false);
   const [form, setForm] = useState({ status: 'planned', summary: '', teacherNote: '' });
+  const plannerRequestRef = useRef(0);
   const examBank = [];
   const attachingHomework = false;
   const attachForm = { examId: '', title: '', dueDate: '' };
@@ -155,7 +162,9 @@ export default function AdminTeachingSessions() {
       setClassLessons([]);
       setSelectedLessonId('');
       setPlanner(null);
+      setCurrentSession(null);
       setSessions([]);
+      setForm({ status: 'planned', summary: '', teacherNote: '' });
       if (!selectedClassId) return;
 
       try {
@@ -181,7 +190,7 @@ export default function AdminTeachingSessions() {
     if (!selectedClassId) return;
     try {
       const { data } = await api.get('/teaching-sessions', { params: { classId: selectedClassId } });
-      setSessions(data || []);
+      setSessions(sortSessionsByTeachingDate(data || []));
     } catch {
       setSessions([]);
     }
@@ -189,6 +198,7 @@ export default function AdminTeachingSessions() {
 
   const loadPlanner = async () => {
     if (!selectedClassId) return;
+    const requestId = ++plannerRequestRef.current;
     setLoadingPlanner(true);
     try {
       const params = { classId: selectedClassId, date: sessionDate };
@@ -207,16 +217,20 @@ export default function AdminTeachingSessions() {
           return homework;
         }
       }));
+      if (requestId !== plannerRequestRef.current) return;
       setPlanner({ ...data, homeworks });
-      setForm((prev) => ({
-        ...prev,
-        summary: prev.summary || shortLessonSummary(data.lesson || data.suggestedLesson),
-      }));
+      setCurrentSession(data.currentSession || null);
+      setForm({
+        status: data.currentSession?.status || 'planned',
+        summary: data.currentSession?.summary || '',
+        teacherNote: data.currentSession?.teacherNote || '',
+      });
       await loadSessions();
     } catch (err) {
+      if (requestId !== plannerRequestRef.current) return;
       toast.error(err.response?.data?.message || 'Không tải được kế hoạch buổi dạy');
     } finally {
-      setLoadingPlanner(false);
+      if (requestId === plannerRequestRef.current) setLoadingPlanner(false);
     }
   };
 
@@ -227,6 +241,8 @@ export default function AdminTeachingSessions() {
 
   const generateSummaryWithGemini = async () => {
     const lessonId = selectedLessonId || planner?.lesson?._id || planner?.suggestedLesson?._id;
+    const summaryClassId = selectedClassId;
+    const summaryLessonId = lessonId;
     if (!selectedClassId) return toast.error('Chọn lớp trước');
     if (!lessonId) return toast.error('Chọn bài học trước');
 
@@ -240,10 +256,11 @@ export default function AdminTeachingSessions() {
     setGeneratingSummary(true);
     try {
       const { data } = await api.post('/teaching-sessions/parent-summary', {
-        classId: selectedClassId,
-        lessonId,
+        classId: summaryClassId,
+        lessonId: summaryLessonId,
         homeworkLinks,
       });
+      if (summaryClassId !== selectedClassId || summaryLessonId !== (selectedLessonId || planner?.lesson?._id || planner?.suggestedLesson?._id)) return;
       setForm((prev) => ({ ...prev, summary: data.summary || prev.summary }));
       toast.success(data.source === 'fallback' ? 'Đã tạo tóm tắt dự phòng, Gemini đang lỗi hoặc chưa cấu hình' : 'Đã tạo tóm tắt gửi phụ huynh');
     } catch (err) {
@@ -259,7 +276,7 @@ export default function AdminTeachingSessions() {
 
     setSaving(true);
     try {
-      await api.post('/teaching-sessions', {
+      const payload = {
         class: selectedClassId,
         date: sessionDate,
         plannedLesson: selectedLessonId,
@@ -269,7 +286,12 @@ export default function AdminTeachingSessions() {
         teacherNote: form.teacherNote,
         homeworks: (planner?.homeworks || []).map((homework) => homework._id),
         printablePdfs: [],
-      });
+      };
+      const { data } = currentSession?._id
+        ? await api.put(`/teaching-sessions/${currentSession._id}`, payload)
+        : await api.post('/teaching-sessions', payload);
+      setCurrentSession(data || null);
+      setSessions((prev) => upsertSessionByLesson(prev, data));
       toast.success('Đã lưu buổi dạy');
       await loadSessions();
     } catch (err) {
@@ -313,7 +335,8 @@ export default function AdminTeachingSessions() {
             value={selectedLessonId}
             onChange={(event) => {
               setSelectedLessonId(event.target.value);
-              setForm((prev) => ({ ...prev, summary: '' }));
+              setCurrentSession(null);
+              setForm({ status: 'planned', summary: '', teacherNote: '' });
             }}
           >
             <option value="">Để hệ thống gợi ý</option>
