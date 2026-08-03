@@ -15,8 +15,11 @@ const {
   bulkGradeSubmissions,
   autoCreateSubmissions,
   getClassStudents,
+  getPublicHomeworkPrintByToken,
   adminSubmitHomework,
 } = require('../controllers/homeworkController');
+
+router.get('/public-print/:token', getPublicHomeworkPrintByToken);
 
 // Student routes (phải đặt TRƯỚC /:id để không bị match nhầm)
 router.get('/student/list', protect, getStudentHomeworks);

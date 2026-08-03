@@ -5,6 +5,7 @@ const User = require('../models/User');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const fs = require('fs/promises');
 const path = require('path');
+const crypto = require('crypto');
 
 const UPLOADS_DIR = path.resolve(__dirname, '../../uploads');
 const IMAGE_MIME_BY_EXT = {
@@ -20,6 +21,37 @@ const GEMINI_MODELS = [
   'gemini-3.5-flash',
   'gemini-3.5-flash-lite',
 ];
+
+function getParentPrintUrl(homework) {
+  const token = homework?.printShareToken;
+  return token ? `/print/homework/${token}` : '';
+}
+
+async function ensurePrintShareToken(homework) {
+  if (!homework) return homework;
+  let shouldSave = false;
+  if (!homework.printShareToken || homework.$isDefault?.('printShareToken')) {
+    homework.printShareToken = crypto.randomBytes(18).toString('hex');
+    shouldSave = true;
+  }
+  if (homework.printShareEnabled === undefined || homework.$isDefault?.('printShareEnabled')) {
+    homework.printShareEnabled = true;
+    shouldSave = true;
+  }
+  if (shouldSave || homework.isModified?.('printShareToken') || homework.isModified?.('printShareEnabled')) {
+    await homework.save();
+  }
+  return homework;
+}
+
+function withParentPrintUrl(homework) {
+  const obj = homework?.toObject ? homework.toObject() : homework;
+  if (!obj) return obj;
+  return {
+    ...obj,
+    parentPrintUrl: getParentPrintUrl(obj),
+  };
+}
 
 async function generateGeminiContent(content) {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -466,7 +498,8 @@ const getStudentHomeworks = async (req, res) => {
     
   
 
-    res.json(homeworks);
+    for (const homework of homeworks) await ensurePrintShareToken(homework);
+    res.json(homeworks.map(withParentPrintUrl));
   } catch (err) {
     console.error('Get student homeworks error:', err);
     res.status(500).json({ message: err.message });
@@ -479,6 +512,7 @@ const getHomeworks = async (req, res) => {
     const filter = {};
     if (req.query.classId) filter.class = req.query.classId;
     if (req.query.lessonId) filter.lesson = req.query.lessonId;
+    if (req.query.sourceExam) filter.sourceExam = req.query.sourceExam;
 
     const homeworks = await Homework.find(filter)
       .populate('class', 'name')
@@ -487,7 +521,8 @@ const getHomeworks = async (req, res) => {
       .populate('createdBy', 'name')
       .sort({ createdAt: -1 });
     
-    res.json(homeworks);
+    for (const homework of homeworks) await ensurePrintShareToken(homework);
+    res.json(homeworks.map(withParentPrintUrl));
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -503,8 +538,9 @@ const getHomeworkById = async (req, res) => {
       .populate('createdBy', 'name');
     
     if (!homework) return res.status(404).json({ message: 'Không tìm thấy bài tập' });
-    
-    res.json(homework);
+
+    await ensurePrintShareToken(homework);
+    res.json(withParentPrintUrl(homework));
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -538,12 +574,13 @@ const createHomework = async (req, res) => {
     });
 
     await homework.save();
+    await ensurePrintShareToken(homework);
   
     await homework.populate('class', 'name');
     await homework.populate('lesson', 'title');
     await homework.populate('sourceExam', 'title');
     
-    res.status(201).json(homework);
+    res.status(201).json(withParentPrintUrl(homework));
   } catch (err) {
     console.error('Homework creation error:', err);
     res.status(400).json({ message: err.message });
@@ -581,10 +618,39 @@ const updateHomework = async (req, res) => {
       .populate('sourceExam', 'title');
 
     if (!homework) return res.status(404).json({ message: 'Không tìm thấy bài tập' });
-    
-    res.json(homework);
+
+    await ensurePrintShareToken(homework);
+    res.json(withParentPrintUrl(homework));
   } catch (err) {
     res.status(400).json({ message: err.message });
+  }
+};
+
+// GET /api/homeworks/public-print/:token - Public parent print link
+const getPublicHomeworkPrintByToken = async (req, res) => {
+  try {
+    const homework = await Homework.findOne({ printShareToken: req.params.token })
+      .populate('class', 'name')
+      .populate('lesson', 'title')
+      .populate('sourceExam', 'title');
+
+    if (!homework || homework.printShareEnabled === false) {
+      return res.status(404).json({ message: 'Link bài tập không tồn tại hoặc đã bị tắt' });
+    }
+
+    res.json({
+      title: homework.title,
+      description: homework.description,
+      class: homework.class,
+      lesson: homework.lesson,
+      sourceExam: homework.sourceExam,
+      examPackage: homework.examPackage || null,
+      dueDate: homework.dueDate,
+      pdfAttachments: homework.pdfAttachments || [],
+      parentPrintUrl: getParentPrintUrl(homework),
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 };
 
@@ -938,6 +1004,7 @@ const autoCreateSubmissions = async (req, res) => {
 
 module.exports = {
   getStudentHomeworks,
+  getPublicHomeworkPrintByToken,
   getHomeworks,
   getHomeworkById,
   createHomework,

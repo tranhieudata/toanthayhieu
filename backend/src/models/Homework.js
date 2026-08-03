@@ -1,5 +1,7 @@
 ﻿const mongoose = require('mongoose');
 
+const crypto = require('crypto');
+
 const homeworkSchema = new mongoose.Schema(
   {
     title: { type: String, required: true, trim: true },
@@ -17,6 +19,14 @@ const homeworkSchema = new mongoose.Schema(
       filename: { type: String },
       uploadedAt: { type: Date, default: Date.now },
     }],
+    printShareToken: {
+      type: String,
+      default: () => crypto.randomBytes(18).toString('hex'),
+      index: true,
+      unique: true,
+      sparse: true,
+    },
+    printShareEnabled: { type: Boolean, default: true },
     solutionImages: [{ url: { type: String }, uploadedAt: { type: Date, default: Date.now } }],
     solutionPdfAttachments: [{
       url: { type: String },

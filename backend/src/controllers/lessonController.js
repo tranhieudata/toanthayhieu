@@ -4,8 +4,11 @@ const ClassEnrollment = require('../models/ClassEnrollment');
 const Class = require('../models/Class');
 const Exam = require('../models/Exam');
 const ExamResult = require('../models/ExamResult');
+const Homework = require('../models/Homework');
+const TeachingSession = require('../models/TeachingSession');
 const { hasAccessToCourse } = require('../utils/accessControl');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const crypto = require('crypto');
 
 function isLessonOpenForClass(lessonSetting, now = new Date()) {
   if (!lessonSetting) return false;
@@ -20,6 +23,19 @@ function isPassingExamResult(result) {
     return (result.totalScore / result.maxScore) * 10 > 5;
   }
   return result.totalScore > 5;
+}
+
+async function ensureHomeworkPrintShare(homework) {
+  if (!homework?.printShareToken) {
+    homework.printShareToken = crypto.randomBytes(18).toString('hex');
+    if (homework.printShareEnabled === undefined) homework.printShareEnabled = true;
+    await homework.save();
+  }
+  const obj = homework.toObject ? homework.toObject() : homework;
+  return {
+    ...obj,
+    parentPrintUrl: obj.printShareToken ? `/print/homework/${obj.printShareToken}` : '',
+  };
 }
 
 async function getStudentLessonAccess(studentId, courseId) {
@@ -152,6 +168,85 @@ const getLessonById = async (req, res) => {
     }
 
     res.json(lesson);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// GET /api/lessons/:id/bundle
+// Gom nội dung bài học + bài tập về nhà + đề kiểm tra + tiến độ buổi dạy.
+const getLessonBundle = async (req, res) => {
+  try {
+    const lesson = await Lesson.findById(req.params.id).populate('course', 'title');
+    if (!lesson) return res.status(404).json({ message: 'Không tìm thấy bài học' });
+
+    const isAdmin = req.user.role === 'admin';
+    let classIds = [];
+    if (!isAdmin) {
+      const enrollments = await ClassEnrollment.find({ student: req.user._id, status: 'approved' }).select('class');
+      const enrolledClassIds = enrollments.map((enrollment) => enrollment.class.toString());
+      classIds = req.query.classId && enrolledClassIds.includes(req.query.classId)
+        ? [req.query.classId]
+        : enrolledClassIds;
+    } else if (req.query.classId) {
+      classIds = [req.query.classId];
+    }
+
+    if (!isAdmin) {
+      if (!lesson.isPublished) {
+        return res.status(403).json({ message: 'Bài học này chưa được mở' });
+      }
+      const access = await getStudentLessonAccess(req.user._id, lesson.course?._id || lesson.course);
+      if (access.error) return res.status(access.error.status).json({ message: access.error.message });
+      if (!access.lessonAccessMap[req.params.id]?.accessible) {
+        return res.status(403).json({ message: 'Bài học này chưa được mở cho lớp của bạn' });
+      }
+    }
+
+    const homeworkFilter = { lesson: req.params.id };
+    const sessionFilter = {
+      $or: [{ plannedLesson: req.params.id }, { actualLesson: req.params.id }],
+    };
+
+    if (classIds.length > 0) {
+      homeworkFilter.class = { $in: classIds };
+      sessionFilter.class = { $in: classIds };
+    }
+
+    if (!isAdmin) {
+      homeworkFilter.isPublished = true;
+    }
+
+    const [homeworkDocs, sessions] = await Promise.all([
+      Homework.find(homeworkFilter)
+        .populate('class', 'name')
+        .populate('sourceExam', 'title')
+        .sort({ createdAt: -1 }),
+      TeachingSession.find(sessionFilter)
+        .populate('class', 'name')
+        .populate('plannedLesson', 'title order course')
+        .populate('actualLesson', 'title order course')
+        .populate('homeworks', 'title dueDate pdfAttachments')
+        .populate('exams', 'title pdfAttachments')
+        .populate('nextRecommendation.lesson', 'title order course')
+        .sort({ date: -1, createdAt: -1 }),
+    ]);
+
+    const homeworks = [];
+    for (const homework of homeworkDocs) {
+      homeworks.push(await ensureHomeworkPrintShare(homework));
+    }
+
+    const printablePdfs = homeworks.flatMap((homework) =>
+      (homework.pdfAttachments || []).map((pdf) => ({
+        ...(pdf.toObject?.() || pdf),
+        sourceType: 'homework',
+        sourceId: homework._id,
+        parentPrintUrl: homework.parentPrintUrl,
+      }))
+    ).filter((pdf) => pdf?.url);
+
+    res.json({ lesson, homeworks, sessions, printablePdfs });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -410,4 +505,4 @@ const deleteCriteria = async (req, res) => {
   }
 };
 
-module.exports = { getLessons, getLessonById, createLesson, updateLesson, deleteLesson, toggleLessonStatus, generateLessonContent, addCriteria, updateCriteria, deleteCriteria };
+module.exports = { getLessons, getLessonById, getLessonBundle, createLesson, updateLesson, deleteLesson, toggleLessonStatus, generateLessonContent, addCriteria, updateCriteria, deleteCriteria };
