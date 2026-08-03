@@ -22,9 +22,9 @@ const STEPS = [
 
 const defaultForm = {
   department: '',
-  schoolName: 'Toán Thầy Hiếu - 038.2468988',
+  schoolName: 'Toán Thầy Hiếu - 038.2468.988',
   schoolYear: '2025 - 2026',
-  examName: 'KIỂM TRA CUỐI HỌC KÌ I',
+  examName: '',
   grade: 6,
   duration: 90,
   mcCount: 12,
@@ -35,6 +35,32 @@ const defaultForm = {
 
 const round2 = (value) => Number((Number(value) || 0).toFixed(2));
 const pointText = (value) => Number(value || 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 });
+
+function extractGradeFromLevel(level) {
+  const match = String(level?.name || '').match(/\d+/);
+  return match ? Number(match[0]) : null;
+}
+
+function examPackageToHomeworkText(paper) {
+  if (!paper) return '';
+  const mc = (paper.questions?.multipleChoice || []).map((q, index) => {
+    const options = ['A', 'B', 'C', 'D'].map(key => `${key}. ${q.options?.[key] || ''}`).join('\n');
+    return `Câu ${q.number || index + 1}. ${q.question || ''}\n${options}`;
+  });
+  const essay = (paper.questions?.essay || []).map((q, index) => `Bài ${index + 1}. ${q.question || ''}`);
+  return [
+    paper.title || '',
+    mc.length ? `I. Phần trắc nghiệm\n${mc.join('\n\n')}` : '',
+    essay.length ? `II. Phần tự luận\n${essay.join('\n\n')}` : '',
+  ].filter(Boolean).join('\n\n');
+}
+
+function examPackageToAnswerKey(paper) {
+  if (!paper) return '';
+  const mc = (paper.questions?.multipleChoice || []).map((q, index) => `Câu ${q.number || index + 1}: ${q.answer || ''}`);
+  const essay = (paper.questions?.essay || []).map((q, index) => `Bài ${index + 1}: ${q.solution || ''}`);
+  return [...mc, ...essay].filter(Boolean).join('\n');
+}
 
 function distribute(total, slots) {
   if (total <= 0 || slots.length === 0) return slots.map(() => 0);
@@ -185,6 +211,10 @@ export default function AdminExamComposer({ onSaved }) {
   const [paper, setPaper] = useState(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [classes, setClasses] = useState([]);
+  const [lessons, setLessons] = useState([]);
+  const [classLevels, setClassLevels] = useState([]);
+  const [assignHomework, setAssignHomework] = useState({ enabled: false, classIds: [], lessonId: '', dueDate: '' });
 
   useEffect(() => {
     api.get('/exams/paper/curriculum')
@@ -210,9 +240,16 @@ export default function AdminExamComposer({ onSaved }) {
         }
       })
       .catch(() => {});
+    api.get('/classes').then(r => setClasses(r.data || [])).catch(() => {});
+    api.get('/lessons').then(r => setLessons(r.data || [])).catch(() => {});
+    api.get('/levels').then(r => setClassLevels(r.data || [])).catch(() => {});
   }, []);
 
   const chapters = curriculum?.[form.grade] || {};
+  const gradeOptions = useMemo(() => {
+    const grades = classLevels.map(extractGradeFromLevel).filter(Boolean);
+    return [...new Set(grades)].sort((a, b) => a - b);
+  }, [classLevels]);
   const totals = useMemo(() => matrixTotals(matrix, cognitiveLevels), [matrix, cognitiveLevels]);
   const targetPoints = round2(Number(form.mcPoints) + Number(form.essayPoints));
 
@@ -305,9 +342,26 @@ export default function AdminExamComposer({ onSaved }) {
 
   const savePaper = async () => {
     if (!paper) return toast.error('Hãy sinh đề trước khi lưu');
+    if (assignHomework.enabled && assignHomework.classIds.length === 0) return toast.error('Chưa chọn lớp để giao bài tập');
     setSaving(true);
     try {
-      await api.post('/exams/paper/save', { paper });
+      const { data: savedExam } = await api.post('/exams/paper/save', { paper });
+      if (assignHomework.enabled) {
+        await Promise.all(assignHomework.classIds.map((classId) => (
+          api.post('/homeworks', {
+            title: paper.meta?.examName || paper.title || 'Bài tập',
+            description: examPackageToHomeworkText(paper),
+            classId,
+            lessonId: assignHomework.lessonId || undefined,
+            sourceExam: savedExam?._id,
+            examPackage: paper,
+            answerKey: examPackageToAnswerKey(paper),
+            maxScore: paper.meta?.totalPoints || paper.totals?.totalPoints || 10,
+            dueDate: assignHomework.dueDate || undefined,
+          })
+        )));
+        toast.success(`Đã thêm vào phần Bài tập cho ${assignHomework.classIds.length} lớp`);
+      }
       toast.success('Đã lưu vào ngân hàng đề');
       onSaved?.();
     } catch (err) {
@@ -375,14 +429,11 @@ export default function AdminExamComposer({ onSaved }) {
               <span className="text-sm font-medium text-gray-700">Tên trường / đơn vị</span>
               <input className="w-full rounded-lg border border-gray-300 px-3 py-2" value={form.schoolName} onChange={e => updateForm('schoolName', e.target.value)} />
             </label>
-            <label className="space-y-1">
-              <span className="text-sm font-medium text-gray-700">Phòng/UBND</span>
-              <input className="w-full rounded-lg border border-gray-300 px-3 py-2" value={form.department} onChange={e => updateForm('department', e.target.value)} placeholder="UBND..." />
-            </label>
+           
             <label className="space-y-1">
               <span className="text-sm font-medium text-gray-700">Lớp</span>
               <select className="w-full rounded-lg border border-gray-300 px-3 py-2" value={form.grade} onChange={e => updateForm('grade', Number(e.target.value))}>
-                {[6, 7, 8, 9, 10, 11, 12].map(grade => <option key={grade} value={grade}>Toán {grade}</option>)}
+                {(gradeOptions.length ? gradeOptions : [6, 7, 8, 9, 10, 11, 12]).map(grade => <option key={grade} value={grade}>Toán {grade}</option>)}
               </select>
             </label>
             <label className="space-y-1">
@@ -543,6 +594,63 @@ export default function AdminExamComposer({ onSaved }) {
 
       {step === 5 && (
         <div className="space-y-5">
+          <div className="no-print rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+            <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-emerald-900">
+              <input
+                type="checkbox"
+                checked={assignHomework.enabled}
+                onChange={e => setAssignHomework(prev => ({ ...prev, enabled: e.target.checked }))}
+                className="h-4 w-4"
+              />
+              Thêm thành bài tập
+            </label>
+            {assignHomework.enabled && (
+              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+                <label className="space-y-1">
+                  <span className="text-xs font-medium text-emerald-900">Giao cho lớp</span>
+                  <div className="max-h-40 overflow-y-auto rounded-lg border border-emerald-300 bg-white p-2">
+                    {classes.map(cls => (
+                      <label key={cls._id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-gray-700 hover:bg-emerald-50">
+                        <input
+                          type="checkbox"
+                          checked={assignHomework.classIds.includes(cls._id)}
+                          onChange={e => setAssignHomework(prev => ({
+                            ...prev,
+                            classIds: e.target.checked
+                              ? [...prev.classIds, cls._id]
+                              : prev.classIds.filter(id => id !== cls._id),
+                          }))}
+                          className="h-4 w-4"
+                        />
+                        {cls.name}
+                      </label>
+                    ))}
+                  </div>
+                </label>
+                <label className="space-y-1">
+                  <span className="text-xs font-medium text-emerald-900">Gắn với bài học</span>
+                  <select
+                    className="w-full rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm"
+                    value={assignHomework.lessonId}
+                    onChange={e => setAssignHomework(prev => ({ ...prev, lessonId: e.target.value }))}
+                  >
+                    <option value="">-- Không chọn --</option>
+                    {lessons.map(lesson => <option key={lesson._id} value={lesson._id}>{lesson.title}</option>)}
+                  </select>
+                </label>
+                <label className="space-y-1">
+                  <span className="text-xs font-medium text-emerald-900">Hạn nộp</span>
+                  <input
+                    type="datetime-local"
+                    className="w-full rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm"
+                    value={assignHomework.dueDate}
+                    onChange={e => setAssignHomework(prev => ({ ...prev, dueDate: e.target.value }))}
+                  />
+                </label>
+              </div>
+            )}
+          </div>
+
           <div className="no-print flex flex-wrap gap-3">
             <button onClick={generatePaper} disabled={loading} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-60">
               <FiZap /> {loading ? 'Đang sinh đề...' : paper ? 'Sinh lại đề bằng AI' : 'Sinh đề bằng AI'}

@@ -11,6 +11,10 @@ function formatVND(n) {
   return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(n || 0);
 }
 
+function rowKey(row) {
+  return `${row.recordId || ''}-${row.adjustmentId || row.studentId || row.studentName}`;
+}
+
 export default function AdminRevenue() {
   const now = new Date();
 
@@ -35,6 +39,7 @@ export default function AdminRevenue() {
   const [loading, setLoading] = useState(false);
   const [period, setPeriod] = useState('');
   const [siteSettings, setSiteSettings] = useState({});
+  const [updatingPaymentKey, setUpdatingPaymentKey] = useState('');
 
   const printRef = useRef();
 
@@ -88,14 +93,54 @@ export default function AdminRevenue() {
   // Group by month/year
   const grouped = rows.reduce((acc, row) => {
     const key = `${row.year}-${String(row.month).padStart(2, '0')}`;
-    if (!acc[key]) acc[key] = { month: row.month, year: row.year, rows: [], subtotal: 0 };
+    if (!acc[key]) acc[key] = { month: row.month, year: row.year, rows: [], subtotal: 0, paidSubtotal: 0, unpaidSubtotal: 0 };
     acc[key].rows.push(row);
     acc[key].subtotal += row.amount;
+    if (row.isPaid) acc[key].paidSubtotal += row.amount;
+    else acc[key].unpaidSubtotal += row.amount;
     return acc;
   }, {});
   const groupedArr = Object.values(grouped).sort((a, b) =>
     a.year !== b.year ? a.year - b.year : a.month - b.month
   );
+
+  const paidTotal = rows.reduce((sum, row) => sum + (row.isPaid ? row.amount : 0), 0);
+  const unpaidTotal = rows.reduce((sum, row) => sum + (!row.isPaid ? row.amount : 0), 0);
+
+  const togglePayment = async (row, checked) => {
+    const key = rowKey(row);
+    if ((!row.recordId || !row.adjustmentId) && (!row.month || !row.year || (!row.classId && !row.className) || (!row.studentId && !row.studentName))) {
+      toast.error('Dòng doanh thu này thiếu thông tin để cập nhật. Hãy tải lại báo cáo.');
+      return;
+    }
+
+    setUpdatingPaymentKey(key);
+    setRows((prev) => prev.map((item) => (rowKey(item) === key ? { ...item, isPaid: checked } : item)));
+    try {
+      const { data } = await api.patch('/tuition/payment', {
+        recordId: row.recordId,
+        adjustmentId: row.adjustmentId,
+        classId: row.classId,
+        className: row.className,
+        month: row.month,
+        year: row.year,
+        studentId: row.studentId,
+        studentName: row.studentName,
+        isPaid: checked,
+      });
+      setRows((prev) => prev.map((item) => (
+        rowKey(item) === key
+          ? { ...item, isPaid: data.isPaid, paidAt: data.paidAt }
+          : item
+      )));
+      toast.success(checked ? 'Đã đánh dấu đã thanh toán' : 'Đã chuyển về chưa thanh toán');
+    } catch (err) {
+      setRows((prev) => prev.map((item) => (rowKey(item) === key ? { ...item, isPaid: !checked } : item)));
+      toast.error(err.response?.data?.message || 'Không cập nhật được trạng thái thanh toán');
+    } finally {
+      setUpdatingPaymentKey('');
+    }
+  };
 
   const handlePrint = () => {
     const el = printRef.current;
@@ -248,6 +293,21 @@ ${el.innerHTML}
             </button>
           </div>
 
+          <div className="mb-4 grid gap-3 md:grid-cols-3">
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+              <p className="text-xs font-medium uppercase text-gray-500">Tổng phải thu</p>
+              <p className="mt-1 text-lg font-bold text-gray-900">{formatVND(total)}</p>
+            </div>
+            <div className="rounded-lg border border-green-200 bg-green-50 p-4">
+              <p className="text-xs font-medium uppercase text-green-700">Đã thanh toán</p>
+              <p className="mt-1 text-lg font-bold text-green-700">{formatVND(paidTotal)}</p>
+            </div>
+            <div className="rounded-lg border border-orange-200 bg-orange-50 p-4">
+              <p className="text-xs font-medium uppercase text-orange-700">Chưa thanh toán</p>
+              <p className="mt-1 text-lg font-bold text-orange-700">{formatVND(unpaidTotal)}</p>
+            </div>
+          </div>
+
           <div className="overflow-x-auto">
             <div ref={printRef}>
               <table className="w-full text-sm border-collapse">
@@ -256,11 +316,12 @@ ${el.innerHTML}
                     <th className="border border-gray-300 py-2.5 px-3 font-semibold text-center w-10">A</th>
                     <th className="border border-gray-300 py-2.5 px-3 font-semibold text-left">B — Diễn giải</th>
                     <th className="border border-gray-300 py-2.5 px-3 font-semibold text-right min-w-36">1 — Số tiền</th>
+                    <th className="border border-gray-300 py-2.5 px-3 font-semibold text-center min-w-36">Thanh toán</th>
                   </tr>
                 </thead>
                 <tbody>
                   {groupedArr.map((group) => (
-                    <MonthGroup key={`${group.year}-${group.month}`} group={group} />
+                    <MonthGroup key={`${group.year}-${group.month}`} group={group} onTogglePayment={togglePayment} updatingPaymentKey={updatingPaymentKey} />
                   ))}
                 </tbody>
                 <tfoot>
@@ -270,6 +331,9 @@ ${el.innerHTML}
                     </td>
                     <td className="border border-gray-400 py-3 px-3 text-right text-green-700 text-base">
                       {formatVND(total)}
+                    </td>
+                    <td className="border border-gray-400 py-3 px-3 text-center text-xs text-gray-600">
+                      Đã thu: {formatVND(paidTotal)}<br />Còn lại: {formatVND(unpaidTotal)}
                     </td>
                   </tr>
                 </tfoot>
@@ -292,19 +356,19 @@ ${el.innerHTML}
   );
 }
 
-function MonthGroup({ group }) {
+function MonthGroup({ group, onTogglePayment, updatingPaymentKey }) {
   return (
     <>
       {/* Month header row */}
       <tr className="bg-blue-50">
-        <td className="border border-gray-300 py-2 px-3 font-bold text-blue-700 text-center" colSpan={3}>
+        <td className="border border-gray-300 py-2 px-3 font-bold text-blue-700 text-center" colSpan={4}>
           Tháng {group.month}/{group.year}
         </td>
       </tr>
 
       {/* Student rows */}
       {group.rows.map((row, ri) => (
-        <tr key={ri} className="hover:bg-gray-50">
+        <tr key={rowKey(row)} className={`hover:bg-gray-50 ${row.isPaid ? 'bg-green-50/40' : ''}`}>
           <td className="border border-gray-200 py-2 px-3 text-center text-gray-400 text-xs">{ri + 1}</td>
           <td className="border border-gray-200 py-2 px-3">
             <span>Thu học phí T{group.month}/{group.year} — {row.className} — </span>
@@ -315,6 +379,18 @@ function MonthGroup({ group }) {
           </td>
           <td className="border border-gray-200 py-2 px-3 text-right font-medium text-gray-900">
             {formatVND(row.amount)}
+          </td>
+          <td className="border border-gray-200 py-2 px-3 text-center">
+            <label className="inline-flex items-center justify-center gap-2 text-xs font-medium text-gray-700">
+              <input
+                type="checkbox"
+                checked={!!row.isPaid}
+                disabled={updatingPaymentKey === rowKey(row)}
+                onChange={(event) => onTogglePayment(row, event.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
+              />
+              {row.isPaid ? 'Đã thanh toán' : 'Chưa thanh toán'}
+            </label>
           </td>
         </tr>
       ))}
@@ -327,6 +403,9 @@ function MonthGroup({ group }) {
         </td>
         <td className="border border-gray-300 py-2 px-3 text-right text-blue-700">
           {formatVND(group.subtotal)}
+        </td>
+        <td className="border border-gray-300 py-2 px-3 text-center text-xs text-gray-600">
+          Đã thu: {formatVND(group.paidSubtotal)}<br />Còn lại: {formatVND(group.unpaidSubtotal)}
         </td>
       </tr>
     </>

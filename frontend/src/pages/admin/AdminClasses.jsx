@@ -1,7 +1,8 @@
 ﻿import { useEffect, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import api from '../../api/axios';
 import toast from 'react-hot-toast';
-import { FiPlus, FiEdit2, FiTrash2, FiX, FiUsers, FiArrowLeft, FiToggleLeft, FiToggleRight, FiBook, FiChevronDown, FiChevronRight, FiSearch, FiUserPlus, FiBarChart2 } from 'react-icons/fi';
+import { FiPlus, FiEdit2, FiTrash2, FiX, FiUsers, FiArrowLeft, FiToggleLeft, FiToggleRight, FiBook, FiChevronDown, FiChevronRight, FiSearch, FiUserPlus, FiBarChart2, FiAlertCircle, FiCalendar } from 'react-icons/fi';
 
 const days = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
 
@@ -16,6 +17,82 @@ function isLessonOpen(setting) {
   if (!setting) return false;
   if (setting.isVisible) return true;
   return !!setting.autoOpenAt && new Date(setting.autoOpenAt) <= new Date();
+}
+
+function combineDateAndTime(date, time) {
+  const [hours = 0, minutes = 0] = (time || '00:00').split(':').map(Number);
+  const result = new Date(date);
+  result.setHours(hours, minutes, 0, 0);
+  return result;
+}
+
+function getUpcomingClassSessions(cls, daysAhead = 3) {
+  const now = new Date();
+  const windowEnd = new Date(now);
+  windowEnd.setDate(windowEnd.getDate() + daysAhead);
+  windowEnd.setHours(23, 59, 59, 999);
+
+  return (cls?.schedules || []).flatMap((schedule) => {
+    const sessions = [];
+    for (let offset = 0; offset <= daysAhead; offset += 1) {
+      const date = new Date(now);
+      date.setDate(now.getDate() + offset);
+      if (date.getDay() !== Number(schedule.dayOfWeek)) continue;
+
+      const startAt = combineDateAndTime(date, schedule.startTime);
+      const endAt = combineDateAndTime(date, schedule.endTime || schedule.startTime);
+      if (startAt < now || startAt > windowEnd) continue;
+
+      sessions.push({ ...schedule, startAt, endAt });
+    }
+    return sessions;
+  }).sort((a, b) => a.startAt - b.startAt);
+}
+
+function isSameDay(a, b) {
+  return a.getFullYear() === b.getFullYear()
+    && a.getMonth() === b.getMonth()
+    && a.getDate() === b.getDate();
+}
+
+function formatSessionDate(date) {
+  return date.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' });
+}
+
+function buildLessonReminders(cls, lessonsByCourse, lessonSettings, allCourses) {
+  const sessions = getUpcomingClassSessions(cls);
+  if (!sessions.length || !(cls?.courses || []).length) return [];
+
+  return sessions.map((session) => {
+    const courseOptions = (cls?.courses || []).map((course) => {
+      const courseId = (course._id || course).toString();
+      const lessons = lessonsByCourse[courseId] || [];
+      const nextLesson = lessons.find((lesson) => !isLessonOpen(lessonSettings[lesson._id]));
+      return {
+        courseId,
+        courseTitle: course.title || allCourses.find((item) => item._id === courseId)?.title || courseId,
+        lessons,
+        nextLesson,
+      };
+    });
+
+    const hasLessonScheduledForDay = courseOptions.some(({ lessons }) =>
+      lessons.some((lesson) => {
+        const autoOpenAt = lessonSettings[lesson._id]?.autoOpenAt;
+        return autoOpenAt && isSameDay(new Date(autoOpenAt), session.startAt);
+      })
+    );
+
+    if (hasLessonScheduledForDay) return null;
+
+    const suggested = courseOptions.find((option) => option.nextLesson) || courseOptions[0];
+    return {
+      session,
+      courseId: suggested?.courseId || '',
+      courseTitle: suggested?.courseTitle || 'Khóa học',
+      nextLesson: suggested?.nextLesson || null,
+    };
+  }).filter(Boolean);
 }
 
 function formatScore(value) {
@@ -62,6 +139,7 @@ const emptyForm = {
 };
 
 export default function AdminClasses() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [classes, setClasses] = useState([]);
   const [courses, setCourses] = useState([]);
   const [modal, setModal] = useState(false);
@@ -88,6 +166,7 @@ export default function AdminClasses() {
   const [studentSearch, setStudentSearch] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [autoOpenedClassId, setAutoOpenedClassId] = useState('');
 
   const load = () => api.get('/classes').then(res => setClasses(res.data));
 
@@ -101,6 +180,18 @@ export default function AdminClasses() {
       loadClassStats(selectedClass._id);
     }
   }, [selectedClass, activeTab, classStats, statsLoading]);
+
+  useEffect(() => {
+    const classId = searchParams.get('classId');
+    const tab = searchParams.get('tab') || 'lessons';
+    if (!classId || autoOpenedClassId === classId || classes.length === 0) return;
+
+    const cls = classes.find((item) => item._id === classId);
+    if (!cls) return;
+    setAutoOpenedClassId(classId);
+    setActiveTab(tab);
+    openClassDetail(cls, tab);
+  }, [classes, searchParams, autoOpenedClassId]);
 
   const openCreate = () => { setForm(emptyForm); setEditId(null); setModal(true); };
   const openEdit = (c) => {
@@ -145,9 +236,9 @@ export default function AdminClasses() {
   const removeSch = (i) => setForm(f => ({ ...f, schedules: f.schedules.filter((_, idx) => idx !== i) }));
 
   // --- Detail view ---
-  const openClassDetail = async (cls) => {
+  const openClassDetail = async (cls, tab = 'lessons') => {
     setSelectedClass(cls);
-    setActiveTab('lessons');
+    setActiveTab(tab);
     setDetailLoading(true);
     setClassLessonSettings({});
     setLessonScheduleDrafts({});
@@ -304,6 +395,20 @@ export default function AdminClasses() {
     }
   };
 
+  const lessonReminders = activeTab === 'lessons'
+    ? buildLessonReminders(classDetail || selectedClass, classLessonsMap, classLessonSettings, courses)
+    : [];
+
+  const handleUseReminderTime = (reminder) => {
+    const lesson = reminder.nextLesson;
+    if (!lesson) return;
+    const courseId = reminder.courseId;
+    const value = toLocalDatetimeInput(reminder.session.startAt);
+    setExpandedCourses(prev => ({ ...prev, [courseId]: true }));
+    setLessonScheduleDrafts(prev => ({ ...prev, [lesson._id]: value }));
+    toast.success(`Đã điền giờ tự mở cho "${lesson.title}"`);
+  };
+
   // --- Detail view UI ---
   if (selectedClass) {
     return (
@@ -311,7 +416,10 @@ export default function AdminClasses() {
         {/* Header */}
         <div className="flex items-center gap-4 mb-6">
           <button
-            onClick={() => setSelectedClass(null)}
+            onClick={() => {
+              setSelectedClass(null);
+              setSearchParams({});
+            }}
             className="btn-secondary flex items-center gap-2"
           >
             <FiArrowLeft /> Quay lại
@@ -347,6 +455,54 @@ export default function AdminClasses() {
             {/* Lessons tab */}
             {activeTab === 'lessons' && (
               <div className="space-y-4">
+                {lessonReminders.length > 0 && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                    <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-amber-900">
+                      <FiAlertCircle className="text-amber-600" />
+                      Nhắc chuẩn bị bài học cho buổi sắp tới
+                    </div>
+                    <div className="space-y-2">
+                      {lessonReminders.slice(0, 3).map((reminder) => (
+                        <div
+                          key={`${reminder.session.dayOfWeek}-${reminder.session.startAt.toISOString()}`}
+                          className="flex flex-col gap-3 rounded-md border border-amber-100 bg-white px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+                        >
+                          <div className="min-w-0">
+                            <p className="flex items-center gap-2 text-sm font-medium text-gray-900">
+                              <FiCalendar className="shrink-0 text-amber-500" />
+                              {formatSessionDate(reminder.session.startAt)} · {reminder.session.startTime} - {reminder.session.endTime}
+                              {reminder.session.room ? ` · ${reminder.session.room}` : ''}
+                            </p>
+                            <p className="mt-1 text-xs text-gray-500">
+                              {reminder.nextLesson
+                                ? `Chưa có bài nào được hẹn mở trong ngày này. Gợi ý: "${reminder.nextLesson.title}" (${reminder.courseTitle}).`
+                                : `Khóa "${reminder.courseTitle}" chưa có bài học để hẹn cho lớp.`}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 flex-wrap gap-2">
+                            {reminder.nextLesson && (
+                              <button
+                                type="button"
+                                onClick={() => handleUseReminderTime(reminder)}
+                                className="rounded-md border border-amber-200 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-50"
+                              >
+                                Đặt giờ cho bài gợi ý
+                              </button>
+                            )}
+                            {reminder.courseId && (
+                              <Link
+                                to={`/admin/lessons/new?course=${reminder.courseId}`}
+                                className="rounded-md bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700"
+                              >
+                                Tạo bài học
+                              </Link>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {(classDetail?.courses || []).length === 0 ? (
                   <div className="card p-8 text-center text-gray-500">
                     <FiBook size={40} className="mx-auto mb-3 text-gray-300" />
@@ -737,7 +893,10 @@ export default function AdminClasses() {
           <div
             key={cls._id}
             className="card p-5 cursor-pointer hover:shadow-md transition-shadow"
-            onClick={() => openClassDetail(cls)}
+            onClick={() => {
+              setSearchParams({ classId: cls._id, tab: 'lessons' });
+              openClassDetail(cls);
+            }}
           >
             <div className="flex justify-between items-start mb-3">
               <h3 className="font-semibold text-gray-900">{cls.name}</h3>

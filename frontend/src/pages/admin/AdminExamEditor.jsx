@@ -125,6 +125,32 @@ function matrixFromExam(exam, levels, grade = 6) {
   return createDefaultMatrix(levels, grade);
 }
 
+function extractGradeFromLevel(level) {
+  const match = String(level?.name || '').match(/\d+/);
+  return match ? Number(match[0]) : null;
+}
+
+function examPackageToHomeworkText(paper) {
+  if (!paper) return '';
+  const mc = (paper.questions?.multipleChoice || []).map((q, index) => {
+    const options = ['A', 'B', 'C', 'D'].map(key => `${key}. ${q.options?.[key] || ''}`).join('\n');
+    return `Câu ${q.number || index + 1}. ${q.question || ''}\n${options}`;
+  });
+  const essay = (paper.questions?.essay || []).map((q, index) => `Bài ${index + 1}. ${q.question || ''}`);
+  return [
+    paper.title || '',
+    mc.length ? `I. Phần trắc nghiệm\n${mc.join('\n\n')}` : '',
+    essay.length ? `II. Phần tự luận\n${essay.join('\n\n')}` : '',
+  ].filter(Boolean).join('\n\n');
+}
+
+function examPackageToAnswerKey(paper) {
+  if (!paper) return '';
+  const mc = (paper.questions?.multipleChoice || []).map((q, index) => `Câu ${q.number || index + 1}: ${q.answer || ''}`);
+  const essay = (paper.questions?.essay || []).map((q, index) => `Bài ${index + 1}: ${q.solution || ''}`);
+  return [...mc, ...essay].filter(Boolean).join('\n');
+}
+
 function matrixTotals(matrix, levels) {
   const totals = {
     tn: Object.fromEntries(levels.map(level => [level.key, { count: 0, points: 0 }])),
@@ -244,14 +270,22 @@ export default function AdminExamEditor() {
     classSchedules: [],
     matrix: createDefaultMatrix(FALLBACK_LEVELS, 6),
     examPackage: null,
+    assignHomework: false,
+    homeworkClasses: [],
+    homeworkDueDate: '',
   });
   const [lessons, setLessons] = useState([]);
   const [classes, setClasses] = useState([]);
   const [classLevels, setClassLevels] = useState([]);
+  const [sourceHomeworks, setSourceHomeworks] = useState([]);
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(isEdit);
 
   const totals = useMemo(() => matrixTotals(form.matrix, cognitiveLevels), [form.matrix, cognitiveLevels]);
+  const curriculumGradeOptions = useMemo(() => {
+    const grades = classLevels.map(extractGradeFromLevel).filter(Boolean);
+    return [...new Set(grades)].sort((a, b) => a - b);
+  }, [classLevels]);
 
   useEffect(() => {
     api.get('/lessons').then(r => setLessons(r.data || [])).catch(() => {});
@@ -275,9 +309,17 @@ export default function AdminExamEditor() {
     if (!isEdit) return;
     const loadExam = async () => {
       try {
-        const { data: exam } = await api.get(`/exams/${id}`);
+        const [{ data: exam }, { data: linkedHomeworks }] = await Promise.all([
+          api.get(`/exams/${id}`),
+          api.get('/homeworks', { params: { sourceExam: id } }).catch(() => ({ data: [] })),
+        ]);
         const levels = normalizeLevelOptions(levelOptions, exam.examPackage);
         const grade = Number(exam.examPackage?.meta?.grade) || 6;
+        const linkedClassIds = (linkedHomeworks || [])
+          .map((homework) => homework.class?._id || homework.class)
+          .filter(Boolean)
+          .map(String);
+        setSourceHomeworks(linkedHomeworks || []);
         setCurriculumGrade(grade);
         setCognitiveLevels(levels);
         setForm({
@@ -296,6 +338,9 @@ export default function AdminExamEditor() {
           })),
           matrix: matrixFromExam(exam, levels, grade),
           examPackage: exam.examPackage || null,
+          assignHomework: linkedClassIds.length > 0,
+          homeworkClasses: [...new Set(linkedClassIds)],
+          homeworkDueDate: linkedHomeworks?.[0]?.dueDate ? toLocalDatetimeInput(linkedHomeworks[0].dueDate) : '',
         });
       } catch {
         toast.error('Không tải được đề');
@@ -423,6 +468,8 @@ export default function AdminExamEditor() {
     const totalQuestions = Number(form.totalQuestions) || totals.totalQuestions;
     if (totalQuestions !== totals.totalQuestions) return toast.error(`Tổng số câu đang là ${totals.totalQuestions}, chưa khớp ô Tổng số câu hỏi`);
 
+    if (form.assignHomework && form.homeworkClasses.length === 0) return toast.error('Chưa chọn lớp để giao bài tập');
+
     setLoading(true);
     try {
       const matrixWithTotals = form.matrix.map(row => {
@@ -437,17 +484,17 @@ export default function AdminExamEditor() {
       const syncedPackage = form.examPackage?.questions
         ? syncQuestionsWithMatrix(form.examPackage, matrixWithTotals, cognitiveLevels)
         : null;
-      const examPackage = syncedPackage ? {
-        ...syncedPackage,
+      const examPackage = {
+        ...(syncedPackage || form.examPackage || {}),
         cognitiveLevels,
         matrix: matrixWithTotals,
         totals,
         meta: {
-          ...(syncedPackage.meta || {}),
+          ...((syncedPackage || form.examPackage)?.meta || {}),
           grade: curriculumGrade,
           totalPoints: totals.totalPoints,
         },
-      } : null;
+      };
       const payload = {
         title: form.title,
         content: form.content,
@@ -468,12 +515,39 @@ export default function AdminExamEditor() {
       if (form.lesson) payload.lesson = form.lesson;
       if (form.level) payload.level = form.level;
 
+      let savedExam;
       if (isEdit) {
-        await api.put(`/exams/${id}`, payload);
+        const { data } = await api.put(`/exams/${id}`, payload);
+        savedExam = data;
         toast.success('Đã cập nhật đề kiểm tra');
       } else {
-        await api.post('/exams', payload);
+        const { data } = await api.post('/exams', payload);
+        savedExam = data;
         toast.success('Đã tạo đề kiểm tra');
+      }
+      if (form.assignHomework) {
+        await Promise.all(form.homeworkClasses.map((classId) => {
+          const existingHomework = sourceHomeworks.find((homework) => {
+            const homeworkClassId = homework.class?._id || homework.class;
+            return String(homeworkClassId) === String(classId);
+          });
+          const homeworkPayload = {
+            title: form.title,
+            description: examPackageToHomeworkText(examPackage) || form.content,
+            classId,
+            lessonId: form.lesson || undefined,
+            sourceExam: savedExam?._id || id,
+            examPackage,
+            pdfAttachments: form.pdfAttachments || [],
+            answerKey: examPackageToAnswerKey(examPackage),
+            maxScore: totals.totalPoints || 10,
+            dueDate: form.homeworkDueDate || undefined,
+          };
+          return existingHomework?._id
+            ? api.put(`/homeworks/${existingHomework._id}`, homeworkPayload)
+            : api.post('/homeworks', homeworkPayload);
+        }));
+        toast.success(`Đã thêm vào phần Bài tập cho ${form.homeworkClasses.length} lớp`);
       }
       navigate('/admin/exams');
     } catch (err) {
@@ -548,7 +622,12 @@ export default function AdminExamEditor() {
               <select
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 value={form.level}
-                onChange={e => setForm(f => ({ ...f, level: e.target.value }))}
+                onChange={e => {
+                  const levelId = e.target.value;
+                  setForm(f => ({ ...f, level: levelId }));
+                  const grade = extractGradeFromLevel(classLevels.find(level => level._id === levelId));
+                  if (grade) updateCurriculumGrade(grade);
+                }}
               >
                 <option value="">-- Chọn cấp độ lớp --</option>
                 {classLevels.map(level => <option key={level._id} value={level._id}>{level.name}</option>)}
@@ -578,6 +657,52 @@ export default function AdminExamEditor() {
                 <span className="text-sm font-medium text-gray-700">Lưu vào ngân hàng đề</span>
               </label>
             </div>
+          </div>
+
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+            <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-emerald-900">
+              <input
+                type="checkbox"
+                checked={form.assignHomework}
+                onChange={e => setForm(f => ({ ...f, assignHomework: e.target.checked }))}
+                className="h-4 w-4"
+              />
+              Thêm thành bài tập
+            </label>
+            {form.assignHomework && (
+              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                <label className="space-y-1">
+                  <span className="text-xs font-medium text-emerald-900">Giao cho lớp</span>
+                  <div className="max-h-40 overflow-y-auto rounded-lg border border-emerald-300 bg-white p-2">
+                    {classes.map(cls => (
+                      <label key={cls._id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-gray-700 hover:bg-emerald-50">
+                        <input
+                          type="checkbox"
+                          checked={form.homeworkClasses.includes(cls._id)}
+                          onChange={e => setForm(f => ({
+                            ...f,
+                            homeworkClasses: e.target.checked
+                              ? [...f.homeworkClasses, cls._id]
+                              : f.homeworkClasses.filter(id => id !== cls._id),
+                          }))}
+                          className="h-4 w-4"
+                        />
+                        {cls.name}
+                      </label>
+                    ))}
+                  </div>
+                </label>
+                <label className="space-y-1">
+                  <span className="text-xs font-medium text-emerald-900">Hạn nộp</span>
+                  <input
+                    type="datetime-local"
+                    className="w-full rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm"
+                    value={form.homeworkDueDate}
+                    onChange={e => setForm(f => ({ ...f, homeworkDueDate: e.target.value }))}
+                  />
+                </label>
+              </div>
+            )}
           </div>
 
           <div className="border-t border-gray-100 pt-2">
@@ -679,7 +804,7 @@ export default function AdminExamEditor() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="font-semibold text-gray-800">Ma trận đề kiểm tra</h2>
-              <p className="mt-1 text-xs text-gray-500">Ô trên là số câu, ô dưới là điểm. Chấm điểm sẽ dùng ma trận này.</p>
+              <p className="mt-1 text-xs text-gray-500">Ô trên là số câu, ô dưới là điểm để cấu trúc đề và hiển thị bản in.</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <label className="flex items-center gap-2 text-xs text-gray-600">
@@ -689,7 +814,7 @@ export default function AdminExamEditor() {
                   onChange={e => updateCurriculumGrade(Number(e.target.value))}
                   className="rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs"
                 >
-                  {[6, 7, 8, 9, 10, 11, 12].map(grade => (
+                  {(curriculumGradeOptions.length ? curriculumGradeOptions : [6, 7, 8, 9, 10, 11, 12]).map(grade => (
                     <option key={grade} value={grade}>Toán {grade}</option>
                   ))}
                 </select>

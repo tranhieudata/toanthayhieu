@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../../api/axios';
-import { FiUsers, FiBook, FiTrendingUp, FiCalendar, FiLogIn, FiUserCheck, FiUserX, FiClock } from 'react-icons/fi';
+import { FiUsers, FiBook, FiTrendingUp, FiCalendar, FiLogIn, FiUserCheck, FiUserX, FiClock, FiBell, FiAlertCircle } from 'react-icons/fi';
 
 // ─── Weekly Schedule ─────────────────────────────────────────────────────────
 
@@ -40,8 +40,98 @@ function timeToMin(t) {
   return h * 60 + m;
 }
 
-function WeeklySchedule({ classes }) {
+function combineDateAndTime(date, time) {
+  const [hours = 0, minutes = 0] = (time || '00:00').split(':').map(Number);
+  const result = new Date(date);
+  result.setHours(hours, minutes, 0, 0);
+  return result;
+}
+
+function isLessonOpen(setting) {
+  if (!setting) return false;
+  if (setting.isVisible) return true;
+  return !!setting.autoOpenAt && new Date(setting.autoOpenAt) <= new Date();
+}
+
+function isSameDay(a, b) {
+  return a.getFullYear() === b.getFullYear()
+    && a.getMonth() === b.getMonth()
+    && a.getDate() === b.getDate();
+}
+
+function formatSessionDate(date) {
+  return date.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' });
+}
+
+function getUpcomingClassSessions(cls, daysAhead = 3) {
+  const now = new Date();
+  const windowEnd = new Date(now);
+  windowEnd.setDate(windowEnd.getDate() + daysAhead);
+  windowEnd.setHours(23, 59, 59, 999);
+
+  return (cls?.schedules || []).flatMap((schedule) => {
+    const sessions = [];
+    for (let offset = 0; offset <= daysAhead; offset += 1) {
+      const date = new Date(now);
+      date.setDate(now.getDate() + offset);
+      if (date.getDay() !== Number(schedule.dayOfWeek)) continue;
+
+      const startAt = combineDateAndTime(date, schedule.startTime);
+      const endAt = combineDateAndTime(date, schedule.endTime || schedule.startTime);
+      if (startAt < now || startAt > windowEnd) continue;
+      sessions.push({ ...schedule, startAt, endAt });
+    }
+    return sessions;
+  }).sort((a, b) => a.startAt - b.startAt);
+}
+
+function buildReminderList(classes, lessonsByCourse) {
+  return classes.flatMap((cls) => {
+    if (!(cls?.courses || []).length) return [];
+
+    const lessonSettings = {};
+    (cls.lessonVisibility || []).forEach((setting) => {
+      const lessonId = (setting.lesson?._id || setting.lesson)?.toString();
+      if (lessonId) lessonSettings[lessonId] = setting;
+    });
+
+    return getUpcomingClassSessions(cls).map((session) => {
+      const courseOptions = (cls.courses || []).map((course) => {
+        const courseId = (course._id || course).toString();
+        const lessons = lessonsByCourse[courseId] || [];
+        return {
+          courseId,
+          courseTitle: course.title || courseId,
+          lessons,
+          nextLesson: lessons.find((lesson) => !isLessonOpen(lessonSettings[lesson._id])),
+        };
+      });
+
+      const hasLessonScheduledForDay = courseOptions.some(({ lessons }) =>
+        lessons.some((lesson) => {
+          const autoOpenAt = lessonSettings[lesson._id]?.autoOpenAt;
+          return autoOpenAt && isSameDay(new Date(autoOpenAt), session.startAt);
+        })
+      );
+
+      if (hasLessonScheduledForDay) return null;
+      const suggested = courseOptions.find((option) => option.nextLesson) || courseOptions[0];
+      return {
+        classId: cls._id,
+        className: cls.name,
+        session,
+        courseTitle: suggested?.courseTitle || '',
+        nextLessonTitle: suggested?.nextLesson?.title || '',
+      };
+    }).filter(Boolean);
+  }).sort((a, b) => a.session.startAt - b.session.startAt);
+}
+
+function WeeklySchedule({ classes, reminders = [] }) {
   const today = new Date().getDay();
+  const reminderKeys = new Set(reminders.map((reminder) =>
+    `${reminder.classId}-${reminder.session.dayOfWeek}-${reminder.session.startTime}`
+  ));
 
   const colorMap = {};
   classes.forEach((cls, i) => { colorMap[cls._id] = CLASS_COLORS[i % CLASS_COLORS.length]; });
@@ -127,18 +217,25 @@ function WeeklySchedule({ classes }) {
                 {hourTicks.map(({ h, top }) => (
                   <div key={h} className={`absolute left-0 right-0 border-t ${h % 2 === 0 ? 'border-gray-200' : 'border-gray-100'}`} style={{ top }} />
                 ))}
-                {dayEvs.map((ev, ei) => (
-                  <div
-                    key={ei}
-                    title={`${ev.className}  ${ev.startTime}–${ev.endTime}${ev.room ? `\n📍 ${ev.room}` : ''}`}
-                    className={`absolute left-0.5 right-0.5 rounded-md border-l-[3px] px-1.5 py-1 overflow-hidden text-white ${ev.color}`}
-                    style={{ top: ev.top, height: ev.height, fontSize: 10, lineHeight: 1.35 }}
-                  >
-                    <div className="font-bold truncate">{ev.className}</div>
-                    <div className="opacity-90">{ev.startTime}–{ev.endTime}</div>
-                    {ev.room && ev.height > 56 && <div className="opacity-70 truncate">📍 {ev.room}</div>}
-                  </div>
-                ))}
+                {dayEvs.map((ev, ei) => {
+                  const hasReminder = reminderKeys.has(`${ev.classId}-${ev.dayOfWeek}-${ev.startTime}`);
+                  return (
+                    <Link
+                      key={ei}
+                      to={`/admin/classes?classId=${ev.classId}&tab=lessons`}
+                      title={`${ev.className}  ${ev.startTime}-${ev.endTime}${ev.room ? `\n${ev.room}` : ''}`}
+                      className={`absolute left-0.5 right-0.5 rounded-md border-l-[3px] px-1.5 py-1 overflow-hidden text-white ${ev.color} hover:brightness-95`}
+                      style={{ top: ev.top, height: ev.height, fontSize: 10, lineHeight: 1.35 }}
+                    >
+                      <div className="flex items-center gap-1 font-bold">
+                        {hasReminder && <FiBell className="shrink-0 text-white" />}
+                        <span className="truncate">{ev.className}</span>
+                      </div>
+                      <div className="opacity-90">{ev.startTime}-{ev.endTime}</div>
+                      {ev.room && ev.height > 56 && <div className="opacity-70 truncate">{ev.room}</div>}
+                    </Link>
+                  );
+                })}
               </div>
             );
           })}
@@ -161,11 +258,31 @@ export default function AdminDashboard() {
     totalEnrollments: 0,
   });
   const [classes, setClasses] = useState([]);
+  const [lessonsByCourse, setLessonsByCourse] = useState({});
 
   useEffect(() => {
     api.get('/users/admin/stats').then((res) => setStats(res.data)).catch(() => {});
     api.get('/classes').then((res) => setClasses(res.data)).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    const courseIds = [...new Set(classes.flatMap((cls) =>
+      (cls.courses || []).map((course) => (course._id || course).toString())
+    ))];
+    if (!courseIds.length) {
+      setLessonsByCourse({});
+      return;
+    }
+
+    Promise.all(courseIds.map(async (courseId) => {
+      const { data } = await api.get(`/lessons?course=${courseId}`);
+      return [courseId, data || []];
+    }))
+      .then((entries) => setLessonsByCourse(Object.fromEntries(entries)))
+      .catch(() => setLessonsByCourse({}));
+  }, [classes]);
+
+  const lessonReminders = buildReminderList(classes, lessonsByCourse);
 
   const cards = [
     { icon: <FiBook className="text-green-600 text-3xl" />, label: 'Quản lý nội dung', value: stats.totalCourses, to: '/admin/content', bg: 'bg-green-50 border-green-200' },
@@ -185,6 +302,47 @@ export default function AdminDashboard() {
   return (
     <div>
       <h1 className="text-2xl font-bold text-gray-900 mb-6">Tổng quan</h1>
+
+      <div className="card mb-6 overflow-hidden border border-amber-200">
+        <div className="flex items-center justify-between gap-3 bg-amber-50 px-5 py-4">
+          <h2 className="flex items-center gap-2 font-semibold text-amber-900">
+            <FiBell className="text-amber-600" />
+            Nhắc tạo bài học
+          </h2>
+          <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700">
+            {lessonReminders.length} nhắc
+          </span>
+        </div>
+        {lessonReminders.length > 0 ? (
+          <div className="divide-y divide-amber-100">
+            {lessonReminders.slice(0, 5).map((reminder) => (
+              <Link
+                key={`${reminder.classId}-${reminder.session.startAt.toISOString()}`}
+                to={`/admin/classes?classId=${reminder.classId}&tab=lessons`}
+                className="flex flex-col gap-2 px-5 py-3 hover:bg-amber-50 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0">
+                  <p className="flex items-center gap-2 text-sm font-medium text-gray-900">
+                    <FiAlertCircle className="shrink-0 text-amber-500" />
+                    {reminder.className}
+                  </p>
+                  <p className="mt-1 text-xs text-gray-500">
+                    {formatSessionDate(reminder.session.startAt)} · {reminder.session.startTime}-{reminder.session.endTime}
+                    {reminder.session.room ? ` · ${reminder.session.room}` : ''}
+                  </p>
+                </div>
+                <p className="text-xs text-amber-700 sm:text-right">
+                  {reminder.nextLessonTitle
+                    ? `Gợi ý: ${reminder.nextLessonTitle}`
+                    : `Cần tạo bài cho ${reminder.courseTitle || 'khóa học'}`}
+                </p>
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <div className="px-5 py-4 text-sm text-gray-500">Chưa có lớp nào cần nhắc tạo bài trong 3 ngày tới.</div>
+        )}
+      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
         {cards.map((card) => (
@@ -245,7 +403,7 @@ export default function AdminDashboard() {
           <FiCalendar className="text-blue-500" />
           Lịch dạy theo tuần
         </h2>
-        <WeeklySchedule classes={classes} />
+        <WeeklySchedule classes={classes} reminders={lessonReminders} />
       </div>
 
       <div className="grid md:grid-cols-2 gap-6">

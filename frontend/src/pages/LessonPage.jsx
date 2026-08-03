@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import api from '../api/axios';
+import api, { getUploadUrl } from '../api/axios';
 import Navbar from '../components/Navbar';
 import { FiArrowLeft, FiBook, FiFileText, FiDownload } from 'react-icons/fi';
 import katex from 'katex';
@@ -43,11 +43,15 @@ export default function LessonPage() {
   const { id } = useParams();
   const [lesson, setLesson] = useState(null);
   const [exercises, setExercises] = useState([]);
+  const [bundle, setBundle] = useState({ homeworks: [] });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.get(`/lessons/${id}`).then((res) => {
-      setLesson(res.data);
+    api.get(`/lessons/${id}/bundle`).then((res) => {
+      setLesson(res.data.lesson);
+      setBundle({
+        homeworks: res.data.homeworks || [],
+      });
       return api.get(`/exercises?lesson=${id}`).catch(() => ({ data: [] }));
     }).then((exRes) => {
       setExercises(exRes.data || []);
@@ -94,7 +98,7 @@ export default function LessonPage() {
                 {lesson.pdfAttachments.map((att, i) => (
                   <li key={i}>
                     <a
-                      href={att.url}
+                      href={getUploadUrl(att.url)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-800 hover:underline text-sm bg-blue-50 px-3 py-2 rounded-lg transition-colors"
@@ -105,6 +109,55 @@ export default function LessonPage() {
                   </li>
                 ))}
               </ul>
+            </div>
+          )}
+
+          {bundle.homeworks?.length > 0 && (
+            <div className="mt-6 pt-6 border-t">
+              <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2"><FiFileText /> Bài tập</h3>
+              <div className="space-y-3">
+                {bundle.homeworks.map((homework) => (
+                  <div key={homework._id} className="rounded-lg border border-gray-200 p-4">
+                    <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="font-medium text-gray-900">{homework.title}</p>
+                        {homework.description && <p className="mt-1 text-sm text-gray-600 whitespace-pre-wrap">{homework.description}</p>}
+                      </div>
+                      {homework.dueDate && (
+                        <span className="text-xs text-gray-500">Hạn: {new Date(homework.dueDate).toLocaleDateString('vi-VN')}</span>
+                      )}
+                    </div>
+                    {homework.sourceExam?.title && (
+                      <p className="mt-2 text-xs text-emerald-600">Gắn từ đề: {homework.sourceExam.title}</p>
+                    )}
+                    {homework.pdfAttachments?.length > 0 && (
+                      <div className="mt-3 space-y-2">
+                        {homework.pdfAttachments.map((file, index) => (
+                          <a
+                            key={`${file.url}-${index}`}
+                            href={getUploadUrl(file.url)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-2 rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-700 hover:bg-blue-100"
+                          >
+                            <FiDownload size={14} /> {file.filename || `Bai tap ${index + 1}.pdf`}
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                    {homework.parentPrintUrl && (
+                      <a
+                        href={homework.parentPrintUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-3 inline-flex items-center gap-2 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-700 hover:bg-emerald-100"
+                      >
+                        <FiDownload size={14} /> Link in/tải PDF cho phụ huynh
+                      </a>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 

@@ -427,7 +427,7 @@ export default function StudentHomeworkPage() {
       <Navbar />
       <div className="max-w-4xl mx-auto py-8 px-4">
         <h1 className="text-3xl font-bold text-gray-900 mb-2 flex items-center gap-2">
-          <FiBook className="text-blue-600" /> Bài tập về nhà
+          <FiBook className="text-blue-600" /> Bài tập
         </h1>
         <p className="text-gray-600 mb-8">Nộp và theo dõi tiến độ bài tập của bạn</p>
 

@@ -773,7 +773,7 @@ export default function AdminHomework() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-          <FiBook className="text-blue-600" /> Quản lý bài tập về nhà
+          <FiBook className="text-blue-600" /> Quản lý bài tập
         </h1>
         <button
           onClick={openCreate}

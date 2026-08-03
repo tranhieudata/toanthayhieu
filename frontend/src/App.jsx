@@ -16,6 +16,7 @@ import ClassesPage from './pages/ClassesPage';
 import ClassDetailPage from './pages/ClassDetailPage';
 import StudentHomeworkPage from './pages/StudentHomeworkPage';
 import ChangePasswordPage from './pages/ChangePasswordPage';
+import PublicHomeworkPrintPage from './pages/PublicHomeworkPrintPage';
 
 // Admin pages
 import AdminLayout from './pages/admin/AdminLayout';
@@ -31,8 +32,8 @@ import AdminLessons from './pages/admin/AdminLessons';
 import AdminLessonEditor from './pages/admin/AdminLessonEditor';
 import AdminExams from './pages/admin/AdminExams';
 import AdminExamEditor from './pages/admin/AdminExamEditor';
-import AdminExamGrade from './pages/admin/AdminExamGrade';
 import AdminHomework from './pages/admin/AdminHomework';
+import AdminTeachingSessions from './pages/admin/AdminTeachingSessions';
 import StudentExamsPage from './pages/StudentExamsPage';
 import StudentExamDetailPage from './pages/StudentExamDetailPage';
 
@@ -67,6 +68,7 @@ function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/classes" element={<ClassesPage />} />
+          <Route path="/print/homework/:token" element={<PublicHomeworkPrintPage />} />
           <Route path="/courses/:id" element={<CourseDetailPage />} />
           <Route path="/oauth-success" element={<OAuthSuccess />} />
           <Route path="/dashboard" element={<PrivateRoute><DashboardPage /></PrivateRoute>} />
@@ -86,11 +88,11 @@ function App() {
             <Route path="lessons/:id/edit" element={<AdminLessonEditor />} />
             <Route path="students" element={<AdminStudents />} />
             <Route path="classes" element={<AdminClasses />} />
+            <Route path="teaching-sessions" element={<AdminTeachingSessions />} />
             <Route path="enrollments" element={<AdminEnrollments />} />
             <Route path="exams" element={<AdminExams />} />
             <Route path="exams/new" element={<AdminExamEditor />} />
             <Route path="exams/:id/edit" element={<AdminExamEditor />} />
-            <Route path="exams/:id/grade" element={<AdminExamGrade />} />
             <Route path="homeworks" element={<AdminHomework />} />
             <Route path="tuition" element={<AdminTuition />} />
             <Route path="revenue" element={<AdminRevenue />} />

@@ -1,16 +1,17 @@
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { FiHome, FiBook, FiUsers, FiLayers, FiCalendar, FiFileText, FiLogOut, FiMenu, FiX, FiCheckSquare, FiFile, FiDollarSign, FiSettings, FiTrendingUp, FiClipboard, FiBookOpen, FiLock } from 'react-icons/fi';
+import { FiHome, FiUsers, FiCalendar, FiLogOut, FiMenu, FiCheckSquare, FiFile, FiDollarSign, FiSettings, FiTrendingUp, FiClipboard, FiBookOpen, FiLock } from 'react-icons/fi';
 import { useState } from 'react';
 
 const navItems = [
   { to: '/admin', icon: <FiHome />, label: 'Tổng quan', exact: true },
   { to: '/admin/content', icon: <FiFile />, label: 'Quản lý nội dung' },
+  { to: '/admin/teaching-sessions', icon: <FiBookOpen />, label: 'Buổi dạy' },
   { to: '/admin/students', icon: <FiUsers />, label: 'Học sinh' },
   { to: '/admin/classes', icon: <FiCalendar />, label: 'Lớp học' },
   { to: '/admin/enrollments', icon: <FiCheckSquare />, label: 'Đơn xét duyệt' },
-  { to: '/admin/exams', icon: <FiClipboard />, label: 'Đề kiểm tra' },
-  { to: '/admin/homeworks', icon: <FiBookOpen />, label: 'Bài tập về nhà' },
+  { to: '/admin/exams', icon: <FiClipboard />, label: 'Tạo Đề' },
+  { to: '/admin/homeworks', icon: <FiBookOpen />, label: 'Bài tập' },
   { to: '/admin/tuition', icon: <FiDollarSign />, label: 'Tính học phí' },
   { to: '/admin/revenue', icon: <FiTrendingUp />, label: 'Sổ doanh thu' },
   { to: '/admin/settings', icon: <FiSettings />, label: 'Cài đặt' },

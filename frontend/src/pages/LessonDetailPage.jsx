@@ -1,9 +1,9 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import api from '../api/axios';
+import api, { getUploadUrl } from '../api/axios';
 import toast from 'react-hot-toast';
 import Navbar from '../components/Navbar';
-import { FiArrowLeft, FiFileText, FiCheckCircle, FiClock, FiLock, FiMenu, FiX } from 'react-icons/fi';
+import { FiArrowLeft, FiDownload, FiFileText, FiCheckCircle, FiClock, FiLock, FiMenu, FiX } from 'react-icons/fi';
 import 'katex/dist/katex.min.css';
 import 'quill/dist/quill.snow.css';
 import katex from 'katex';
@@ -73,6 +73,7 @@ export default function LessonDetailPage() {
   const classId = searchParams.get('class');
   const [lesson, setLesson] = useState(null);
   const [exercises, setExercises] = useState([]);
+  const [bundle, setBundle] = useState({ homeworks: [] });
   const [loading, setLoading] = useState(true);
   const [siblings, setSiblings] = useState([]); // danh sách bài học cùng khóa
   const [sidebarOpen, setSidebarOpen] = useState(false); // mobile sidebar toggle
@@ -81,10 +82,15 @@ export default function LessonDetailPage() {
     const loadLesson = async () => {
       setLoading(true);
       try {
-        const res = await api.get(`/lessons/${lessonId}`);
-        setLesson(res.data);
+        const res = await api.get(`/lessons/${lessonId}/bundle`, {
+          params: classId ? { classId } : {},
+        });
+        setLesson(res.data.lesson);
+        setBundle({
+          homeworks: res.data.homeworks || [],
+        });
         // Load danh sách bài học cùng khóa
-        const courseId = res.data.course?._id || res.data.course;
+        const courseId = res.data.lesson?.course?._id || res.data.lesson?.course;
         if (courseId) {
           const siblingsRes = await api.get(`/lessons?course=${courseId}`);
           setSiblings(siblingsRes.data);
@@ -105,7 +111,7 @@ export default function LessonDetailPage() {
       }
     };
     loadLesson();
-  }, [lessonId, navigate]);
+  }, [lessonId, navigate, classId]);
 
   // Xử lý LaTeX đồng bộ bằng useMemo (không cần setTimeout, tránh race condition)
   const processedContent = useMemo(() => processLatexContent(lesson?.content), [lesson?.content]);
@@ -263,7 +269,7 @@ export default function LessonDetailPage() {
                   {lesson.pdfAttachments.map((pdf, idx) => (
                     <a
                       key={idx}
-                      href={pdf.url}
+                      href={getUploadUrl(pdf.url)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex items-center gap-3 p-4 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors border border-gray-200"
@@ -276,6 +282,54 @@ export default function LessonDetailPage() {
                         </p>
                       </div>
                     </a>
+                  ))}
+                </div>
+              </div>
+            )}
+            {bundle.homeworks?.length > 0 && (
+              <div className="pt-8 border-t border-gray-200">
+                <h2 className="text-xl font-bold text-gray-900 mb-4">Bài tập</h2>
+                <div className="space-y-3">
+                  {bundle.homeworks.map((homework) => (
+                    <div key={homework._id} className="rounded-lg border border-gray-200 p-4">
+                      <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <p className="font-semibold text-gray-900">{homework.title}</p>
+                          {homework.description && <p className="mt-1 text-sm text-gray-600 whitespace-pre-wrap">{homework.description}</p>}
+                        </div>
+                        {homework.dueDate && (
+                          <span className="text-xs text-gray-500">Hạn: {new Date(homework.dueDate).toLocaleDateString('vi-VN')}</span>
+                        )}
+                      </div>
+                      {homework.sourceExam?.title && (
+                        <p className="mt-2 text-xs text-emerald-600">Gắn từ đề: {homework.sourceExam.title}</p>
+                      )}
+                      {homework.pdfAttachments?.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {homework.pdfAttachments.map((file, index) => (
+                            <a
+                              key={`${file.url}-${index}`}
+                              href={getUploadUrl(file.url)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-2 rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-700 hover:bg-blue-100"
+                            >
+                              <FiDownload size={14} /> {file.filename || `Bai tap ${index + 1}.pdf`}
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                      {homework.parentPrintUrl && (
+                        <a
+                          href={homework.parentPrintUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-3 inline-flex items-center gap-2 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-700 hover:bg-emerald-100"
+                        >
+                          <FiDownload size={14} /> Link in/tải PDF cho phụ huynh
+                        </a>
+                      )}
+                    </div>
                   ))}
                 </div>
               </div>

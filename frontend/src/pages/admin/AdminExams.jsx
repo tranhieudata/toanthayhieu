@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api, { getUploadUrl } from '../../api/axios';
 import toast from 'react-hot-toast';
-import { FiPlus, FiEdit2, FiTrash2, FiBook, FiArchive, FiCalendar, FiLayers, FiClock, FiEye, FiDownload, FiPrinter, FiX, FiChevronLeft, FiChevronRight } from 'react-icons/fi';
+import { FiPlus, FiEdit2, FiTrash2, FiBook, FiArchive, FiCalendar, FiClock, FiEye, FiDownload, FiPrinter, FiX, FiChevronLeft, FiChevronRight } from 'react-icons/fi';
 import AdminExamComposer from './AdminExamComposer';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
@@ -456,7 +456,7 @@ export default function AdminExams() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-          <FiBook className="text-blue-600" /> Quản lý đề kiểm tra
+          <FiBook className="text-blue-600" /> Tạo Đề
         </h1>
         <div className="flex gap-2">
           <button
@@ -573,12 +573,11 @@ export default function AdminExams() {
               >
                 <span className="w-9 shrink-0 text-right text-xs text-gray-400">{pageStart + index + 1}</span>
                 <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900 group-hover:text-blue-700">
-                  {exam.title || 'Đề kiểm tra'}
+                  {exam.title || 'Tạo Đề'}
                 </span>
                 <div className="flex shrink-0 items-center gap-1">
                   <button onClick={(e) => { e.stopPropagation(); openPreview(exam._id); }} className="p-1.5 text-emerald-600 hover:bg-emerald-100 rounded" title="Xem đề"><FiEye size={15} /></button>
                   <button onClick={(e) => { e.stopPropagation(); navigate(`/admin/exams/${exam._id}/edit`); }} className="p-1.5 text-blue-500 hover:bg-blue-100 rounded" title="Sửa"><FiEdit2 size={15} /></button>
-                  <button onClick={(e) => { e.stopPropagation(); navigate(`/admin/exams/${exam._id}/grade`); }} className="p-1.5 text-green-600 hover:bg-green-100 rounded" title="Chấm điểm"><FiLayers size={15} /></button>
                   <button onClick={(e) => { e.stopPropagation(); handleDelete(exam._id); }} disabled={deleting === exam._id} className="p-1.5 text-red-400 hover:bg-red-100 rounded disabled:opacity-40" title="Xóa"><FiTrash2 size={15} /></button>
                 </div>
               </div>
