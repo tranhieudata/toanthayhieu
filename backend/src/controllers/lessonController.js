@@ -292,6 +292,33 @@ const updateLesson = async (req, res) => {
   }
 };
 
+// PATCH /api/lessons/reorder (admin)
+const reorderLessons = async (req, res) => {
+  try {
+    const { course, lessonIds } = req.body;
+    if (!course) return res.status(400).json({ message: 'Khoa hoc la bat buoc' });
+    if (!Array.isArray(lessonIds) || lessonIds.length === 0) {
+      return res.status(400).json({ message: 'Danh sach bai hoc khong hop le' });
+    }
+
+    const lessons = await Lesson.find({ _id: { $in: lessonIds }, course }).select('_id');
+    if (lessons.length !== lessonIds.length) {
+      return res.status(400).json({ message: 'Danh sach bai hoc khong khop khoa hoc' });
+    }
+
+    await Promise.all(lessonIds.map((lessonId, index) => (
+      Lesson.findByIdAndUpdate(lessonId, { order: index + 1 })
+    )));
+
+    const updated = await Lesson.find({ course })
+      .populate('course', 'title')
+      .sort({ order: 1, createdAt: 1 });
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 // DELETE /api/lessons/:id (admin)
 const deleteLesson = async (req, res) => {
   try {
@@ -505,4 +532,4 @@ const deleteCriteria = async (req, res) => {
   }
 };
 
-module.exports = { getLessons, getLessonById, getLessonBundle, createLesson, updateLesson, deleteLesson, toggleLessonStatus, generateLessonContent, addCriteria, updateCriteria, deleteCriteria };
+module.exports = { getLessons, getLessonById, getLessonBundle, createLesson, updateLesson, reorderLessons, deleteLesson, toggleLessonStatus, generateLessonContent, addCriteria, updateCriteria, deleteCriteria };

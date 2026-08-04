@@ -27,6 +27,28 @@ function getParentPrintUrl(homework) {
   return token ? `/print/homework/${token}` : '';
 }
 
+function examPackageToHomeworkText(examPackage) {
+  if (!examPackage) return '';
+  const mc = (examPackage.questions?.multipleChoice || []).map((q, i) => {
+    const options = ['A', 'B', 'C', 'D'].map(key => `${key}. ${q.options?.[key] || ''}`).join('\n');
+    return `Cau ${q.number || i + 1}. ${q.question || ''}\n${options}`;
+  });
+  const essay = (examPackage.questions?.essay || []).map((q, i) => `Bai ${i + 1}. ${q.question || ''}`);
+  return [
+    examPackage.title || examPackage.meta?.examName || '',
+    mc.length ? 'I. Trac nghiem\n' + mc.join('\n\n') : '',
+    essay.length ? 'II. Tu luan\n' + essay.join('\n\n') : '',
+  ].filter(Boolean).join('\n\n');
+}
+
+function examPackageToAnswerKey(examPackage) {
+  if (!examPackage) return '';
+  return [
+    ...(examPackage.questions?.multipleChoice || []).map((q, i) => `Cau ${q.number || i + 1}: ${q.answer || ''}`),
+    ...(examPackage.questions?.essay || []).map((q, i) => `Bai ${i + 1}: ${q.solution || ''}`),
+  ].filter(Boolean).join('\n');
+}
+
 async function ensurePrintShareToken(homework) {
   if (!homework) return homework;
   let shouldSave = false;
@@ -47,8 +69,24 @@ async function ensurePrintShareToken(homework) {
 function withParentPrintUrl(homework) {
   const obj = homework?.toObject ? homework.toObject() : homework;
   if (!obj) return obj;
+  const sourceExam = obj.sourceExam && typeof obj.sourceExam === 'object' ? obj.sourceExam : null;
+  const hasSourceExamDetail = sourceExam && (
+    sourceExam.content !== undefined ||
+    sourceExam.examPackage !== undefined ||
+    sourceExam.pdfAttachments !== undefined
+  );
+  const sourceExamPackage = hasSourceExamDetail ? sourceExam.examPackage : null;
+  const sourceDescription = hasSourceExamDetail
+    ? (examPackageToHomeworkText(sourceExamPackage) || sourceExam.content || obj.description)
+    : obj.description;
+
   return {
     ...obj,
+    title: sourceExam?.title || obj.title,
+    description: sourceDescription,
+    examPackage: sourceExamPackage || obj.examPackage || null,
+    answerKey: hasSourceExamDetail ? (examPackageToAnswerKey(sourceExamPackage) || obj.answerKey || '') : obj.answerKey,
+    pdfAttachments: hasSourceExamDetail ? (sourceExam.pdfAttachments || []) : (obj.pdfAttachments || []),
     parentPrintUrl: getParentPrintUrl(obj),
   };
 }
@@ -493,7 +531,7 @@ const getStudentHomeworks = async (req, res) => {
     const homeworks = await Homework.find({ class: { $in: classIds }, isPublished: true })
       .populate('class', 'name')
       .populate('lesson', 'title')
-      .populate('sourceExam', 'title')
+      .populate('sourceExam', 'title content examPackage pdfAttachments')
       .sort({ createdAt: -1 });
     
   
@@ -517,7 +555,7 @@ const getHomeworks = async (req, res) => {
     const homeworks = await Homework.find(filter)
       .populate('class', 'name')
       .populate('lesson', 'title')
-      .populate('sourceExam', 'title')
+      .populate('sourceExam', 'title content examPackage pdfAttachments')
       .populate('createdBy', 'name')
       .sort({ createdAt: -1 });
     
@@ -534,7 +572,7 @@ const getHomeworkById = async (req, res) => {
     const homework = await Homework.findById(req.params.id)
       .populate('class', 'name students')
       .populate('lesson', 'title')
-      .populate('sourceExam', 'title')
+      .populate('sourceExam', 'title content examPackage pdfAttachments')
       .populate('createdBy', 'name');
     
     if (!homework) return res.status(404).json({ message: 'Không tìm thấy bài tập' });
@@ -578,7 +616,7 @@ const createHomework = async (req, res) => {
   
     await homework.populate('class', 'name');
     await homework.populate('lesson', 'title');
-    await homework.populate('sourceExam', 'title');
+    await homework.populate('sourceExam', 'title content examPackage pdfAttachments');
     
     res.status(201).json(withParentPrintUrl(homework));
   } catch (err) {
@@ -615,7 +653,7 @@ const updateHomework = async (req, res) => {
     )
       .populate('class', 'name')
       .populate('lesson', 'title')
-      .populate('sourceExam', 'title');
+      .populate('sourceExam', 'title content examPackage pdfAttachments');
 
     if (!homework) return res.status(404).json({ message: 'Không tìm thấy bài tập' });
 
@@ -632,21 +670,24 @@ const getPublicHomeworkPrintByToken = async (req, res) => {
     const homework = await Homework.findOne({ printShareToken: req.params.token })
       .populate('class', 'name')
       .populate('lesson', 'title')
-      .populate('sourceExam', 'title');
+      .populate('sourceExam', 'title content examPackage pdfAttachments');
 
     if (!homework || homework.printShareEnabled === false) {
       return res.status(404).json({ message: 'Link bài tập không tồn tại hoặc đã bị tắt' });
     }
 
+    const sourceExam = homework.sourceExam?.examPackage !== undefined ? homework.sourceExam : null;
+    const sourceExamObj = sourceExam?.toObject ? sourceExam.toObject() : sourceExam;
+
     res.json({
-      title: homework.title,
-      description: homework.description,
+      title: sourceExamObj?.title || homework.title,
+      description: sourceExamObj ? (sourceExamObj.content || homework.description) : homework.description,
       class: homework.class,
       lesson: homework.lesson,
-      sourceExam: homework.sourceExam,
-      examPackage: homework.examPackage || null,
+      sourceExam: sourceExamObj ? { _id: sourceExamObj._id, title: sourceExamObj.title } : homework.sourceExam,
+      examPackage: sourceExamObj?.examPackage || homework.examPackage || null,
       dueDate: homework.dueDate,
-      pdfAttachments: homework.pdfAttachments || [],
+      pdfAttachments: sourceExamObj ? (sourceExamObj.pdfAttachments || []) : (homework.pdfAttachments || []),
       parentPrintUrl: getParentPrintUrl(homework),
     });
   } catch (err) {

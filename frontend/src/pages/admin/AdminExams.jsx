@@ -193,10 +193,10 @@ function buildPrintableExamHtml(paper) {
 }
 
 function printExamContent(exam) {
-  const html = hasMeaningfulHtml(exam.content)
-    ? renderStoredExamContentHtml(exam.content)
-    : exam.examPackage
-      ? buildPrintableExamHtml(exam.examPackage)
+  const html = exam.examPackage
+    ? buildPrintableExamHtml(exam.examPackage)
+    : hasMeaningfulHtml(exam.content)
+      ? renderStoredExamContentHtml(exam.content)
       : '';
   if (!html) return toast.error('Đề này chưa có nội dung để in');
   const inheritedStyles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
@@ -688,13 +688,13 @@ export default function AdminExams() {
                       </div>
                     </div>
                   )}
-                  {hasMeaningfulHtml(previewExam?.content) ? (
+                  {previewExam?.examPackage ? (
+                    <PaperPreview paper={previewExam.examPackage} />
+                  ) : hasMeaningfulHtml(previewExam?.content) ? (
                     <div
                       className="prose max-w-none"
                       dangerouslySetInnerHTML={{ __html: renderStoredExamContentHtml(previewExam.content) }}
                     />
-                  ) : previewExam?.examPackage ? (
-                    <PaperPreview paper={previewExam.examPackage} />
                   ) : null}
                 </div>
               ) : (

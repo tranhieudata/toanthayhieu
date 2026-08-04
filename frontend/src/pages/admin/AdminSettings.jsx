@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import api, { getUploadUrl } from '../../api/axios';
 import toast from 'react-hot-toast';
-import { FiSave, FiUpload, FiSettings, FiCreditCard, FiX, FiPlus, FiTrash2, FiLayers, FiBook, FiMenu } from 'react-icons/fi';
+import { FiSave, FiUpload, FiSettings, FiCreditCard, FiX, FiPlus, FiTrash2, FiLayers, FiBook, FiMenu, FiEdit2 } from 'react-icons/fi';
+import VN_MATH_CURRICULUM from '../../utils/vnMathCurriculum';
 
 const TAILWIND_COLORS = [
   { label: 'Xanh lá', bg: 'bg-green-100', text: 'text-green-700' },
@@ -16,7 +17,7 @@ const TAILWIND_COLORS = [
 
 export default function AdminSettings() {
   const [form, setForm] = useState({
-    schoolName: '', bankName: '', bankAccountNumber: '', bankAccountName: '', bankQrImageUrl: '', receiptNote: '', difficultyLevels: [],
+    schoolName: '', bankName: '', bankAccountNumber: '', bankAccountName: '', bankQrImageUrl: '', receiptNote: '', difficultyLevels: [], curriculum: VN_MATH_CURRICULUM,
   });
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -26,6 +27,13 @@ export default function AdminSettings() {
   const [newLevelName, setNewLevelName] = useState('');
   const [newLevelColor, setNewLevelColor] = useState({ bg: 'bg-blue-100', text: 'text-blue-700' });
   const [editingLevel, setEditingLevel] = useState(null);
+  const [selectedCurriculumGrade, setSelectedCurriculumGrade] = useState('6');
+  const [newChapterName, setNewChapterName] = useState('');
+  const [newTopicByChapter, setNewTopicByChapter] = useState({});
+  const [editingChapter, setEditingChapter] = useState(null);
+  const [editingChapterName, setEditingChapterName] = useState('');
+  const [editingTopic, setEditingTopic] = useState(null);
+  const [editingTopicName, setEditingTopicName] = useState('');
   const fileRef = useRef();
 
   useEffect(() => {
@@ -37,6 +45,7 @@ export default function AdminSettings() {
       bankQrImageUrl: r.data.bankQrImageUrl || '',
       receiptNote: r.data.receiptNote || '',
       difficultyLevels: r.data.difficultyLevels || [],
+      curriculum: r.data.curriculum && Object.keys(r.data.curriculum).length > 0 ? r.data.curriculum : VN_MATH_CURRICULUM,
     })).catch(() => toast.error('Không tải được cài đặt'));
 
     loadLevels();
@@ -144,8 +153,95 @@ export default function AdminSettings() {
     handleUpdateDifficultyLevel(index, 'textColor', textColor);
   };
 
+  const updateCurriculum = (updater) => {
+    setForm((f) => ({ ...f, curriculum: updater(f.curriculum || {}) }));
+  };
+
+  const handleAddChapter = () => {
+    const name = newChapterName.trim();
+    if (!name) return toast.error('Vui lòng nhập tên chương');
+    updateCurriculum((curriculum) => ({
+      ...curriculum,
+      [selectedCurriculumGrade]: {
+        ...(curriculum[selectedCurriculumGrade] || {}),
+        [name]: [],
+      },
+    }));
+    setNewChapterName('');
+  };
+
+  const handleRenameChapter = (oldName) => {
+    const nextName = editingChapterName.trim();
+    if (!nextName) return toast.error('Vui lòng nhập tên chương');
+    updateCurriculum((curriculum) => {
+      const gradeCurriculum = curriculum[selectedCurriculumGrade] || {};
+      const updatedGrade = {};
+      Object.entries(gradeCurriculum).forEach(([chapter, topics]) => {
+        updatedGrade[chapter === oldName ? nextName : chapter] = topics;
+      });
+      return { ...curriculum, [selectedCurriculumGrade]: updatedGrade };
+    });
+    setEditingChapter(null);
+    setEditingChapterName('');
+  };
+
+  const handleDeleteChapter = (chapter) => {
+    if (!window.confirm('Xóa chương này và tất cả chủ đề bên trong?')) return;
+    updateCurriculum((curriculum) => {
+      const gradeCurriculum = { ...(curriculum[selectedCurriculumGrade] || {}) };
+      delete gradeCurriculum[chapter];
+      return { ...curriculum, [selectedCurriculumGrade]: gradeCurriculum };
+    });
+  };
+
+  const handleAddTopic = (chapter) => {
+    const topic = (newTopicByChapter[chapter] || '').trim();
+    if (!topic) return toast.error('Vui lòng nhập chủ đề');
+    updateCurriculum((curriculum) => {
+      const gradeCurriculum = curriculum[selectedCurriculumGrade] || {};
+      return {
+        ...curriculum,
+        [selectedCurriculumGrade]: {
+          ...gradeCurriculum,
+          [chapter]: [...(gradeCurriculum[chapter] || []), topic],
+        },
+      };
+    });
+    setNewTopicByChapter((prev) => ({ ...prev, [chapter]: '' }));
+  };
+
+  const handleRenameTopic = (chapter, topicIndex) => {
+    const nextName = editingTopicName.trim();
+    if (!nextName) return toast.error('Vui lòng nhập chủ đề');
+    updateCurriculum((curriculum) => {
+      const gradeCurriculum = curriculum[selectedCurriculumGrade] || {};
+      return {
+        ...curriculum,
+        [selectedCurriculumGrade]: {
+          ...gradeCurriculum,
+          [chapter]: (gradeCurriculum[chapter] || []).map((topic, idx) => idx === topicIndex ? nextName : topic),
+        },
+      };
+    });
+    setEditingTopic(null);
+    setEditingTopicName('');
+  };
+
+  const handleDeleteTopic = (chapter, topicIndex) => {
+    updateCurriculum((curriculum) => {
+      const gradeCurriculum = curriculum[selectedCurriculumGrade] || {};
+      return {
+        ...curriculum,
+        [selectedCurriculumGrade]: {
+          ...gradeCurriculum,
+          [chapter]: (gradeCurriculum[chapter] || []).filter((_, idx) => idx !== topicIndex),
+        },
+      };
+    });
+  };
+
   const handleSave = async () => {
-    if (activeTab === 'general' || activeTab === 'difficulty') {
+    if (activeTab === 'general' || activeTab === 'difficulty' || activeTab === 'curriculum') {
       if (activeTab === 'difficulty' && form.difficultyLevels.some((l) => !l.name.trim())) {
         return toast.error('Vui lòng nhập tên cho tất cả mức độ');
       }
@@ -199,6 +295,16 @@ export default function AdminSettings() {
           }`}
         >
           <FiBook size={16} /> Lớp học
+        </button>
+        <button
+          onClick={() => setActiveTab('curriculum')}
+          className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors flex items-center gap-1 whitespace-nowrap ${
+            activeTab === 'curriculum'
+              ? 'border-blue-600 text-blue-600'
+              : 'border-transparent text-gray-600 hover:text-gray-900'
+          }`}
+        >
+          <FiMenu size={16} /> Chủ đề kiểm tra
         </button>
       </div>
 
@@ -561,8 +667,126 @@ export default function AdminSettings() {
         </div>
       )}
 
+      {activeTab === 'curriculum' && (
+        <div className="bg-white rounded-xl shadow-sm p-6 space-y-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="font-semibold text-gray-800 flex items-center gap-2">
+                <FiMenu /> Cấu hình chủ đề tạo đề AI
+              </h2>
+              <p className="text-xs text-gray-500 mt-1">Danh mục này được dùng khi tạo đề kiểm tra bằng AI và tạo bài học bằng AI.</p>
+            </div>
+            <label className="block min-w-40">
+              <span className="block text-xs text-gray-600 mb-1">Chọn lớp</span>
+              <select
+                className="input-field"
+                value={selectedCurriculumGrade}
+                onChange={(e) => setSelectedCurriculumGrade(e.target.value)}
+              >
+                {Object.keys(form.curriculum || VN_MATH_CURRICULUM).sort((a, b) => Number(a) - Number(b)).map((grade) => (
+                  <option key={grade} value={grade}>Lớp {grade}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="rounded-lg border border-dashed border-blue-300 bg-blue-50 p-4">
+            <label className="block text-xs text-gray-600 mb-1">Thêm chương / phụ lục mới</label>
+            <div className="flex gap-2">
+              <input
+                className="input-field"
+                value={newChapterName}
+                onChange={(e) => setNewChapterName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddChapter())}
+                placeholder="VD: Chương 1. Căn thức"
+              />
+              <button
+                type="button"
+                onClick={handleAddChapter}
+                className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700"
+              >
+                <FiPlus size={14} /> Thêm
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            {Object.entries((form.curriculum || {})[selectedCurriculumGrade] || {}).map(([chapter, topics]) => (
+              <div key={chapter} className="border border-gray-200 rounded-lg p-4 space-y-3">
+                {editingChapter === chapter ? (
+                  <div className="flex gap-2">
+                    <input
+                      className="input-field"
+                      value={editingChapterName}
+                      onChange={(e) => setEditingChapterName(e.target.value)}
+                    />
+                    <button type="button" onClick={() => handleRenameChapter(chapter)} className="px-3 py-2 rounded bg-green-600 text-white text-sm">Lưu</button>
+                    <button type="button" onClick={() => setEditingChapter(null)} className="px-3 py-2 rounded border text-sm">Hủy</button>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="font-semibold text-gray-900">{chapter}</h3>
+                    <div className="flex items-center gap-1">
+                      <button type="button" onClick={() => { setEditingChapter(chapter); setEditingChapterName(chapter); }} className="p-2 text-blue-600 hover:bg-blue-50 rounded" title="Sửa chương">
+                        <FiEdit2 size={15} />
+                      </button>
+                      <button type="button" onClick={() => handleDeleteChapter(chapter)} className="p-2 text-red-500 hover:bg-red-50 rounded" title="Xóa chương">
+                        <FiTrash2 size={15} />
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  {(topics || []).map((topic, topicIndex) => (
+                    <div key={`${topic}-${topicIndex}`} className="flex items-center justify-between gap-2 rounded border border-gray-100 bg-gray-50 px-3 py-2">
+                      {editingTopic?.chapter === chapter && editingTopic?.index === topicIndex ? (
+                        <>
+                          <input
+                            className="input-field text-sm"
+                            value={editingTopicName}
+                            onChange={(e) => setEditingTopicName(e.target.value)}
+                          />
+                          <button type="button" onClick={() => handleRenameTopic(chapter, topicIndex)} className="px-3 py-1.5 rounded bg-green-600 text-white text-xs">Lưu</button>
+                          <button type="button" onClick={() => setEditingTopic(null)} className="px-3 py-1.5 rounded border text-xs">Hủy</button>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-sm text-gray-800">{topic}</span>
+                          <div className="flex items-center gap-1">
+                            <button type="button" onClick={() => { setEditingTopic({ chapter, index: topicIndex }); setEditingTopicName(topic); }} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" title="Sửa chủ đề">
+                              <FiEdit2 size={13} />
+                            </button>
+                            <button type="button" onClick={() => handleDeleteTopic(chapter, topicIndex)} className="p-1.5 text-red-500 hover:bg-red-50 rounded" title="Xóa chủ đề">
+                              <FiTrash2 size={13} />
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex gap-2 pt-1">
+                  <input
+                    className="input-field text-sm"
+                    value={newTopicByChapter[chapter] || ''}
+                    onChange={(e) => setNewTopicByChapter((prev) => ({ ...prev, [chapter]: e.target.value }))}
+                    onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddTopic(chapter))}
+                    placeholder="Thêm chủ đề mới"
+                  />
+                  <button type="button" onClick={() => handleAddTopic(chapter)} className="px-3 py-2 rounded bg-gray-900 text-white text-sm whitespace-nowrap">
+                    <FiPlus size={14} className="inline mr-1" /> Chủ đề
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="flex justify-end">
-        {(activeTab === 'general' || activeTab === 'difficulty') && (
+        {(activeTab === 'general' || activeTab === 'difficulty' || activeTab === 'curriculum') && (
           <button
             onClick={handleSave}
             disabled={saving}

@@ -461,6 +461,26 @@ export default function AdminExamEditor() {
     }));
   };
 
+  const updatePackageQuestion = (type, index, updater) => {
+    setForm(f => {
+      if (!f.examPackage?.questions) return f;
+      const questions = f.examPackage.questions;
+      const key = type === 'multipleChoice' ? 'multipleChoice' : 'essay';
+      return {
+        ...f,
+        examPackage: {
+          ...f.examPackage,
+          questions: {
+            ...questions,
+            [key]: (questions[key] || []).map((question, questionIndex) => (
+              questionIndex === index ? updater(question) : question
+            )),
+          },
+        },
+      };
+    });
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.title.trim()) return toast.error('Nhập tiêu đề đề kiểm tra');
@@ -486,11 +506,13 @@ export default function AdminExamEditor() {
         : null;
       const examPackage = {
         ...(syncedPackage || form.examPackage || {}),
+        title: form.title,
         cognitiveLevels,
         matrix: matrixWithTotals,
         totals,
         meta: {
           ...((syncedPackage || form.examPackage)?.meta || {}),
+          examName: form.title || ((syncedPackage || form.examPackage)?.meta?.examName) || '',
           grade: curriculumGrade,
           totalPoints: totals.totalPoints,
         },
@@ -785,11 +807,123 @@ export default function AdminExamEditor() {
 
         <div className="space-y-3 rounded-xl bg-white p-6 shadow-sm">
           <h2 className="font-semibold text-gray-800">Nội dung đề kiểm tra</h2>
+          {form.examPackage?.questions ? (
+            <div className="space-y-5">
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                De nay duoc tao bang AI, noi dung hien thi/in se lay tu cac cau hoi ben duoi.
+              </div>
+
+              {(form.examPackage.questions.multipleChoice || []).length > 0 && (
+                <div className="space-y-4">
+                  <h3 className="text-sm font-semibold text-gray-700">Phan trac nghiem</h3>
+                  {(form.examPackage.questions.multipleChoice || []).map((question, index) => (
+                    <div key={question.id || index} className="space-y-3 rounded-lg border border-gray-200 p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-sm font-semibold text-gray-800">Cau {index + 1}</span>
+                        <label className="flex items-center gap-2 text-xs text-gray-600">
+                          Diem
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.25"
+                            className="w-20 rounded-lg border border-gray-300 px-2 py-1 text-sm"
+                            value={question.points ?? ''}
+                            onChange={e => updatePackageQuestion('multipleChoice', index, q => ({ ...q, points: Number(e.target.value) || 0 }))}
+                          />
+                        </label>
+                      </div>
+                      <textarea
+                        className="min-h-[88px] w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={question.question || ''}
+                        onChange={e => updatePackageQuestion('multipleChoice', index, q => ({ ...q, question: e.target.value }))}
+                      />
+                      <div className="grid gap-2 md:grid-cols-2">
+                        {['A', 'B', 'C', 'D'].map(option => (
+                          <label key={option} className="flex items-center gap-2 text-sm text-gray-700">
+                            <span className="w-5 font-semibold">{option}</span>
+                            <input
+                              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              value={question.options?.[option] || ''}
+                              onChange={e => updatePackageQuestion('multipleChoice', index, q => ({
+                                ...q,
+                                options: { ...(q.options || {}), [option]: e.target.value },
+                              }))}
+                            />
+                          </label>
+                        ))}
+                      </div>
+                      <div className="grid gap-3 md:grid-cols-[160px_1fr]">
+                        <label className="text-sm text-gray-700">
+                          Dap an
+                          <select
+                            className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                            value={question.answer || 'A'}
+                            onChange={e => updatePackageQuestion('multipleChoice', index, q => ({ ...q, answer: e.target.value }))}
+                          >
+                            {['A', 'B', 'C', 'D'].map(option => <option key={option} value={option}>{option}</option>)}
+                          </select>
+                        </label>
+                        <label className="text-sm text-gray-700">
+                          Loi giai
+                          <textarea
+                            className="mt-1 min-h-[72px] w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            value={question.explanation || ''}
+                            onChange={e => updatePackageQuestion('multipleChoice', index, q => ({ ...q, explanation: e.target.value }))}
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {(form.examPackage.questions.essay || []).length > 0 && (
+                <div className="space-y-4">
+                  <h3 className="text-sm font-semibold text-gray-700">Phan tu luan</h3>
+                  {(form.examPackage.questions.essay || []).map((question, index) => (
+                    <div key={question.id || index} className="space-y-3 rounded-lg border border-gray-200 p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-sm font-semibold text-gray-800">Bai {index + 1}</span>
+                        <label className="flex items-center gap-2 text-xs text-gray-600">
+                          Diem
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.25"
+                            className="w-20 rounded-lg border border-gray-300 px-2 py-1 text-sm"
+                            value={question.points ?? ''}
+                            onChange={e => updatePackageQuestion('essay', index, q => ({ ...q, points: Number(e.target.value) || 0 }))}
+                          />
+                        </label>
+                      </div>
+                      <label className="text-sm text-gray-700">
+                        De bai
+                        <textarea
+                          className="mt-1 min-h-[92px] w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          value={question.question || ''}
+                          onChange={e => updatePackageQuestion('essay', index, q => ({ ...q, question: e.target.value }))}
+                        />
+                      </label>
+                      <label className="text-sm text-gray-700">
+                        Loi giai
+                        <textarea
+                          className="mt-1 min-h-[92px] w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          value={question.solution || ''}
+                          onChange={e => updatePackageQuestion('essay', index, q => ({ ...q, solution: e.target.value }))}
+                        />
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
           <RichTextEditor
             value={form.content}
             onChange={html => setForm(f => ({ ...f, content: html }))}
             placeholder="Nhập nội dung đề kiểm tra. Dùng nút ƒx để chèn công thức toán..."
           />
+          )}
         </div>
 
         <div className="space-y-3 rounded-xl bg-white p-6 shadow-sm">

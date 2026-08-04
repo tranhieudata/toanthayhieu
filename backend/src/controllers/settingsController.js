@@ -22,6 +22,7 @@ const updateSettings = async (req, res) => {
       bankQrImageUrl,
       receiptNote,
       difficultyLevels,
+      curriculum,
     } = req.body;
 
     const updateData = {
@@ -36,6 +37,10 @@ const updateSettings = async (req, res) => {
     // Only update difficultyLevels if provided
     if (difficultyLevels && Array.isArray(difficultyLevels)) {
       updateData.difficultyLevels = difficultyLevels;
+    }
+
+    if (curriculum && typeof curriculum === 'object' && !Array.isArray(curriculum)) {
+      updateData.curriculum = curriculum;
     }
 
     const settings = await SiteSettings.findOneAndUpdate(

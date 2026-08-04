@@ -1,10 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const { protect, adminOnly } = require('../middleware/auth');
-const { getLessons, getLessonById, getLessonBundle, createLesson, updateLesson, deleteLesson, toggleLessonStatus, generateLessonContent, addCriteria, updateCriteria, deleteCriteria } = require('../controllers/lessonController');
+const { getLessons, getLessonById, getLessonBundle, createLesson, updateLesson, reorderLessons, deleteLesson, toggleLessonStatus, generateLessonContent, addCriteria, updateCriteria, deleteCriteria } = require('../controllers/lessonController');
 
 router.get('/', protect, getLessons);
 router.post('/generate-content', protect, adminOnly, generateLessonContent);
+router.patch('/reorder', protect, adminOnly, reorderLessons);
 router.get('/:id/bundle', protect, getLessonBundle);
 router.get('/:id', protect, getLessonById);
 router.post('/', protect, adminOnly, createLesson);

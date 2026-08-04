@@ -16,6 +16,10 @@ const siteSettingsSchema = new mongoose.Schema(
     bankAccountName: { type: String, default: '' },
     bankQrImageUrl: { type: String, default: '' },
     receiptNote: { type: String, default: '' },
+    curriculum: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
     difficultyLevels: {
       type: [difficultyLevelSchema],
       default: [

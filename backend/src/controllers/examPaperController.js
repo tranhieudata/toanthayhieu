@@ -1,4 +1,5 @@
 const Exam = require('../models/Exam');
+const SiteSettings = require('../models/SiteSettings');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const curriculum = require('../utils/vnMathCurriculum');
 const { createDocxBuffer } = require('../utils/simpleDocx');
@@ -450,8 +451,14 @@ function buildPaperPayload(reqBody) {
   return meta;
 }
 
-const getCurriculum = (req, res) => {
-  res.json(curriculum);
+const getCurriculum = async (req, res) => {
+  try {
+    const settings = await SiteSettings.findOne({ key: 'default' }).lean();
+    const customCurriculum = settings?.curriculum || {};
+    res.json(Object.keys(customCurriculum).length > 0 ? customCurriculum : curriculum);
+  } catch (err) {
+    res.json(curriculum);
+  }
 };
 
 const generateExamPaper = async (req, res) => {

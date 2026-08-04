@@ -1,5 +1,6 @@
 const Exam = require('../models/Exam');
 const ExamResult = require('../models/ExamResult');
+const Homework = require('../models/Homework');
 const Lesson = require('../models/Lesson');
 const Class = require('../models/Class');
 const ClassEnrollment = require('../models/ClassEnrollment');
@@ -235,6 +236,28 @@ function examPackageToText(examPackage) {
   ].filter(Boolean).join('\n\n');
 }
 
+function examPackageToHomeworkText(examPackage) {
+  if (!examPackage) return '';
+  const mc = (examPackage.questions?.multipleChoice || []).map((q, i) => {
+    const options = ['A', 'B', 'C', 'D'].map(key => `${key}. ${q.options?.[key] || ''}`).join('\n');
+    return `Cau ${q.number || i + 1}. ${q.question || ''}\n${options}`;
+  });
+  const essay = (examPackage.questions?.essay || []).map((q, i) => `Bai ${i + 1}. ${q.question || ''}`);
+  return [
+    examPackage.title || '',
+    mc.length ? 'I. Trac nghiem\n' + mc.join('\n\n') : '',
+    essay.length ? 'II. Tu luan\n' + essay.join('\n\n') : '',
+  ].filter(Boolean).join('\n\n');
+}
+
+function examPackageToAnswerKey(examPackage) {
+  if (!examPackage) return '';
+  return [
+    ...(examPackage.questions?.multipleChoice || []).map((q, i) => `Cau ${q.number || i + 1}: ${q.answer || ''}`),
+    ...(examPackage.questions?.essay || []).map((q, i) => `Bai ${i + 1}: ${q.solution || ''}`),
+  ].filter(Boolean).join('\n');
+}
+
 function maxScoreForQuestion(exam, questionOrder) {
   const mc = exam.examPackage?.questions?.multipleChoice || [];
   const essay = exam.examPackage?.questions?.essay || [];
@@ -273,6 +296,31 @@ function maxScoreForExam(exam) {
   ].reduce((sum, question) => sum + (Number(question.points) || 0), 0);
   if (fromQuestions > 0) return Number(fromQuestions.toFixed(2));
   return (exam.levels || []).reduce((sum, level) => sum + (Number(level.totalPoints) || 0), 0);
+}
+
+function examDueDateForClass(exam, classId) {
+  const schedule = (exam.classSchedules || []).find((item) => {
+    const scheduleClassId = item.class?._id || item.class;
+    return String(scheduleClassId) === String(classId);
+  });
+  return schedule?.endDate || undefined;
+}
+
+async function syncSourceExamHomeworks(exam) {
+  const linkedHomeworks = await Homework.find({ sourceExam: exam._id });
+  if (!linkedHomeworks.length) return;
+
+  await Promise.all(linkedHomeworks.map(async (homework) => {
+    homework.title = exam.title;
+    homework.description = examPackageToHomeworkText(exam.examPackage) || exam.content || exam.title;
+    homework.examPackage = exam.examPackage || null;
+    homework.pdfAttachments = exam.pdfAttachments || [];
+    homework.answerKey = examPackageToAnswerKey(exam.examPackage);
+    homework.maxScore = maxScoreForExam(exam) || homework.maxScore || 10;
+    if (exam.lesson) homework.lesson = exam.lesson?._id || exam.lesson;
+    homework.dueDate = examDueDateForClass(exam, homework.class) || homework.dueDate;
+    await homework.save({ validateBeforeSave: false });
+  }));
 }
 
 function pickClassForStudent(exam, studentId) {
@@ -366,6 +414,7 @@ const updateExam = async (req, res) => {
       .populate('level', 'name bgColor textColor');
 
     if (!exam) return res.status(404).json({ message: 'Không tìm thấy đề kiểm tra' });
+    await syncSourceExamHomeworks(exam);
     res.json(exam);
   } catch (err) {
     res.status(400).json({ message: err.message });

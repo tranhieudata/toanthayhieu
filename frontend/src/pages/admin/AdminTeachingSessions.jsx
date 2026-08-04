@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import {
   FiBookOpen,
   FiCalendar,
+  FiCheckSquare,
   FiClock,
   FiCopy,
   FiDownload,
@@ -12,6 +13,7 @@ import {
   FiPlus,
   FiRefreshCw,
   FiSave,
+  FiSquare,
   FiZap,
 } from 'react-icons/fi';
 
@@ -61,6 +63,10 @@ function upsertSessionByLesson(items = [], nextSession) {
     return String(classId) !== String(nextClassId) || String(lessonId) !== String(nextLessonId);
   });
   return sortSessionsByTeachingDate([nextSession, ...filtered]);
+}
+
+function getSessionLessonId(session) {
+  return session?.actualLesson?._id || session?.actualLesson || session?.plannedLesson?._id || session?.plannedLesson || '';
 }
 
 function PdfLinks({ files }) {
@@ -146,6 +152,28 @@ export default function AdminTeachingSessions() {
   const selectedLesson = useMemo(() => {
     return planner?.lesson || classLessons.find((lesson) => lesson._id === selectedLessonId) || null;
   }, [planner?.lesson, classLessons, selectedLessonId]);
+
+  const recentLessonRows = useMemo(() => {
+    const latestSessionByLesson = new Map();
+    sortSessionsByTeachingDate(sessions).forEach((session) => {
+      const lessonId = getSessionLessonId(session);
+      if (lessonId && !latestSessionByLesson.has(String(lessonId))) {
+        latestSessionByLesson.set(String(lessonId), session);
+      }
+    });
+
+    return [...classLessons]
+      .sort((a, b) => {
+        const orderA = Number(a.order) || 0;
+        const orderB = Number(b.order) || 0;
+        if (orderA !== orderB) return orderA - orderB;
+        return String(a.title || '').localeCompare(String(b.title || ''), 'vi');
+      })
+      .map((lesson) => ({
+        lesson,
+        session: latestSessionByLesson.get(String(lesson._id)) || null,
+      }));
+  }, [classLessons, sessions]);
 
   useEffect(() => {
     api.get('/classes')
@@ -546,22 +574,45 @@ export default function AdminTeachingSessions() {
             <h3 className="mb-3 flex items-center gap-2 font-semibold text-gray-900">
               <FiCalendar className="text-blue-600" /> Nhật ký gần đây
             </h3>
-            {sessions.length ? (
-              <div className="space-y-3">
-                {sessions.slice(0, 8).map((session) => (
-                  <div key={session._id} className="rounded-lg border border-gray-100 p-3 text-sm">
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="font-medium text-gray-900">
-                        {session.actualLesson?.title || session.plannedLesson?.title || 'Buổi dạy'}
-                      </p>
-                      <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] ${statusClass[session.status]}`}>
-                        {statusOptions.find((item) => item.value === session.status)?.label || session.status}
+            {recentLessonRows.length ? (
+              <div className="max-h-[560px] space-y-2 overflow-y-auto pr-1">
+                {recentLessonRows.map(({ lesson, session: savedSession }) => {
+                  const session = savedSession || { actualLesson: lesson, plannedLesson: lesson, status: 'unsaved', date: null };
+                  const isSaved = Boolean(savedSession?._id);
+                  const isSelected = String(lesson._id) === String(selectedLessonId);
+                  return (
+                  <button
+                    key={lesson._id}
+                    type="button"
+                    onClick={() => setSelectedLessonId(lesson._id)}
+                    className={`w-full rounded-lg border p-3 text-left text-sm transition hover:border-blue-200 hover:bg-blue-50/50 ${isSelected ? 'border-blue-200 bg-blue-50/70' : 'border-gray-100 bg-white'}`}
+                  >
+                    <div className="flex items-start gap-2">
+                      <span className={`mt-0.5 shrink-0 ${isSaved ? 'text-emerald-600' : 'text-gray-300'}`}>
+                        {isSaved ? <FiCheckSquare /> : <FiSquare />}
                       </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="font-medium text-gray-900">
+                            {lesson.order ? `${lesson.order}. ` : ''}{lesson.title}
+                          </p>
+                          {isSaved ? (
+                            <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] ${statusClass[session.status] || statusClass.planned}`}>
+                              {statusOptions.find((item) => item.value === session.status)?.label || session.status}
+                            </span>
+                          ) : (
+                            <span className="shrink-0 rounded-full border border-gray-100 bg-gray-50 px-2 py-0.5 text-[11px] text-gray-400">
+                              Chưa lưu
+                            </span>
+                          )}
+                        </div>
+                        {isSaved && <p className="mt-1 text-xs text-gray-500">{formatDate(session.date)}</p>}
+                        {session.summary && <p className="mt-2 line-clamp-2 text-gray-600">{session.summary}</p>}
+                      </div>
                     </div>
-                    <p className="mt-1 text-xs text-gray-500">{formatDate(session.date)}</p>
-                    {session.summary && <p className="mt-2 line-clamp-3 text-gray-600">{session.summary}</p>}
-                  </div>
-                ))}
+                  </button>
+                  );
+                })}
               </div>
             ) : (
               <p className="text-sm text-gray-400">Chưa có nhật ký buổi dạy.</p>

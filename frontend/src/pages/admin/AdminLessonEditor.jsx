@@ -39,6 +39,7 @@ export default function AdminLessonEditor() {
   const [form, setForm] = useState(emptyLesson);
   const [courseName, setCourseName] = useState('');
   const [courses, setCourses] = useState([]);
+  const [curriculum, setCurriculum] = useState(VN_MATH_CURRICULUM);
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(!!id);
   const [autoSaving, setAutoSaving] = useState(false);
@@ -70,13 +71,18 @@ export default function AdminLessonEditor() {
 
   const isEdit = !!id;
   const currentCourseId = isEdit ? form.course : (form.course || courseId);
-  const curriculumGrades = Object.keys(VN_MATH_CURRICULUM);
-  const curriculumForGrade = aiForm.grade ? VN_MATH_CURRICULUM[aiForm.grade] : null;
+  const curriculumGrades = Object.keys(curriculum);
+  const curriculumForGrade = aiForm.grade ? curriculum[aiForm.grade] : null;
   const chapters = curriculumForGrade ? Object.keys(curriculumForGrade) : [];
   const topics = aiForm.chapter ? curriculumForGrade?.[aiForm.chapter] || [] : [];
 
   useEffect(() => {
     api.get('/courses/admin/all').then(res => setCourses(res.data || [])).catch(() => setCourses([]));
+    api.get('/settings')
+      .then(({ data }) => {
+        if (data?.curriculum && Object.keys(data.curriculum).length > 0) setCurriculum(data.curriculum);
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -110,10 +116,10 @@ export default function AdminLessonEditor() {
   useEffect(() => {
     if (!courseName || aiForm.grade) return;
     const match = courseName.match(/(?:lớp|lop|khối|khoi)\s*(6|7|8|9|10|11|12)\b/i) || courseName.match(/\b(6|7|8|9|10|11|12)\b/);
-    if (match?.[1] && VN_MATH_CURRICULUM[match[1]]) {
+    if (match?.[1] && curriculum[match[1]]) {
       setAiForm(prev => ({ ...prev, grade: match[1] }));
     }
-  }, [courseName, aiForm.grade]);
+  }, [courseName, aiForm.grade, curriculum]);
 
   useEffect(() => {
     if (!currentCourseId || courseId || isEdit) return;
@@ -217,6 +223,11 @@ export default function AdminLessonEditor() {
     } catch (err) {
       toast.error(err.response?.data?.message || 'Lỗi xóa tiêu chí');
     }
+  };
+
+  const handlePickLessonTopic = (chapter, topic) => {
+    setAiForm(prev => ({ ...prev, chapter, topic }));
+    if (topic) setForm(prev => ({ ...prev, title: topic }));
   };
 
   const handleGenerateLessonContent = async () => {
@@ -356,6 +367,59 @@ export default function AdminLessonEditor() {
             </div>
           )}
 
+          {!isEdit && (
+            <div className="rounded-lg border border-blue-100 bg-blue-50 p-4 space-y-3">
+              <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                <div>
+                  <h2 className="text-sm font-semibold text-blue-900">Chọn lớp và chủ đề bài học</h2>
+                  <p className="mt-1 text-xs text-blue-700">Tick một chủ đề để tự điền tiêu đề bài học, sau đó vẫn có thể sửa tiêu đề phía trên.</p>
+                </div>
+                <label className="block md:w-48">
+                  <span className="block text-xs font-medium text-blue-900 mb-1">Lớp</span>
+                  <select
+                    className="input-field bg-white"
+                    value={aiForm.grade}
+                    onChange={e => setAiForm(prev => ({ ...prev, grade: e.target.value, chapter: '', topic: '' }))}
+                  >
+                    <option value="">Chọn lớp</option>
+                    {curriculumGrades.map(grade => <option key={grade} value={grade}>Lớp {grade}</option>)}
+                  </select>
+                </label>
+              </div>
+
+              {aiForm.grade && (
+                <div className="max-h-72 overflow-y-auto rounded-lg border border-blue-100 bg-white p-3 space-y-3">
+                  {chapters.map(chapter => (
+                    <div key={chapter}>
+                      <p className="text-sm font-semibold text-gray-900">{chapter}</p>
+                      <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+                        {(curriculumForGrade?.[chapter] || []).map(topic => {
+                          const checked = aiForm.chapter === chapter && aiForm.topic === topic;
+                          return (
+                            <label key={topic} className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
+                              checked ? 'border-blue-400 bg-blue-50 text-blue-800' : 'border-gray-200 text-gray-700 hover:bg-gray-50'
+                            }`}>
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(e) => {
+                                  if (e.target.checked) handlePickLessonTopic(chapter, topic);
+                                  else setAiForm(prev => ({ ...prev, chapter: '', topic: '' }));
+                                }}
+                                className="h-4 w-4"
+                              />
+                              <span>{topic}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Video URL */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Video URL (YouTube / Vimeo)</label>
@@ -422,6 +486,50 @@ export default function AdminLessonEditor() {
             </select>
           </div>
 
+          {false && !aiForm.provider && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Lá»›p *</label>
+                <select
+                  className="input-field"
+                  value={aiForm.grade}
+                  onChange={e => setAiForm(prev => ({ ...prev, grade: e.target.value, chapter: '', topic: '' }))}
+                >
+                  <option value="">Chá»n lá»›p</option>
+                  {curriculumGrades.map(grade => <option key={grade} value={grade}>Lá»›p {grade}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Phá»¥ lá»¥c *</label>
+                <select
+                  className="input-field"
+                  value={aiForm.chapter}
+                  onChange={e => setAiForm(prev => ({ ...prev, chapter: e.target.value, topic: '' }))}
+                  disabled={!aiForm.grade}
+                >
+                  <option value="">Chá»n phá»¥ lá»¥c</option>
+                  {chapters.map(chapter => <option key={chapter} value={chapter}>{chapter}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Chá»§ Ä‘á» *</label>
+                <select
+                  className="input-field"
+                  value={aiForm.topic}
+                  onChange={e => {
+                    const topic = e.target.value;
+                    setAiForm(prev => ({ ...prev, topic }));
+                    if (topic) setForm(prev => ({ ...prev, title: topic }));
+                  }}
+                  disabled={!aiForm.chapter}
+                >
+                  <option value="">Chá»n chá»§ Ä‘á»</option>
+                  {topics.map(topic => <option key={topic} value={topic}>{topic}</option>)}
+                </select>
+              </div>
+            </div>
+          )}
+
           {aiForm.provider && (
             <>
               <div>
@@ -464,7 +572,11 @@ export default function AdminLessonEditor() {
                   <select
                     className="input-field"
                     value={aiForm.topic}
-                    onChange={e => setAiForm(prev => ({ ...prev, topic: e.target.value }))}
+                    onChange={e => {
+                      const topic = e.target.value;
+                      setAiForm(prev => ({ ...prev, topic }));
+                      if (topic) setForm(prev => ({ ...prev, title: topic }));
+                    }}
                     disabled={!aiForm.chapter}
                   >
                     <option value="">Chọn chủ đề</option>

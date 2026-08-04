@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../../api/axios';
 import toast from 'react-hot-toast';
-import { FiBook, FiFileText, FiLayers, FiPlus, FiEdit2, FiTrash2, FiX, FiChevronRight, FiArrowLeft, FiDownload, FiEye, FiToggleLeft, FiToggleRight, FiPrinter } from 'react-icons/fi';
+import { FiBook, FiFileText, FiLayers, FiPlus, FiEdit2, FiTrash2, FiX, FiChevronRight, FiArrowLeft, FiDownload, FiEye, FiToggleLeft, FiToggleRight, FiPrinter, FiMenu } from 'react-icons/fi';
 import 'katex/dist/katex.min.css';
 import katex from 'katex';
 
@@ -19,6 +19,7 @@ export default function AdminContentManager() {
   const [selectedCourse, setSelectedCourse] = useState(null);
   const [selectedLesson, setSelectedLesson] = useState(null);
   const [searchLesson, setSearchLesson] = useState('');
+  const [dragLessonId, setDragLessonId] = useState(null);
 
   // Course form
   const [courseModal, setCourseModal] = useState(false);
@@ -312,6 +313,44 @@ export default function AdminContentManager() {
     }
   };
 
+  const visibleLessons = lessons.filter(l => String(l.title || '').toLowerCase().includes(searchLesson.toLowerCase()));
+  const canReorderLessons = selectedCourse && !searchLesson.trim();
+
+  const handleLessonDrop = async (targetLessonId) => {
+    if (!canReorderLessons || !dragLessonId || dragLessonId === targetLessonId) {
+      setDragLessonId(null);
+      return;
+    }
+
+    const fromIndex = lessons.findIndex((lesson) => lesson._id === dragLessonId);
+    const toIndex = lessons.findIndex((lesson) => lesson._id === targetLessonId);
+    if (fromIndex < 0 || toIndex < 0) {
+      setDragLessonId(null);
+      return;
+    }
+
+    const previous = lessons;
+    const reordered = [...lessons];
+    const [moved] = reordered.splice(fromIndex, 1);
+    reordered.splice(toIndex, 0, moved);
+    const optimistic = reordered.map((lesson, index) => ({ ...lesson, order: index + 1 }));
+    setLessons(optimistic);
+    setSelectedLesson(prev => prev ? optimistic.find(lesson => lesson._id === prev._id) || prev : prev);
+    setDragLessonId(null);
+
+    try {
+      const { data } = await api.patch('/lessons/reorder', {
+        course: selectedCourse._id,
+        lessonIds: optimistic.map((lesson) => lesson._id),
+      });
+      setLessons(data || optimistic);
+      toast.success('Đã cập nhật thứ tự bài học');
+    } catch (err) {
+      setLessons(previous);
+      toast.error(err.response?.data?.message || 'Không lưu được thứ tự bài học');
+    }
+  };
+
   return (
     <div className="w-full h-screen bg-gray-50 flex flex-col">
       {/* Header */}
@@ -444,7 +483,7 @@ export default function AdminContentManager() {
           {/* Lessons list */}
           <div className="flex-1 overflow-y-auto p-6">
             <div className="max-w-6xl mx-auto">
-              {lessons.filter(l => l.title.toLowerCase().includes(searchLesson.toLowerCase())).length === 0 ? (
+              {visibleLessons.length === 0 ? (
                 <div className="card p-12 text-center text-gray-500">
                   <FiFileText size={48} className="mx-auto mb-4 text-gray-300" />
                   <p className="text-lg">Chưa có bài học nào</p>
@@ -452,12 +491,35 @@ export default function AdminContentManager() {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {lessons.filter(l => l.title.toLowerCase().includes(searchLesson.toLowerCase())).map((lesson, idx) => (
+                  {visibleLessons.map((lesson, idx) => (
                     <div
                       key={lesson._id}
-                      className="card p-4 hover:shadow-md transition-shadow flex justify-between items-center group cursor-pointer"
+                      draggable={canReorderLessons}
+                      onDragStart={(e) => {
+                        if (!canReorderLessons) return;
+                        e.dataTransfer.effectAllowed = 'move';
+                        setDragLessonId(lesson._id);
+                      }}
+                      onDragOver={(e) => {
+                        if (canReorderLessons && dragLessonId) e.preventDefault();
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        handleLessonDrop(lesson._id);
+                      }}
+                      onDragEnd={() => setDragLessonId(null)}
+                      className={`card p-4 hover:shadow-md transition-shadow flex justify-between items-center group cursor-pointer ${
+                        dragLessonId === lesson._id ? 'opacity-50 ring-2 ring-blue-300' : ''
+                      }`}
                       onClick={() => setSelectedLesson(lesson)}
                     >
+                      <span
+                        className={`mr-3 p-2 rounded-lg ${canReorderLessons ? 'cursor-grab text-gray-400 group-hover:text-gray-600' : 'text-gray-200'}`}
+                        title={canReorderLessons ? 'Kéo để sắp xếp thứ tự' : 'Xóa tìm kiếm để sắp xếp'}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <FiMenu size={18} />
+                      </span>
                       <div className="flex-1">
                         <p className="font-semibold text-gray-900">{idx + 1}. {lesson.title}</p>
                         <div className="flex gap-4 mt-2 text-xs text-gray-500">
