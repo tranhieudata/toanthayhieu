@@ -26,6 +26,41 @@ function combineDateAndTime(date, time) {
   return result;
 }
 
+function addMinutes(date, minutes) {
+  const result = new Date(date);
+  result.setMinutes(result.getMinutes() + minutes);
+  return result;
+}
+
+function getNextClassSessions(cls, count, afterDate = new Date(), includeStart = false) {
+  const schedules = (cls?.schedules || [])
+    .filter((schedule) => schedule.startTime && Number.isInteger(Number(schedule.dayOfWeek)))
+    .map((schedule) => ({ ...schedule, dayOfWeek: Number(schedule.dayOfWeek) }));
+  if (!schedules.length || count <= 0) return [];
+
+  const sessions = [];
+  const cursor = new Date(afterDate);
+  cursor.setHours(0, 0, 0, 0);
+
+  for (let offset = 0; offset <= 365 && sessions.length < count; offset += 1) {
+    const day = new Date(cursor);
+    day.setDate(cursor.getDate() + offset);
+
+    schedules
+      .filter((schedule) => schedule.dayOfWeek === day.getDay())
+      .forEach((schedule) => {
+        const startAt = combineDateAndTime(day, schedule.startTime);
+        if (startAt > afterDate || (includeStart && startAt.getTime() === afterDate.getTime())) {
+          sessions.push({ ...schedule, startAt });
+        }
+      });
+
+    sessions.sort((a, b) => a.startAt - b.startAt);
+  }
+
+  return sessions.slice(0, count);
+}
+
 function getUpcomingClassSessions(cls, daysAhead = 3) {
   const now = new Date();
   const windowEnd = new Date(now);
@@ -158,6 +193,7 @@ export default function AdminClasses() {
   const [expandedCourses, setExpandedCourses] = useState({});
   const [detailLoading, setDetailLoading] = useState(false);
   const [lessonScheduleDrafts, setLessonScheduleDrafts] = useState({});
+  const [lastAutoScheduleSnapshot, setLastAutoScheduleSnapshot] = useState(null);
   const [classStats, setClassStats] = useState(null);
   const [statsLoading, setStatsLoading] = useState(false);
 
@@ -245,6 +281,7 @@ export default function AdminClasses() {
     setClassLessonsMap({});
     setClassEnrollments([]);
     setExpandedCourses({});
+    setLastAutoScheduleSnapshot(null);
     setClassStats(null);
     try {
       const [detailRes, enrollRes] = await Promise.all([
@@ -395,6 +432,103 @@ export default function AdminClasses() {
     }
   };
 
+  const handleAutoScheduleCourseLessons = async (lessons) => {
+    if (!selectedClass?._id || !classDetail) return;
+    if (!classDetail.schedules?.length) {
+      toast.error('Lớp chưa có lịch học để cài tự động');
+      return;
+    }
+
+    const sortedLessons = [...(lessons || [])];
+    if (!sortedLessons.length) {
+      toast.error('Khóa học này chưa có bài học nào');
+      return;
+    }
+
+    const snapshotLessonIds = sortedLessons.map((lesson) => lesson._id);
+    const snapshotSettings = {};
+    const snapshotDrafts = {};
+    snapshotLessonIds.forEach((lessonId) => {
+      snapshotSettings[lessonId] = classLessonSettings[lessonId] || { isVisible: false, autoOpenAt: '' };
+      snapshotDrafts[lessonId] = lessonScheduleDrafts[lessonId] ?? snapshotSettings[lessonId].autoOpenAt ?? '';
+    });
+
+    const existingAutoOpenDates = sortedLessons
+      .map((lesson) => {
+        const value = lessonScheduleDrafts[lesson._id] || classLessonSettings[lesson._id]?.autoOpenAt;
+        const date = value ? new Date(value) : null;
+        return date && !Number.isNaN(date.getTime()) ? date : null;
+      })
+      .filter(Boolean)
+      .sort((a, b) => a - b);
+    const firstLessonStartAt = existingAutoOpenDates[0]
+      ? addMinutes(existingAutoOpenDates[0], 60)
+      : new Date();
+    const sessions = getNextClassSessions(classDetail, sortedLessons.length, firstLessonStartAt, Boolean(existingAutoOpenDates[0]));
+
+    if (sessions.length < sortedLessons.length) {
+      toast.error('Không đủ lịch học hợp lệ để cài tự động');
+      return;
+    }
+
+    try {
+      setLastAutoScheduleSnapshot({ lessonIds: snapshotLessonIds, settings: snapshotSettings, drafts: snapshotDrafts });
+      const updates = [];
+      for (const [index, lesson] of sortedLessons.entries()) {
+        const autoOpenAt = addMinutes(sessions[index].startAt, -60);
+        const res = await api.patch(`/classes/${selectedClass._id}/lessons/${lesson._id}/toggle`, {
+          autoOpenAt: autoOpenAt.toISOString(),
+          isVisible: false,
+        });
+        updates.push(res);
+      }
+
+      const nextSettings = {};
+      const nextDrafts = {};
+      updates.forEach((res) => {
+        const autoOpenAt = toLocalDatetimeInput(res.data.autoOpenAt);
+        nextSettings[res.data.lessonId] = { isVisible: !!res.data.isVisible, autoOpenAt };
+        nextDrafts[res.data.lessonId] = autoOpenAt;
+      });
+      setClassLessonSettings(prev => ({ ...prev, ...nextSettings }));
+      setLessonScheduleDrafts(prev => ({ ...prev, ...nextDrafts }));
+      toast.success(`Đã cài lại lịch tự mở cho ${updates.length} bài học`);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Không cài được lịch tự mở');
+    }
+  };
+
+  const handleUndoAutoSchedule = async () => {
+    if (!selectedClass?._id || !lastAutoScheduleSnapshot) return;
+
+    try {
+      const updates = [];
+      for (const lessonId of lastAutoScheduleSnapshot.lessonIds) {
+        const previous = lastAutoScheduleSnapshot.settings[lessonId] || { isVisible: false, autoOpenAt: '' };
+        const payload = {
+          isVisible: !!previous.isVisible,
+          autoOpenAt: previous.autoOpenAt ? new Date(previous.autoOpenAt).toISOString() : null,
+        };
+        const res = await api.patch(`/classes/${selectedClass._id}/lessons/${lessonId}/toggle`, payload);
+        updates.push(res);
+      }
+
+      const restoredSettings = {};
+      const restoredDrafts = {};
+      updates.forEach((res) => {
+        const autoOpenAt = toLocalDatetimeInput(res.data.autoOpenAt);
+        restoredSettings[res.data.lessonId] = { isVisible: !!res.data.isVisible, autoOpenAt };
+        restoredDrafts[res.data.lessonId] = autoOpenAt;
+      });
+      setClassLessonSettings(prev => ({ ...prev, ...restoredSettings }));
+      setLessonScheduleDrafts(prev => ({ ...prev, ...lastAutoScheduleSnapshot.drafts, ...restoredDrafts }));
+      setLastAutoScheduleSnapshot(null);
+      toast.success('Đã hoàn tác lịch tự mở');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Không hoàn tác được lịch tự mở');
+    }
+  };
+
   const lessonReminders = activeTab === 'lessons'
     ? buildLessonReminders(classDetail || selectedClass, classLessonsMap, classLessonSettings, courses)
     : [];
@@ -455,6 +589,20 @@ export default function AdminClasses() {
             {/* Lessons tab */}
             {activeTab === 'lessons' && (
               <div className="space-y-4">
+                {lastAutoScheduleSnapshot && (
+                  <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+                    <p className="text-sm font-medium text-amber-800">
+                      Vừa cài lịch tự mở tự động. Có thể hoàn tác nếu nhấn nhầm.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleUndoAutoSchedule}
+                      className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-sm font-medium text-amber-700 hover:bg-amber-100"
+                    >
+                      Hoàn tác
+                    </button>
+                  </div>
+                )}
                 {lessonReminders.length > 0 && (
                   <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
                     <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-amber-900">
@@ -519,11 +667,29 @@ export default function AdminClasses() {
                         className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
                         onClick={() => toggleExpandCourse(courseId)}
                       >
-                        <div className="flex items-center gap-3">
+                        <div className="flex flex-wrap items-center gap-3">
                           <FiBook className="text-blue-500" />
                           <span className="font-semibold text-gray-900">{courseTitle}</span>
                           <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
                             {lessons.filter(l => isLessonOpen(classLessonSettings[l._id])).length}/{lessons.length} bài đang bật
+                          </span>
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleAutoScheduleCourseLessons(lessons);
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                handleAutoScheduleCourseLessons(lessons);
+                              }
+                            }}
+                            className="inline-flex items-center gap-1 rounded-lg border border-blue-200 px-2.5 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
+                          >
+                            <FiCalendar size={13} /> Cài lịch tự mở
                           </span>
                         </div>
                         {isExpanded ? <FiChevronDown /> : <FiChevronRight />}
