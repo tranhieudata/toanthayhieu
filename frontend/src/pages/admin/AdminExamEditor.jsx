@@ -151,6 +151,17 @@ function examPackageToAnswerKey(paper) {
   return [...mc, ...essay].filter(Boolean).join('\n');
 }
 
+function getHomeworkClassId(homework) {
+  return homework?.class?._id || homework?.class || '';
+}
+
+function hasExamPackageQuestions(paper) {
+  return Boolean(
+    (paper?.questions?.multipleChoice || []).length ||
+    (paper?.questions?.essay || []).length
+  );
+}
+
 function matrixTotals(matrix, levels) {
   const totals = {
     tn: Object.fromEntries(levels.map(level => [level.key, { count: 0, points: 0 }])),
@@ -504,19 +515,22 @@ export default function AdminExamEditor() {
       const syncedPackage = form.examPackage?.questions
         ? syncQuestionsWithMatrix(form.examPackage, matrixWithTotals, cognitiveLevels)
         : null;
-      const examPackage = {
-        ...(syncedPackage || form.examPackage || {}),
-        title: form.title,
-        cognitiveLevels,
-        matrix: matrixWithTotals,
-        totals,
-        meta: {
-          ...((syncedPackage || form.examPackage)?.meta || {}),
-          examName: form.title || ((syncedPackage || form.examPackage)?.meta?.examName) || '',
-          grade: curriculumGrade,
-          totalPoints: totals.totalPoints,
-        },
-      };
+      const sourcePackage = syncedPackage || form.examPackage;
+      const examPackage = hasExamPackageQuestions(sourcePackage)
+        ? {
+            ...sourcePackage,
+            title: form.title,
+            cognitiveLevels,
+            matrix: matrixWithTotals,
+            totals,
+            meta: {
+              ...(sourcePackage?.meta || {}),
+              examName: form.title || sourcePackage?.meta?.examName || '',
+              grade: curriculumGrade,
+              totalPoints: totals.totalPoints,
+            },
+          }
+        : null;
       const payload = {
         title: form.title,
         content: form.content,
@@ -534,7 +548,7 @@ export default function AdminExamEditor() {
             endDate: schedule.endDate ? new Date(schedule.endDate).toISOString() : null,
           })),
       };
-      if (form.lesson) payload.lesson = form.lesson;
+      payload.lesson = form.lesson || null;
       if (form.level) payload.level = form.level;
 
       let savedExam;
@@ -547,18 +561,29 @@ export default function AdminExamEditor() {
         savedExam = data;
         toast.success('Đã tạo đề kiểm tra');
       }
+      const sourceExamId = savedExam?._id || id;
+      const latestSourceHomeworks = sourceExamId
+        ? (await api.get('/homeworks', { params: { sourceExam: sourceExamId } }).catch(() => ({ data: sourceHomeworks }))).data || []
+        : [];
+      const selectedHomeworkClassIds = form.assignHomework ? form.homeworkClasses.map(String) : [];
+      const removedHomeworks = latestSourceHomeworks.filter((homework) => {
+        const homeworkClassId = getHomeworkClassId(homework);
+        return homeworkClassId && !selectedHomeworkClassIds.includes(String(homeworkClassId));
+      });
+
+      if (removedHomeworks.length > 0) {
+        await Promise.all(removedHomeworks.map((homework) => api.delete(`/homeworks/${homework._id}`)));
+      }
+
       if (form.assignHomework) {
         await Promise.all(form.homeworkClasses.map((classId) => {
-          const existingHomework = sourceHomeworks.find((homework) => {
-            const homeworkClassId = homework.class?._id || homework.class;
-            return String(homeworkClassId) === String(classId);
-          });
+          const existingHomework = latestSourceHomeworks.find((homework) => String(getHomeworkClassId(homework)) === String(classId));
           const homeworkPayload = {
             title: form.title,
             description: examPackageToHomeworkText(examPackage) || form.content,
             classId,
-            lessonId: form.lesson || undefined,
-            sourceExam: savedExam?._id || id,
+            lessonId: form.lesson || '',
+            sourceExam: sourceExamId,
             examPackage,
             pdfAttachments: form.pdfAttachments || [],
             answerKey: examPackageToAnswerKey(examPackage),

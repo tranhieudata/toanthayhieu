@@ -9,6 +9,8 @@ import katex from 'katex';
 const emptyExercise = { title: '', description: '', lesson: '', timeLimit: 30, passingScore: 70, isPublished: false, questions: [] };
 const emptyQ = { question: '', options: ['', '', '', ''], correctAnswer: 0, explanation: '' };
 const emptyCourse = { title: '', description: '', level: '', thumbnail: '', duration: '', tags: [] };
+const COURSES_PER_PAGE = 12;
+const LESSONS_PER_PAGE = 20;
 
 export default function AdminContentManager() {
   const navigate = useNavigate();
@@ -19,6 +21,8 @@ export default function AdminContentManager() {
   const [selectedCourse, setSelectedCourse] = useState(null);
   const [selectedLesson, setSelectedLesson] = useState(null);
   const [searchLesson, setSearchLesson] = useState('');
+  const [coursePage, setCoursePage] = useState(1);
+  const [lessonPage, setLessonPage] = useState(1);
   const [dragLessonId, setDragLessonId] = useState(null);
 
   // Course form
@@ -315,6 +319,16 @@ export default function AdminContentManager() {
 
   const visibleLessons = lessons.filter(l => String(l.title || '').toLowerCase().includes(searchLesson.toLowerCase()));
   const canReorderLessons = selectedCourse && !searchLesson.trim();
+  const totalCoursePages = Math.max(1, Math.ceil(courses.length / COURSES_PER_PAGE));
+  const safeCoursePage = Math.min(coursePage, totalCoursePages);
+  const coursePageStart = (safeCoursePage - 1) * COURSES_PER_PAGE;
+  const coursePageEnd = Math.min(coursePageStart + COURSES_PER_PAGE, courses.length);
+  const paginatedCourses = courses.slice(coursePageStart, coursePageEnd);
+  const totalLessonPages = Math.max(1, Math.ceil(visibleLessons.length / LESSONS_PER_PAGE));
+  const safeLessonPage = Math.min(lessonPage, totalLessonPages);
+  const lessonPageStart = (safeLessonPage - 1) * LESSONS_PER_PAGE;
+  const lessonPageEnd = Math.min(lessonPageStart + LESSONS_PER_PAGE, visibleLessons.length);
+  const paginatedLessons = visibleLessons.slice(lessonPageStart, lessonPageEnd);
 
   const handleLessonDrop = async (targetLessonId) => {
     if (!canReorderLessons || !dragLessonId || dragLessonId === targetLessonId) {
@@ -386,11 +400,14 @@ export default function AdminContentManager() {
               </div>
             ) : (
               <div className="space-y-4">
-                {courses.map(course => (
+                {paginatedCourses.map(course => (
                   <div
                     key={course._id}
                     className="card p-6 hover:shadow-md transition-shadow cursor-pointer"
-                    onClick={() => setSelectedCourse(course)}
+                    onClick={() => {
+                      setSelectedCourse(course);
+                      setLessonPage(1);
+                    }}
                   >
                     <div className="flex justify-between items-start mb-4">
                       <div className="flex-1">
@@ -406,7 +423,10 @@ export default function AdminContentManager() {
                       </div>
                       <div className="flex gap-2" onClick={e => e.stopPropagation()}>
                         <button
-                          onClick={() => setSelectedCourse(course)}
+                          onClick={() => {
+                            setSelectedCourse(course);
+                            setLessonPage(1);
+                          }}
                           className="text-blue-600 hover:text-blue-800 p-2 hover:bg-blue-50 rounded-lg transition-colors"
                           title="Xem chi tiết"
                         >
@@ -430,6 +450,32 @@ export default function AdminContentManager() {
                     </div>
                   </div>
                 ))}
+                {courses.length > COURSES_PER_PAGE && (
+                  <div className="flex items-center justify-between rounded-lg bg-white px-4 py-3 shadow-sm">
+                    <span className="text-sm text-gray-500">
+                      {coursePageStart + 1}-{coursePageEnd} / {courses.length} khóa học
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setCoursePage(p => Math.max(1, p - 1))}
+                        disabled={safeCoursePage === 1}
+                        className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+                      >
+                        Trước
+                      </button>
+                      <span className="text-sm text-gray-500">Trang {safeCoursePage} / {totalCoursePages}</span>
+                      <button
+                        type="button"
+                        onClick={() => setCoursePage(p => Math.min(totalCoursePages, p + 1))}
+                        disabled={safeCoursePage === totalCoursePages}
+                        className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+                      >
+                        Sau
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -454,6 +500,7 @@ export default function AdminContentManager() {
                     setLessons([]);
                     setExercises([]);
                     setSearchLesson('');
+                    setLessonPage(1);
                   }}
                   className="btn-secondary flex items-center gap-2"
                 >
@@ -468,7 +515,10 @@ export default function AdminContentManager() {
                   placeholder="Tìm kiếm bài học..."
                   className="input-field flex-1"
                   value={searchLesson}
-                  onChange={e => setSearchLesson(e.target.value)}
+                  onChange={e => {
+                    setSearchLesson(e.target.value);
+                    setLessonPage(1);
+                  }}
                 />
                 <button
                   onClick={openCreateLesson}
@@ -491,7 +541,7 @@ export default function AdminContentManager() {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {visibleLessons.map((lesson, idx) => (
+                  {paginatedLessons.map((lesson, idx) => (
                     <div
                       key={lesson._id}
                       draggable={canReorderLessons}
@@ -521,7 +571,7 @@ export default function AdminContentManager() {
                         <FiMenu size={18} />
                       </span>
                       <div className="flex-1">
-                        <p className="font-semibold text-gray-900">{idx + 1}. {lesson.title}</p>
+                        <p className="font-semibold text-gray-900">{lessonPageStart + idx + 1}. {lesson.title}</p>
                         <div className="flex gap-4 mt-2 text-xs text-gray-500">
                           <span>⏱️ {lesson.duration || '—'} phút</span>
                           <span>{lesson.isPublished ? '✅ Đã đăng' : '🔒 Nháp'}</span>
@@ -560,6 +610,32 @@ export default function AdminContentManager() {
                       </div>
                     </div>
                   ))}
+                  {visibleLessons.length > LESSONS_PER_PAGE && (
+                    <div className="mt-4 flex items-center justify-between rounded-lg bg-white px-4 py-3 shadow-sm">
+                      <span className="text-sm text-gray-500">
+                        {lessonPageStart + 1}-{lessonPageEnd} / {visibleLessons.length} bài học
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setLessonPage(p => Math.max(1, p - 1))}
+                          disabled={safeLessonPage === 1}
+                          className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+                        >
+                          Trước
+                        </button>
+                        <span className="text-sm text-gray-500">Trang {safeLessonPage} / {totalLessonPages}</span>
+                        <button
+                          type="button"
+                          onClick={() => setLessonPage(p => Math.min(totalLessonPages, p + 1))}
+                          disabled={safeLessonPage === totalLessonPages}
+                          className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+                        >
+                          Sau
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

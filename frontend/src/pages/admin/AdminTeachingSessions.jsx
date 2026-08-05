@@ -23,6 +23,35 @@ const todayInputValue = () => {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 };
 
+const toDateInputValue = (date) => {
+  const value = new Date(date);
+  const pad = (item) => String(item).padStart(2, '0');
+  return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`;
+};
+
+function nextScheduledDateForClass(cls, afterDate = new Date(), includeSameDay = false) {
+  const days = (cls?.schedules || [])
+    .map((schedule) => Number(schedule.dayOfWeek))
+    .filter((day) => Number.isInteger(day) && day >= 0 && day <= 6);
+  if (!days.length) return null;
+
+  const start = new Date(afterDate);
+  start.setHours(0, 0, 0, 0);
+
+  for (let offset = includeSameDay ? 0 : 1; offset <= 14; offset += 1) {
+    const candidate = new Date(start);
+    candidate.setDate(start.getDate() + offset);
+    if (days.includes(candidate.getDay())) return candidate;
+  }
+
+  return null;
+}
+
+function classHasScheduleToday(cls) {
+  const today = new Date().getDay();
+  return (cls?.schedules || []).some((schedule) => Number(schedule.dayOfWeek) === today);
+}
+
 const statusOptions = [
   { value: 'planned', label: 'Dự kiến' },
   { value: 'completed', label: 'Đã dạy xong' },
@@ -180,7 +209,8 @@ export default function AdminTeachingSessions() {
       .then((res) => {
         const items = res.data || [];
         setClasses(items);
-        if (items[0]?._id) setSelectedClassId(items[0]._id);
+        const todayClass = items.find(classHasScheduleToday);
+        if (todayClass?._id || items[0]?._id) setSelectedClassId(todayClass?._id || items[0]._id);
       })
       .catch(() => toast.error('Không tải được danh sách lớp'));
   }, []);
@@ -206,6 +236,14 @@ export default function AdminTeachingSessions() {
           if (lesson?._id) byId.set(lesson._id, lesson);
         });
         setClassLessons(Array.from(byId.values()));
+        const { data: classSessions } = await api.get('/teaching-sessions', { params: { classId: selectedClassId } });
+        const sortedSessions = sortSessionsByTeachingDate(classSessions || []);
+        setSessions(sortedSessions);
+        const latestSessionDate = sortedSessions[0]?.date;
+        const nextDate = latestSessionDate
+          ? nextScheduledDateForClass(detail, latestSessionDate)
+          : nextScheduledDateForClass(detail, new Date(), true);
+        if (nextDate) setSessionDate(toDateInputValue(nextDate));
       } catch {
         toast.error('Không tải được bài học của lớp');
       }
@@ -247,6 +285,9 @@ export default function AdminTeachingSessions() {
       }));
       if (requestId !== plannerRequestRef.current) return;
       setPlanner({ ...data, homeworks });
+      if (!selectedLessonId && data.suggestedLesson?._id) {
+        setSelectedLessonId(data.suggestedLesson._id);
+      }
       setCurrentSession(data.currentSession || null);
       setForm({
         status: data.currentSession?.status || 'planned',

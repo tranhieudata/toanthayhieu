@@ -162,6 +162,13 @@ function renderMathHtml(text) {
   }).join('');
 }
 
+function hasExamPackageQuestions(paper) {
+  return Boolean(
+    (paper?.questions?.multipleChoice || []).length ||
+    (paper?.questions?.essay || []).length
+  );
+}
+
 function buildPrintableExamHtml(paper) {
   const mc = paper.questions?.multipleChoice || [];
   const essay = paper.questions?.essay || [];
@@ -193,7 +200,7 @@ function buildPrintableExamHtml(paper) {
 }
 
 function printExamContent(exam) {
-  const html = exam.examPackage
+  const html = hasExamPackageQuestions(exam.examPackage)
     ? buildPrintableExamHtml(exam.examPackage)
     : hasMeaningfulHtml(exam.content)
       ? renderStoredExamContentHtml(exam.content)
@@ -667,7 +674,7 @@ export default function AdminExams() {
                 <div className="flex justify-center py-12">
                   <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
                 </div>
-              ) : previewExam?.examPackage || hasMeaningfulHtml(previewExam?.content) || previewExam?.pdfAttachments?.length ? (
+              ) : hasExamPackageQuestions(previewExam?.examPackage) || hasMeaningfulHtml(previewExam?.content) || previewExam?.pdfAttachments?.length ? (
                 <div className="space-y-5">
                   {previewExam?.pdfAttachments?.length > 0 && (
                     <div className="rounded-lg border border-blue-100 bg-blue-50 p-3">
@@ -688,7 +695,7 @@ export default function AdminExams() {
                       </div>
                     </div>
                   )}
-                  {previewExam?.examPackage ? (
+                  {hasExamPackageQuestions(previewExam?.examPackage) ? (
                     <PaperPreview paper={previewExam.examPackage} />
                   ) : hasMeaningfulHtml(previewExam?.content) ? (
                     <div

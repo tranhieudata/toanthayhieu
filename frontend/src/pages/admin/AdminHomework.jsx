@@ -24,6 +24,8 @@ const emptyForm = {
   dueDate: '',
 };
 
+const HOMEWORKS_PER_PAGE = 20;
+
 function examPackageToHomeworkText(paper) {
   if (!paper) return '';
   const mc = (paper.questions?.multipleChoice || []).map((q, index) => {
@@ -79,6 +81,7 @@ export default function AdminHomework() {
   const [examBank, setExamBank] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filterClass, setFilterClass] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [editId, setEditId] = useState(null);
@@ -761,6 +764,11 @@ export default function AdminHomework() {
   const filteredHomeworks = filterClass
     ? homeworks.filter(hw => hw.class?._id === filterClass)
     : homeworks;
+  const totalHomeworkPages = Math.max(1, Math.ceil(filteredHomeworks.length / HOMEWORKS_PER_PAGE));
+  const homeworkPage = Math.min(currentPage, totalHomeworkPages);
+  const homeworkPageStart = (homeworkPage - 1) * HOMEWORKS_PER_PAGE;
+  const homeworkPageEnd = Math.min(homeworkPageStart + HOMEWORKS_PER_PAGE, filteredHomeworks.length);
+  const paginatedHomeworks = filteredHomeworks.slice(homeworkPageStart, homeworkPageEnd);
 
   const submittedWithImagesCount = submissions.filter(sub => (sub.submissionImages || []).length > 0).length;
   const pendingWithImagesCount = submissions.filter(
@@ -788,7 +796,10 @@ export default function AdminHomework() {
         <label className="block text-sm font-medium text-gray-700 mb-2">Lọc theo lớp học</label>
         <select
           value={filterClass}
-          onChange={(e) => setFilterClass(e.target.value)}
+          onChange={(e) => {
+            setFilterClass(e.target.value);
+            setCurrentPage(1);
+          }}
           className="w-full md:w-64 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
         >
           <option value="">Tất cả lớp</option>
@@ -817,7 +828,7 @@ export default function AdminHomework() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {filteredHomeworks.map((hw) => (
+                {paginatedHomeworks.map((hw) => (
                   <tr key={hw._id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 text-sm text-gray-900">{hw.title}</td>
                     <td className="px-6 py-4 text-sm text-gray-600">{hw.class?.name || 'N/A'}</td>
@@ -870,6 +881,32 @@ export default function AdminHomework() {
           </div>
         )}
       </div>
+      {!loading && filteredHomeworks.length > HOMEWORKS_PER_PAGE && (
+        <div className="flex items-center justify-between rounded-lg bg-white px-4 py-3 shadow-md">
+          <span className="text-sm text-gray-500">
+            {homeworkPageStart + 1}-{homeworkPageEnd} / {filteredHomeworks.length} bài tập
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={homeworkPage === 1}
+              className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+            >
+              Trước
+            </button>
+            <span className="text-sm text-gray-500">Trang {homeworkPage} / {totalHomeworkPages}</span>
+            <button
+              type="button"
+              onClick={() => setCurrentPage(p => Math.min(totalHomeworkPages, p + 1))}
+              disabled={homeworkPage === totalHomeworkPages}
+              className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+            >
+              Sau
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Create/Edit Modal */}
       {modal && (
