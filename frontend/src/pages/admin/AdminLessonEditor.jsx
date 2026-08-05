@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import api from '../../api/axios';
 import toast from 'react-hot-toast';
-import { FiArrowLeft, FiSave, FiClock, FiPlus, FiTrash2, FiEdit2, FiCheck, FiX, FiCpu, FiZap } from 'react-icons/fi';
+import { FiArrowLeft, FiSave, FiClock, FiPlus, FiTrash2, FiEdit2, FiCheck, FiX, FiCpu, FiZap, FiBookOpen } from 'react-icons/fi';
 import RichTextEditor from '../../components/RichTextEditor';
 import PdfUploader from '../../components/PdfUploader';
 import VN_MATH_CURRICULUM from '../../utils/vnMathCurriculum';
@@ -39,6 +39,7 @@ export default function AdminLessonEditor() {
   const [form, setForm] = useState(emptyLesson);
   const [courseName, setCourseName] = useState('');
   const [courses, setCourses] = useState([]);
+  const [courseLessons, setCourseLessons] = useState([]);
   const [curriculum, setCurriculum] = useState(VN_MATH_CURRICULUM);
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(!!id);
@@ -75,6 +76,12 @@ export default function AdminLessonEditor() {
   const curriculumForGrade = aiForm.grade ? curriculum[aiForm.grade] : null;
   const chapters = curriculumForGrade ? Object.keys(curriculumForGrade) : [];
   const topics = aiForm.chapter ? curriculumForGrade?.[aiForm.chapter] || [] : [];
+  const sortedCourseLessons = [...courseLessons].sort((a, b) => {
+    const orderA = Number(a.order) || 0;
+    const orderB = Number(b.order) || 0;
+    if (orderA !== orderB) return orderA - orderB;
+    return String(a.title || '').localeCompare(String(b.title || ''), 'vi');
+  });
 
   useEffect(() => {
     api.get('/courses/admin/all').then(res => setCourses(res.data || [])).catch(() => setCourses([]));
@@ -126,6 +133,17 @@ export default function AdminLessonEditor() {
     const selected = courses.find(course => course._id === currentCourseId);
     setCourseName(selected?.title || '');
   }, [currentCourseId, courses, courseId, isEdit]);
+
+  useEffect(() => {
+    if (!currentCourseId) {
+      setCourseLessons([]);
+      return;
+    }
+
+    api.get(`/lessons?course=${currentCourseId}`)
+      .then(res => setCourseLessons(res.data || []))
+      .catch(() => setCourseLessons([]));
+  }, [currentCourseId]);
 
   // Load criteria khi edit
   useEffect(() => {
@@ -307,7 +325,7 @@ export default function AdminLessonEditor() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto">
+    <div className="max-w-7xl mx-auto">
       {/* Header */}
       <div className="flex items-center gap-4 mb-6">
         <button
@@ -334,7 +352,65 @@ export default function AdminLessonEditor() {
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
+        <aside className="card h-fit overflow-hidden xl:sticky xl:top-6">
+          <div className="border-b border-gray-100 p-4">
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+              <FiBookOpen className="text-blue-600" /> Bài học đã tạo
+            </h2>
+            <p className="mt-1 text-xs text-gray-500">
+              {courseName || 'Chọn khóa học'} · {sortedCourseLessons.length} bài
+            </p>
+          </div>
+
+          <div className="max-h-[calc(100vh-220px)] overflow-y-auto p-3">
+            {!currentCourseId ? (
+              <p className="rounded-lg border border-dashed border-gray-200 p-4 text-sm text-gray-400">
+                Chọn khóa học để xem danh sách bài đã tạo.
+              </p>
+            ) : sortedCourseLessons.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-gray-200 p-4 text-sm text-gray-400">
+                Khóa học này chưa có bài nào.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {sortedCourseLessons.map((lesson) => {
+                  const isCurrent = String(lesson._id) === String(id || draftId);
+                  return (
+                    <button
+                      key={lesson._id}
+                      type="button"
+                      onClick={() => navigate(`/admin/lessons/${lesson._id}/edit`)}
+                      className={`w-full rounded-lg border p-3 text-left transition ${
+                        isCurrent
+                          ? 'border-blue-200 bg-blue-50'
+                          : 'border-gray-100 bg-white hover:border-blue-100 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-gray-900">
+                            {lesson.order ? `${lesson.order}. ` : ''}{lesson.title || 'Chưa có tiêu đề'}
+                          </p>
+                          <p className="mt-1 text-xs text-gray-500">
+                            {lesson.duration ? `${lesson.duration} phút` : 'Chưa có thời lượng'}
+                          </p>
+                        </div>
+                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                          lesson.isPublished ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+                        }`}>
+                          {lesson.isPublished ? 'Đã đăng' : 'Nháp'}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </aside>
+
+      <form onSubmit={handleSubmit} className="min-w-0 space-y-6">
         <div className="card p-6 space-y-5">
           {/* Tiêu đề */}
           <div>
@@ -737,6 +813,7 @@ export default function AdminLessonEditor() {
           </button>
         </div>
       </form>
+      </div>
     </div>
   );
 }

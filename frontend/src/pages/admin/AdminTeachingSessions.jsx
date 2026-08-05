@@ -551,7 +551,7 @@ export default function AdminTeachingSessions() {
         </div>
 
         <aside className="space-y-6">
-          <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+          <section className="hidden rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
             <h3 className="mb-3 flex items-center gap-2 font-semibold text-gray-900">
               <FiClock className="text-amber-600" /> Buổi trước
             </h3>
