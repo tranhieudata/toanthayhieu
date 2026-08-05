@@ -445,7 +445,25 @@ export default function AdminClasses() {
       return;
     }
 
-    const snapshotLessonIds = sortedLessons.map((lesson) => lesson._id);
+    const getLessonScheduleValue = (lessonId) =>
+      lessonScheduleDrafts[lessonId] || classLessonSettings[lessonId]?.autoOpenAt || '';
+
+    const existingAutoOpenDates = sortedLessons
+      .map((lesson) => {
+        const value = getLessonScheduleValue(lesson._id);
+        const date = value ? new Date(value) : null;
+        return date && !Number.isNaN(date.getTime()) ? date : null;
+      })
+      .filter(Boolean)
+      .sort((a, b) => b - a);
+    const lessonsToSchedule = sortedLessons.filter((lesson) => !getLessonScheduleValue(lesson._id));
+
+    if (!lessonsToSchedule.length) {
+      toast.success('Tất cả bài học đã có lịch tự mở');
+      return;
+    }
+
+    const snapshotLessonIds = lessonsToSchedule.map((lesson) => lesson._id);
     const snapshotSettings = {};
     const snapshotDrafts = {};
     snapshotLessonIds.forEach((lessonId) => {
@@ -453,20 +471,12 @@ export default function AdminClasses() {
       snapshotDrafts[lessonId] = lessonScheduleDrafts[lessonId] ?? snapshotSettings[lessonId].autoOpenAt ?? '';
     });
 
-    const existingAutoOpenDates = sortedLessons
-      .map((lesson) => {
-        const value = lessonScheduleDrafts[lesson._id] || classLessonSettings[lesson._id]?.autoOpenAt;
-        const date = value ? new Date(value) : null;
-        return date && !Number.isNaN(date.getTime()) ? date : null;
-      })
-      .filter(Boolean)
-      .sort((a, b) => a - b);
     const firstLessonStartAt = existingAutoOpenDates[0]
       ? addMinutes(existingAutoOpenDates[0], 60)
       : new Date();
-    const sessions = getNextClassSessions(classDetail, sortedLessons.length, firstLessonStartAt, Boolean(existingAutoOpenDates[0]));
+    const sessions = getNextClassSessions(classDetail, lessonsToSchedule.length, firstLessonStartAt);
 
-    if (sessions.length < sortedLessons.length) {
+    if (sessions.length < lessonsToSchedule.length) {
       toast.error('Không đủ lịch học hợp lệ để cài tự động');
       return;
     }
@@ -474,7 +484,7 @@ export default function AdminClasses() {
     try {
       setLastAutoScheduleSnapshot({ lessonIds: snapshotLessonIds, settings: snapshotSettings, drafts: snapshotDrafts });
       const updates = [];
-      for (const [index, lesson] of sortedLessons.entries()) {
+      for (const [index, lesson] of lessonsToSchedule.entries()) {
         const autoOpenAt = addMinutes(sessions[index].startAt, -60);
         const res = await api.patch(`/classes/${selectedClass._id}/lessons/${lesson._id}/toggle`, {
           autoOpenAt: autoOpenAt.toISOString(),
@@ -492,7 +502,7 @@ export default function AdminClasses() {
       });
       setClassLessonSettings(prev => ({ ...prev, ...nextSettings }));
       setLessonScheduleDrafts(prev => ({ ...prev, ...nextDrafts }));
-      toast.success(`Đã cài lại lịch tự mở cho ${updates.length} bài học`);
+      toast.success(`Đã cài lịch tự mở cho ${updates.length} bài chưa có lịch`);
     } catch (err) {
       toast.error(err.response?.data?.message || 'Không cài được lịch tự mở');
     }
