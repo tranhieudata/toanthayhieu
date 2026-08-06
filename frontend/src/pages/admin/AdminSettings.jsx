@@ -34,6 +34,7 @@ export default function AdminSettings() {
   const [editingChapterName, setEditingChapterName] = useState('');
   const [editingTopic, setEditingTopic] = useState(null);
   const [editingTopicName, setEditingTopicName] = useState('');
+  const [draggedCurriculumItem, setDraggedCurriculumItem] = useState(null);
   const fileRef = useRef();
 
   useEffect(() => {
@@ -155,6 +156,44 @@ export default function AdminSettings() {
 
   const updateCurriculum = (updater) => {
     setForm((f) => ({ ...f, curriculum: updater(f.curriculum || {}) }));
+  };
+
+  const moveArrayItem = (items, fromIndex, toIndex) => {
+    if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) return items;
+    const next = [...items];
+    const [moved] = next.splice(fromIndex, 1);
+    next.splice(toIndex, 0, moved);
+    return next;
+  };
+
+  const moveChapter = (fromChapter, toChapter) => {
+    if (!fromChapter || !toChapter || fromChapter === toChapter) return;
+    updateCurriculum((curriculum) => {
+      const gradeCurriculum = curriculum[selectedCurriculumGrade] || {};
+      const entries = Object.entries(gradeCurriculum);
+      const fromIndex = entries.findIndex(([chapter]) => chapter === fromChapter);
+      const toIndex = entries.findIndex(([chapter]) => chapter === toChapter);
+      if (fromIndex === -1 || toIndex === -1) return curriculum;
+      return {
+        ...curriculum,
+        [selectedCurriculumGrade]: Object.fromEntries(moveArrayItem(entries, fromIndex, toIndex)),
+      };
+    });
+  };
+
+  const moveTopic = (chapter, fromIndex, toIndex) => {
+    if (!chapter || fromIndex === toIndex) return;
+    updateCurriculum((curriculum) => {
+      const gradeCurriculum = curriculum[selectedCurriculumGrade] || {};
+      const topics = gradeCurriculum[chapter] || [];
+      return {
+        ...curriculum,
+        [selectedCurriculumGrade]: {
+          ...gradeCurriculum,
+          [chapter]: moveArrayItem(topics, fromIndex, toIndex),
+        },
+      };
+    });
   };
 
   const handleAddChapter = () => {
@@ -712,7 +751,24 @@ export default function AdminSettings() {
 
           <div className="space-y-4">
             {Object.entries((form.curriculum || {})[selectedCurriculumGrade] || {}).map(([chapter, topics]) => (
-              <div key={chapter} className="border border-gray-200 rounded-lg p-4 space-y-3">
+              <div
+                key={chapter}
+                draggable={!editingChapter}
+                onDragStart={(event) => {
+                  setDraggedCurriculumItem({ type: 'chapter', chapter });
+                  event.dataTransfer.effectAllowed = 'move';
+                }}
+                onDragOver={(event) => {
+                  if (draggedCurriculumItem?.type === 'chapter') event.preventDefault();
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  if (draggedCurriculumItem?.type === 'chapter') moveChapter(draggedCurriculumItem.chapter, chapter);
+                  setDraggedCurriculumItem(null);
+                }}
+                onDragEnd={() => setDraggedCurriculumItem(null)}
+                className={`border rounded-lg p-4 space-y-3 transition-colors ${draggedCurriculumItem?.type === 'chapter' && draggedCurriculumItem.chapter !== chapter ? 'border-blue-200 bg-blue-50/40' : 'border-gray-200'}`}
+              >
                 {editingChapter === chapter ? (
                   <div className="flex gap-2">
                     <input
@@ -725,7 +781,10 @@ export default function AdminSettings() {
                   </div>
                 ) : (
                   <div className="flex items-center justify-between gap-3">
-                    <h3 className="font-semibold text-gray-900">{chapter}</h3>
+                    <div className="flex min-w-0 items-center gap-2">
+                      <FiMenu className="shrink-0 cursor-grab text-gray-300" title="Kéo để đổi thứ tự chương" />
+                      <h3 className="font-semibold text-gray-900">{chapter}</h3>
+                    </div>
                     <div className="flex items-center gap-1">
                       <button type="button" onClick={() => { setEditingChapter(chapter); setEditingChapterName(chapter); }} className="p-2 text-blue-600 hover:bg-blue-50 rounded" title="Sửa chương">
                         <FiEdit2 size={15} />
@@ -739,7 +798,34 @@ export default function AdminSettings() {
 
                 <div className="space-y-2">
                   {(topics || []).map((topic, topicIndex) => (
-                    <div key={`${topic}-${topicIndex}`} className="flex items-center justify-between gap-2 rounded border border-gray-100 bg-gray-50 px-3 py-2">
+                    <div
+                      key={`${topic}-${topicIndex}`}
+                      draggable={!(editingTopic?.chapter === chapter && editingTopic?.index === topicIndex)}
+                      onDragStart={(event) => {
+                        event.stopPropagation();
+                        setDraggedCurriculumItem({ type: 'topic', chapter, index: topicIndex });
+                        event.dataTransfer.effectAllowed = 'move';
+                      }}
+                      onDragOver={(event) => {
+                        if (draggedCurriculumItem?.type === 'topic' && draggedCurriculumItem.chapter === chapter) {
+                          event.preventDefault();
+                          event.stopPropagation();
+                        }
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        if (draggedCurriculumItem?.type === 'topic' && draggedCurriculumItem.chapter === chapter) {
+                          moveTopic(chapter, draggedCurriculumItem.index, topicIndex);
+                        }
+                        setDraggedCurriculumItem(null);
+                      }}
+                      onDragEnd={(event) => {
+                        event.stopPropagation();
+                        setDraggedCurriculumItem(null);
+                      }}
+                      className={`flex items-center justify-between gap-2 rounded border px-3 py-2 transition-colors ${draggedCurriculumItem?.type === 'topic' && draggedCurriculumItem.chapter === chapter && draggedCurriculumItem.index !== topicIndex ? 'border-blue-200 bg-blue-50' : 'border-gray-100 bg-gray-50'}`}
+                    >
                       {editingTopic?.chapter === chapter && editingTopic?.index === topicIndex ? (
                         <>
                           <input
@@ -752,7 +838,10 @@ export default function AdminSettings() {
                         </>
                       ) : (
                         <>
-                          <span className="text-sm text-gray-800">{topic}</span>
+                          <span className="flex min-w-0 items-center gap-2 text-sm text-gray-800">
+                            <FiMenu className="shrink-0 cursor-grab text-gray-300" title="Kéo để đổi thứ tự chủ đề" />
+                            <span className="truncate">{topic}</span>
+                          </span>
                           <div className="flex items-center gap-1">
                             <button type="button" onClick={() => { setEditingTopic({ chapter, index: topicIndex }); setEditingTopicName(topic); }} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" title="Sửa chủ đề">
                               <FiEdit2 size={13} />

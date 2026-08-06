@@ -507,7 +507,7 @@ ${links || 'Chưa có link bài tập'}
 Yêu cầu:
 - Viết bằng tiếng Việt, thân thiện, rõ ràng cho phụ huynh.
 - Tóm tắt 2-4 dòng ý chính hôm nay học gì, cần nhớ gì.
-- Nếu có link bài tập, chèn nguyên văn link vào cuối với nhãn "Bài tập để phụ huynh cho con làm/in:".
+- Nếu có link bài tập, chèn nguyên văn link vào cuối với nhãn "Thầy đã in đầy đủ bài cho các con. Nội dung BTVN :".
 - Không viết dài, không dùng markdown bảng, không bịa nội dung ngoài dữ liệu đã cho.
 - Không nhắc đến AI/Gemini.`;
 

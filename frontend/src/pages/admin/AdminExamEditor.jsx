@@ -4,7 +4,6 @@ import api from '../../api/axios';
 import toast from 'react-hot-toast';
 import { FiArrowLeft, FiSave, FiPlus, FiTrash2, FiRefreshCw } from 'react-icons/fi';
 import RichTextEditor from '../../components/RichTextEditor';
-import PdfUploader from '../../components/PdfUploader';
 import VN_MATH_CURRICULUM from '../../utils/vnMathCurriculum';
 
 const FALLBACK_LEVELS = [
@@ -250,7 +249,7 @@ function CellInput({ value, onChange }) {
       <input
         type="number"
         min="0"
-        step="0.25"
+        step="0.1"
         className="w-full rounded-lg border border-gray-300 px-2 py-1 text-center text-sm text-blue-700"
         value={value?.points ?? 0}
         onChange={e => onChange({ ...value, points: Math.max(0, Number(e.target.value) || 0) })}
@@ -272,6 +271,7 @@ export default function AdminExamEditor() {
   const [form, setForm] = useState({
     title: '',
     content: '',
+    course: '',
     lesson: '',
     level: '',
     totalQuestions: '',
@@ -285,6 +285,7 @@ export default function AdminExamEditor() {
     homeworkClasses: [],
     homeworkDueDate: '',
   });
+  const [courses, setCourses] = useState([]);
   const [lessons, setLessons] = useState([]);
   const [classes, setClasses] = useState([]);
   const [classLevels, setClassLevels] = useState([]);
@@ -299,7 +300,7 @@ export default function AdminExamEditor() {
   }, [classLevels]);
 
   useEffect(() => {
-    api.get('/lessons').then(r => setLessons(r.data || [])).catch(() => {});
+    api.get('/courses/admin/all').then(r => setCourses(r.data || [])).catch(() => {});
     api.get('/classes').then(r => setClasses(r.data || [])).catch(() => {});
     api.get('/levels').then(r => setClassLevels(r.data || [])).catch(() => {});
     api.get('/exams', { params: { isTemplate: 'true' } }).then(r => setExamBank(r.data || [])).catch(() => {});
@@ -315,6 +316,16 @@ export default function AdminExamEditor() {
       })
       .catch(() => {});
   }, [isEdit]);
+
+  useEffect(() => {
+    if (!form.course) {
+      setLessons([]);
+      return;
+    }
+    api.get('/lessons', { params: { course: form.course } })
+      .then(r => setLessons(r.data || []))
+      .catch(() => setLessons([]));
+  }, [form.course]);
 
   useEffect(() => {
     if (!isEdit) return;
@@ -336,6 +347,7 @@ export default function AdminExamEditor() {
         setForm({
           title: exam.title || '',
           content: exam.content || '',
+          course: exam.course?._id || exam.course || exam.lesson?.course?._id || exam.lesson?.course || '',
           lesson: exam.lesson?._id || exam.lesson || '',
           level: exam.level?._id || exam.level || '',
           totalQuestions: exam.totalQuestions || '',
@@ -400,6 +412,7 @@ export default function AdminExamEditor() {
         ...f,
         title: '',
         content: '',
+        course: '',
         lesson: '',
         level: '',
         totalQuestions: '',
@@ -421,12 +434,13 @@ export default function AdminExamEditor() {
         ...f,
         title: exam.title || f.title,
         content: exam.content || '',
+        course: exam.course?._id || exam.course || exam.lesson?.course?._id || exam.lesson?.course || f.course || '',
         lesson: exam.lesson?._id || exam.lesson || '',
         level: exam.level?._id || exam.level || '',
         totalQuestions: exam.totalQuestions || '',
         isTemplate: false,
         note: exam.note ? `Sao chép từ ngân hàng đề: ${exam.title}` : f.note,
-        pdfAttachments: exam.pdfAttachments || [],
+        pdfAttachments: [],
         classSchedules: [],
         matrix: matrixFromExam(exam, levels, grade),
         examPackage: exam.examPackage || null,
@@ -469,6 +483,24 @@ export default function AdminExamEditor() {
       matrix: f.matrix.map((row, index) => (
         index === rowIndex ? { ...row, unit } : row
       )),
+    }));
+  };
+
+  const handleCourseChange = (courseId) => {
+    setForm(f => ({
+      ...f,
+      course: courseId,
+      lesson: '',
+    }));
+  };
+
+  const handleLessonChange = (lessonId) => {
+    const lesson = lessons.find(item => item._id === lessonId);
+    const courseId = lesson?.course?._id || lesson?.course || form.course;
+    setForm(f => ({
+      ...f,
+      course: courseId || f.course,
+      lesson: lessonId,
     }));
   };
 
@@ -516,28 +548,26 @@ export default function AdminExamEditor() {
         ? syncQuestionsWithMatrix(form.examPackage, matrixWithTotals, cognitiveLevels)
         : null;
       const sourcePackage = syncedPackage || form.examPackage;
-      const examPackage = hasExamPackageQuestions(sourcePackage)
-        ? {
-            ...sourcePackage,
-            title: form.title,
-            cognitiveLevels,
-            matrix: matrixWithTotals,
-            totals,
-            meta: {
-              ...(sourcePackage?.meta || {}),
-              examName: form.title || sourcePackage?.meta?.examName || '',
-              grade: curriculumGrade,
-              totalPoints: totals.totalPoints,
-            },
-          }
-        : null;
+      const examPackage = {
+        ...(sourcePackage || {}),
+        title: form.title,
+        cognitiveLevels,
+        matrix: matrixWithTotals,
+        totals,
+        meta: {
+          ...(sourcePackage?.meta || {}),
+          examName: form.title || sourcePackage?.meta?.examName || '',
+          grade: curriculumGrade,
+          totalPoints: totals.totalPoints,
+        },
+      };
       const payload = {
         title: form.title,
         content: form.content,
+        course: form.course || null,
         totalQuestions: totals.totalQuestions,
         isTemplate: form.isTemplate,
         note: form.note,
-        pdfAttachments: form.pdfAttachments || [],
         levels: buildLevelsFromMatrix(matrixWithTotals, cognitiveLevels),
         examPackage,
         classSchedules: form.classSchedules
@@ -585,7 +615,7 @@ export default function AdminExamEditor() {
             lessonId: form.lesson || '',
             sourceExam: sourceExamId,
             examPackage,
-            pdfAttachments: form.pdfAttachments || [],
+            pdfAttachments: [],
             answerKey: examPackageToAnswerKey(examPackage),
             maxScore: totals.totalPoints || 10,
             dueDate: form.homeworkDueDate || undefined,
@@ -652,13 +682,25 @@ export default function AdminExamEditor() {
             />
           </div>
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Danh sách khóa học</label>
+              <select
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={form.course}
+                onChange={e => handleCourseChange(e.target.value)}
+              >
+                <option value="">-- Chọn khóa học --</option>
+                {courses.map(course => <option key={course._id} value={course._id}>{course.title}</option>)}
+              </select>
+            </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">Chủ đề / Bài học</label>
               <select
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 value={form.lesson}
-                onChange={e => setForm(f => ({ ...f, lesson: e.target.value }))}
+                disabled={!form.course}
+                onChange={e => handleLessonChange(e.target.value)}
               >
                 <option value="">-- Chọn bài học --</option>
                 {lessons.map(lesson => <option key={lesson._id} value={lesson._id}>{lesson.title}</option>)}
@@ -850,7 +892,7 @@ export default function AdminExamEditor() {
                           <input
                             type="number"
                             min="0"
-                            step="0.25"
+                            step="0.1"
                             className="w-20 rounded-lg border border-gray-300 px-2 py-1 text-sm"
                             value={question.points ?? ''}
                             onChange={e => updatePackageQuestion('multipleChoice', index, q => ({ ...q, points: Number(e.target.value) || 0 }))}
@@ -914,7 +956,7 @@ export default function AdminExamEditor() {
                           <input
                             type="number"
                             min="0"
-                            step="0.25"
+                            step="0.1"
                             className="w-20 rounded-lg border border-gray-300 px-2 py-1 text-sm"
                             value={question.points ?? ''}
                             onChange={e => updatePackageQuestion('essay', index, q => ({ ...q, points: Number(e.target.value) || 0 }))}
@@ -949,14 +991,6 @@ export default function AdminExamEditor() {
             placeholder="Nhập nội dung đề kiểm tra. Dùng nút ƒx để chèn công thức toán..."
           />
           )}
-        </div>
-
-        <div className="space-y-3 rounded-xl bg-white p-6 shadow-sm">
-          <h2 className="font-semibold text-gray-800">File PDF đề bài</h2>
-          <PdfUploader
-            attachments={form.pdfAttachments || []}
-            onAttachmentsChange={atts => setForm(f => ({ ...f, pdfAttachments: atts }))}
-          />
         </div>
 
         <div className="space-y-5 rounded-xl bg-white p-6 shadow-sm">

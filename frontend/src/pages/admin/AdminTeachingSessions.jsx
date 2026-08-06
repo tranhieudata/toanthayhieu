@@ -339,6 +339,17 @@ export default function AdminTeachingSessions() {
     }
   };
 
+  const copyParentSummary = async () => {
+    const text = form.summary?.trim();
+    if (!text) return toast.error('Chưa có nội dung tóm tắt để copy');
+    try {
+      await navigator.clipboard?.writeText(text);
+      toast.success('Đã copy tóm tắt gửi phụ huynh');
+    } catch {
+      toast.error('Không copy được nội dung');
+    }
+  };
+
   const saveSession = async () => {
     if (!selectedClassId) return toast.error('Chọn lớp trước');
     if (!selectedLessonId) return toast.error('Chọn bài học trước');
@@ -457,22 +468,19 @@ export default function AdminTeachingSessions() {
                 >
                   <FiZap size={14} /> {generatingSummary ? 'Đang tạo...' : 'Tóm tắt bằng Gemini'}
                 </button>
+                <button
+                  type="button"
+                  onClick={copyParentSummary}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100"
+                >
+                  <FiCopy size={14} /> Copy nội dung
+                </button>
               </div>
               <textarea
                 className="input-field min-h-[120px]"
                 value={form.summary}
                 onChange={(event) => setForm((prev) => ({ ...prev, summary: event.target.value }))}
                 placeholder="Ví dụ: Hôm nay con học hằng đẳng thức đáng nhớ, cần nắm 3 công thức chính và luyện thêm dạng rút gọn biểu thức."
-              />
-            </div>
-
-            <div className="mt-4">
-              <label className="mb-1 block text-xs font-medium text-gray-500">Ghi chú riêng của thầy</label>
-              <textarea
-                className="input-field min-h-[90px]"
-                value={form.teacherNote}
-                onChange={(event) => setForm((prev) => ({ ...prev, teacherNote: event.target.value }))}
-                placeholder="Ghi lại phần dạy chưa kịp, học sinh cần ôn lại, hoặc điều chỉnh tiến độ..."
               />
             </div>
 

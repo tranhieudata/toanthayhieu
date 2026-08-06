@@ -353,7 +353,8 @@ const getExams = async (req, res) => {
     if (req.query.isTemplate === 'false') filter.isTemplate = false;
 
     const exams = await Exam.find(filter)
-      .populate('lesson', 'title criteria')
+      .populate('course', 'title')
+      .populate('lesson', 'title criteria course')
       .populate('classSchedules.class', 'name')
       .populate('level', 'name bgColor textColor')
       .populate('createdBy', 'name')
@@ -368,7 +369,8 @@ const getExams = async (req, res) => {
 const getExamById = async (req, res) => {
   try {
     const exam = await Exam.findById(req.params.id)
-      .populate('lesson', 'title criteria')
+      .populate('course', 'title')
+      .populate('lesson', 'title criteria course')
       .populate('classSchedules.class', 'name students')
       .populate('level', 'name bgColor textColor')
       .populate('createdBy', 'name');
@@ -383,7 +385,7 @@ const getExamById = async (req, res) => {
 const createExam = async (req, res) => {
   try {
     console.log('[createExam] classSchedules received:', JSON.stringify(req.body.classSchedules));
-    const allowed = ['title', 'content', 'lesson', 'level', 'totalQuestions', 'isTemplate', 'note', 'pdfAttachments', 'levels', 'classSchedules', 'examPackage'];
+    const allowed = ['title', 'content', 'course', 'lesson', 'level', 'totalQuestions', 'isTemplate', 'note', 'pdfAttachments', 'levels', 'classSchedules', 'examPackage'];
     const data = {};
     allowed.forEach(field => { if (field in req.body) data[field] = req.body[field]; });
     data.createdBy = req.user._id;
@@ -398,7 +400,7 @@ const createExam = async (req, res) => {
 const updateExam = async (req, res) => {
   try {
     console.log('[updateExam] classSchedules received:', JSON.stringify(req.body.classSchedules));
-    const allowed = ['title', 'content', 'lesson', 'level', 'totalQuestions', 'isTemplate', 'note', 'pdfAttachments', 'levels', 'classSchedules', 'examPackage'];
+    const allowed = ['title', 'content', 'course', 'lesson', 'level', 'totalQuestions', 'isTemplate', 'note', 'pdfAttachments', 'levels', 'classSchedules', 'examPackage'];
     const $set = {};
     allowed.forEach(field => {
       if (field in req.body) $set[field] = req.body[field];
@@ -409,7 +411,8 @@ const updateExam = async (req, res) => {
       { $set },
       { new: true, runValidators: false }
     )
-      .populate('lesson', 'title criteria')
+      .populate('course', 'title')
+      .populate('lesson', 'title criteria course')
       .populate('classSchedules.class', 'name')
       .populate('level', 'name bgColor textColor');
 

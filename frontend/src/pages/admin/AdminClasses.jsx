@@ -448,15 +448,10 @@ export default function AdminClasses() {
     const getLessonScheduleValue = (lessonId) =>
       lessonScheduleDrafts[lessonId] || classLessonSettings[lessonId]?.autoOpenAt || '';
 
-    const existingAutoOpenDates = sortedLessons
-      .map((lesson) => {
-        const value = getLessonScheduleValue(lesson._id);
-        const date = value ? new Date(value) : null;
-        return date && !Number.isNaN(date.getTime()) ? date : null;
-      })
-      .filter(Boolean)
-      .sort((a, b) => b - a);
-    const lessonsToSchedule = sortedLessons.filter((lesson) => !getLessonScheduleValue(lesson._id));
+    const firstUnscheduledIndex = sortedLessons.findIndex((lesson) => !getLessonScheduleValue(lesson._id));
+    const lessonsToSchedule = firstUnscheduledIndex === -1
+      ? []
+      : sortedLessons.slice(firstUnscheduledIndex).filter((lesson) => !getLessonScheduleValue(lesson._id));
 
     if (!lessonsToSchedule.length) {
       toast.success('Tất cả bài học đã có lịch tự mở');
@@ -471,8 +466,17 @@ export default function AdminClasses() {
       snapshotDrafts[lessonId] = lessonScheduleDrafts[lessonId] ?? snapshotSettings[lessonId].autoOpenAt ?? '';
     });
 
-    const firstLessonStartAt = existingAutoOpenDates[0]
-      ? addMinutes(existingAutoOpenDates[0], 60)
+    const previousAutoOpenDates = sortedLessons
+      .slice(0, firstUnscheduledIndex)
+      .map((lesson) => {
+        const value = getLessonScheduleValue(lesson._id);
+        const date = value ? new Date(value) : null;
+        return date && !Number.isNaN(date.getTime()) ? date : null;
+      })
+      .filter(Boolean);
+    const latestPreviousAutoOpenAt = previousAutoOpenDates[previousAutoOpenDates.length - 1];
+    const firstLessonStartAt = latestPreviousAutoOpenAt
+      ? addMinutes(latestPreviousAutoOpenAt, 60)
       : new Date();
     const sessions = getNextClassSessions(classDetail, lessonsToSchedule.length, firstLessonStartAt);
 
