@@ -46,6 +46,7 @@ export default function AdminLessonEditor() {
   const [autoSaving, setAutoSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState(null);
   const [draftId, setDraftId] = useState(null); // ID bài học nháp tạo ra khi auto-save bài mới
+  const [lastCreatedLesson, setLastCreatedLesson] = useState(null);
   const [aiForm, setAiForm] = useState({
     provider: '',
     grade: '',
@@ -82,6 +83,26 @@ export default function AdminLessonEditor() {
     if (orderA !== orderB) return orderA - orderB;
     return String(a.title || '').localeCompare(String(b.title || ''), 'vi');
   });
+
+  const resetCreateForm = (courseIdToUse = currentCourseId, lessons = sortedCourseLessons, clearLastCreated = true) => {
+    const nextOrder = lessons.reduce((maxOrder, lesson) => {
+      const order = Number(lesson.order) || 0;
+      return order > maxOrder ? order : maxOrder;
+    }, 0) + 1;
+
+    setForm({ ...emptyLesson, course: courseIdToUse || '', order: nextOrder });
+    setDraftId(null);
+    draftIdRef.current = null;
+    setCriteria([]);
+    setNewCritName('');
+    setNewCritDesc('');
+    setEditCritId(null);
+    setEditCritName('');
+    setEditCritDesc('');
+    setLastSaved(null);
+    if (clearLastCreated) setLastCreatedLesson(null);
+    setAiForm(prev => ({ ...prev, chapter: '', topic: '', description: '' }));
+  };
 
   useEffect(() => {
     api.get('/courses/admin/all').then(res => setCourses(res.data || [])).catch(() => setCourses([]));
@@ -296,19 +317,40 @@ export default function AdminLessonEditor() {
       // Khi tạo mới, gửi kèm criteria (đã thu thập local)
       const criteriaToSend = isEdit ? undefined : criteria.map(({ name, description }) => ({ name, description }));
       const submitData = isEdit ? form : { ...form, course: courseIdToUse, criteria: criteriaToSend };
+      let savedLesson = null;
 
       if (isEdit) {
-        await api.put(`/lessons/${id}`, submitData);
+        const { data } = await api.put(`/lessons/${id}`, submitData);
+        savedLesson = data;
         toast.success('Cập nhật bài học thành công');
       } else if (draftId) {
         // Bài mới đã được auto-save → PUT nháp với trạng thái cuối cùng
-        await api.put(`/lessons/${draftId}`, submitData);
+        const { data } = await api.put(`/lessons/${draftId}`, submitData);
+        savedLesson = data;
         toast.success('Tạo bài học thành công');
       } else {
-        await api.post('/lessons', submitData);
+        const { data } = await api.post('/lessons', submitData);
+        savedLesson = data;
         toast.success('Tạo bài học thành công');
       }
-      navigate(`/admin/content?course=${courseIdToUse}`);
+      if (isEdit) {
+        navigate(`/admin/content?course=${courseIdToUse}`);
+        return;
+      }
+
+      setLastCreatedLesson(savedLesson);
+      try {
+        const { data } = await api.get(`/lessons?course=${courseIdToUse}`);
+        const nextLessons = data || [];
+        setCourseLessons(nextLessons);
+        resetCreateForm(courseIdToUse, nextLessons, false);
+      } catch {
+        const nextLessons = savedLesson?._id
+          ? [...courseLessons.filter(lesson => lesson._id !== savedLesson._id), savedLesson]
+          : courseLessons;
+        setCourseLessons(nextLessons);
+        resetCreateForm(courseIdToUse, nextLessons, false);
+      }
     } catch (err) {
       toast.error(err.response?.data?.message || 'Lỗi khi lưu bài học');
     } finally {
@@ -340,6 +382,18 @@ export default function AdminLessonEditor() {
           </h1>
           {courseName && <p className="text-sm text-gray-500 mt-0.5">Khóa học: {courseName}</p>}
         </div>
+        {(
+          <button
+            type="button"
+            onClick={() => {
+              if (isEdit) navigate(currentCourseId ? `/admin/lessons/new?course=${currentCourseId}` : '/admin/lessons/new');
+              else resetCreateForm();
+            }}
+            className="btn-secondary flex items-center gap-2"
+          >
+            <FiPlus size={16} /> Thêm bài học mới
+          </button>
+        )}
         {/* Auto-save indicator */}
         <div className="text-xs text-gray-400 flex items-center gap-1 min-w-max">
           {autoSaving ? (
@@ -351,6 +405,12 @@ export default function AdminLessonEditor() {
           ) : null}
         </div>
       </div>
+
+      {!isEdit && lastCreatedLesson && (
+        <div className="mb-6 rounded-lg border border-green-100 bg-green-50 px-4 py-3 text-sm text-green-700">
+          Đã tạo bài học "{lastCreatedLesson.title || 'Chưa có tiêu đề'}". Form đã sẵn sàng cho bài tiếp theo.
+        </div>
+      )}
 
       <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
         <aside className="card h-fit overflow-hidden xl:sticky xl:top-6">
@@ -706,6 +766,8 @@ export default function AdminLessonEditor() {
           />
         </div>
 
+        {isEdit && (
+          <>
         {/* PDF Attachments */}
         <div className="card p-6">
           <label className="block text-sm font-medium text-gray-700 mb-3">Tệp PDF đính kèm</label>
@@ -792,6 +854,8 @@ export default function AdminLessonEditor() {
               </button>
             </div>
           </div>
+          </>
+        )}
 
 
         {/* Actions */}

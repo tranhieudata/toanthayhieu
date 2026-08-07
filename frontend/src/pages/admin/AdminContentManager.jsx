@@ -2,7 +2,8 @@ import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../../api/axios';
 import toast from 'react-hot-toast';
-import { FiBook, FiFileText, FiLayers, FiPlus, FiEdit2, FiTrash2, FiX, FiChevronRight, FiArrowLeft, FiDownload, FiEye, FiToggleLeft, FiToggleRight, FiPrinter, FiMenu } from 'react-icons/fi';
+import { FiBook, FiFileText, FiLayers, FiPlus, FiEdit2, FiTrash2, FiX, FiChevronRight, FiArrowLeft, FiDownload, FiEye, FiToggleLeft, FiToggleRight, FiPrinter, FiMenu, FiZap } from 'react-icons/fi';
+import VN_MATH_CURRICULUM from '../../utils/vnMathCurriculum';
 import 'katex/dist/katex.min.css';
 import katex from 'katex';
 
@@ -24,6 +25,10 @@ export default function AdminContentManager() {
   const [coursePage, setCoursePage] = useState(1);
   const [lessonPage, setLessonPage] = useState(1);
   const [dragLessonId, setDragLessonId] = useState(null);
+  const [curriculum, setCurriculum] = useState(VN_MATH_CURRICULUM);
+  const [autoLessonTopic, setAutoLessonTopic] = useState('');
+  const [autoLessonGrade, setAutoLessonGrade] = useState('');
+  const [autoCreatingLesson, setAutoCreatingLesson] = useState(false);
 
   // Course form
   const [courseModal, setCourseModal] = useState(false);
@@ -108,6 +113,14 @@ export default function AdminContentManager() {
     api.get('/levels').then(r => setClassLevels(r.data || [])).catch(() => {});
   }, []);
 
+  useEffect(() => {
+    api.get('/settings')
+      .then(({ data }) => {
+        if (data?.curriculum && Object.keys(data.curriculum).length > 0) setCurriculum(data.curriculum);
+      })
+      .catch(() => {});
+  }, []);
+
   // Load courses
   useEffect(() => {
     const returnCourseId = searchParams.get('course');
@@ -131,8 +144,17 @@ export default function AdminContentManager() {
         .catch(() => setLessons([]));
       setSelectedLesson(null);
       setExercises([]);
+      setAutoLessonTopic('');
     }
   }, [selectedCourse]);
+
+  useEffect(() => {
+    if (!selectedCourse) return;
+    const courseText = `${selectedCourse.level?.name || ''} ${selectedCourse.title || ''}`;
+    const match = courseText.match(/(?:lớp|lop|khối|khoi)\s*(6|7|8|9|10|11|12)\b/i) || courseText.match(/\b(6|7|8|9|10|11|12)\b/);
+    const nextGrade = match?.[1] && curriculum?.[match[1]] ? match[1] : Object.keys(curriculum || {})[0] || '';
+    setAutoLessonGrade(nextGrade);
+  }, [selectedCourse, curriculum]);
 
   // Load exercises when lesson selected
   useEffect(() => {
@@ -329,6 +351,42 @@ export default function AdminContentManager() {
   const lessonPageStart = (safeLessonPage - 1) * LESSONS_PER_PAGE;
   const lessonPageEnd = Math.min(lessonPageStart + LESSONS_PER_PAGE, visibleLessons.length);
   const paginatedLessons = visibleLessons.slice(lessonPageStart, lessonPageEnd);
+  const curriculumGrades = Object.keys(curriculum || {}).sort((a, b) => Number(a) - Number(b));
+  const autoLessonTopics = Object.values((curriculum || {})[autoLessonGrade] || {})
+    .flatMap(topics => Array.isArray(topics) ? topics : [])
+    .map(topic => String(topic || '').trim())
+    .filter(Boolean);
+
+  const handleAutoCreateLessonFromTopic = async () => {
+    if (!selectedCourse?._id) return;
+    const title = autoLessonTopic.trim();
+    if (!title) return toast.error('Chọn chủ đề trước');
+
+    const exists = lessons.some(lesson => String(lesson.title || '').trim().toLowerCase() === title.toLowerCase());
+    if (exists) return toast.error('Chủ đề này đã có bài học trong khóa học');
+
+    const nextOrder = lessons.reduce((maxOrder, lesson) => Math.max(maxOrder, Number(lesson.order) || 0), 0) + 1;
+    setAutoCreatingLesson(true);
+    try {
+      await api.post('/lessons', {
+        title,
+        course: selectedCourse._id,
+        order: nextOrder,
+        duration: '',
+        content: '',
+        videoUrl: '',
+        isPublished: false,
+      });
+      const { data } = await api.get(`/lessons?course=${selectedCourse._id}`);
+      setLessons(data || []);
+      setAutoLessonTopic('');
+      toast.success('Đã tạo bài học tự động');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Không tạo được bài học tự động');
+    } finally {
+      setAutoCreatingLesson(false);
+    }
+  };
 
   const handleLessonDrop = async (targetLessonId) => {
     if (!canReorderLessons || !dragLessonId || dragLessonId === targetLessonId) {
@@ -509,7 +567,7 @@ export default function AdminContentManager() {
               </div>
 
               {/* Search and actions */}
-              <div className="flex gap-3">
+              <div className="flex flex-wrap gap-3">
                 <input
                   type="text"
                   placeholder="Tìm kiếm bài học..."
@@ -520,6 +578,32 @@ export default function AdminContentManager() {
                     setLessonPage(1);
                   }}
                 />
+                <select
+                  className="input-field w-28"
+                  value={autoLessonGrade}
+                  onChange={e => {
+                    setAutoLessonGrade(e.target.value);
+                    setAutoLessonTopic('');
+                  }}
+                >
+                  {curriculumGrades.map(grade => <option key={grade} value={grade}>Lớp {grade}</option>)}
+                </select>
+                <select
+                  className="input-field w-64"
+                  value={autoLessonTopic}
+                  onChange={e => setAutoLessonTopic(e.target.value)}
+                >
+                  <option value="">Chọn chủ đề</option>
+                  {autoLessonTopics.map((topic, index) => <option key={`${topic}-${index}`} value={topic}>{topic}</option>)}
+                </select>
+                <button
+                  type="button"
+                  onClick={handleAutoCreateLessonFromTopic}
+                  disabled={autoCreatingLesson || !autoLessonTopic}
+                  className="btn-secondary flex items-center gap-2 disabled:opacity-50"
+                >
+                  <FiZap size={16} /> {autoCreatingLesson ? 'Đang tạo...' : 'Tạo tự động'}
+                </button>
                 <button
                   onClick={openCreateLesson}
                   className="btn-primary flex items-center gap-2"

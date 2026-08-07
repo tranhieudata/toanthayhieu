@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../api/axios';
 import toast from 'react-hot-toast';
+import VN_MATH_CURRICULUM from '../../utils/vnMathCurriculum';
 import {
   FiBookOpen,
   FiClock,
@@ -11,6 +12,7 @@ import {
   FiToggleRight,
   FiTrash2,
   FiVideo,
+  FiZap,
 } from 'react-icons/fi';
 
 export default function AdminLessons() {
@@ -18,6 +20,9 @@ export default function AdminLessons() {
   const [lessons, setLessons] = useState([]);
   const [courses, setCourses] = useState([]);
   const [selectedLessonId, setSelectedLessonId] = useState('');
+  const [curriculum, setCurriculum] = useState(VN_MATH_CURRICULUM);
+  const [autoCreateForm, setAutoCreateForm] = useState({ course: '', grade: '', topic: '' });
+  const [autoCreating, setAutoCreating] = useState(false);
 
   const courseTitle = (lesson) => {
     const courseId = lesson?.course?._id || lesson?.course;
@@ -40,6 +45,11 @@ export default function AdminLessons() {
   const selectedLesson = useMemo(() => {
     return sortedLessons.find((lesson) => lesson._id === selectedLessonId) || sortedLessons[0] || null;
   }, [sortedLessons, selectedLessonId]);
+  const curriculumGrades = Object.keys(curriculum || {}).sort((a, b) => Number(a) - Number(b));
+  const selectedTopics = Object.values(autoCreateForm.grade ? curriculum?.[autoCreateForm.grade] || {} : {})
+    .flatMap((topics) => Array.isArray(topics) ? topics : [])
+    .map((topic) => String(topic || '').trim())
+    .filter(Boolean);
 
   const loadLessons = () => api.get('/lessons').then((res) => {
     const items = res.data || [];
@@ -49,8 +59,27 @@ export default function AdminLessons() {
 
   useEffect(() => {
     loadLessons();
-    api.get('/courses/admin/all').then((res) => setCourses(res.data || [])).catch(() => setCourses([]));
+    api.get('/courses/admin/all').then((res) => {
+      const items = res.data || [];
+      setCourses(items);
+      setAutoCreateForm((prev) => ({ ...prev, course: prev.course || items[0]?._id || '' }));
+    }).catch(() => setCourses([]));
+    api.get('/settings')
+      .then(({ data }) => {
+        if (data?.curriculum && Object.keys(data.curriculum).length > 0) setCurriculum(data.curriculum);
+      })
+      .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!autoCreateForm.course || autoCreateForm.grade) return;
+    const selectedCourse = courses.find((course) => course._id === autoCreateForm.course);
+    const courseText = `${selectedCourse?.level?.name || ''} ${selectedCourse?.title || ''}`;
+    const match = courseText.match(/(?:lớp|lop|khối|khoi)\s*(6|7|8|9|10|11|12)\b/i) || courseText.match(/\b(6|7|8|9|10|11|12)\b/);
+    if (match?.[1] && curriculum?.[match[1]]) {
+      setAutoCreateForm((prev) => ({ ...prev, grade: match[1], topic: '' }));
+    }
+  }, [autoCreateForm.course, autoCreateForm.grade, courses, curriculum]);
 
   const openCreate = () => {
     navigate('/admin/lessons/new');
@@ -83,6 +112,44 @@ export default function AdminLessons() {
     }
   };
 
+  const handleAutoCreateLessons = async () => {
+    const courseId = autoCreateForm.course;
+    if (!courseId) return toast.error('Chọn khóa học trước');
+    if (!autoCreateForm.grade || !autoCreateForm.topic) return toast.error('Chọn lớp và chủ đề trước');
+
+    const lessonsInCourse = lessons.filter((lesson) => String(lesson.course?._id || lesson.course) === String(courseId));
+    const existingTitles = new Set(lessonsInCourse.map((lesson) => String(lesson.title || '').trim().toLowerCase()).filter(Boolean));
+    const title = autoCreateForm.topic.trim();
+
+    if (existingTitles.has(title.toLowerCase())) {
+      toast.success('Chủ đề này đã có bài học');
+      return;
+    }
+
+    const orderBase = lessonsInCourse.reduce((maxOrder, lesson) => Math.max(maxOrder, Number(lesson.order) || 0), 0);
+    setAutoCreating(true);
+    try {
+      const { data: created } = await api.post('/lessons', {
+        title,
+        course: courseId,
+        order: orderBase + 1,
+        duration: '',
+        content: '',
+        videoUrl: '',
+        isPublished: false,
+      });
+
+      await loadLessons();
+      if (created?._id) setSelectedLessonId(created._id);
+      setAutoCreateForm((prev) => ({ ...prev, topic: '' }));
+      toast.success('Đã tạo bài học từ danh mục chủ đề');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Không tạo được bài học tự động');
+    } finally {
+      setAutoCreating(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -93,6 +160,59 @@ export default function AdminLessons() {
         <button onClick={openCreate} className="btn-primary flex items-center justify-center gap-2">
           <FiPlus /> Thêm bài học
         </button>
+      </div>
+
+      <div className="card p-4">
+        <div className="grid gap-3 lg:grid-cols-[minmax(180px,1fr)_140px_minmax(180px,1fr)_auto] lg:items-end">
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-gray-500">Khóa học</span>
+            <select
+              className="input-field"
+              value={autoCreateForm.course}
+              onChange={(e) => setAutoCreateForm((prev) => ({ ...prev, course: e.target.value, grade: '', topic: '' }))}
+            >
+              <option value="">Chọn khóa học</option>
+              {courses.map((course) => (
+                <option key={course._id} value={course._id}>{course.title}</option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-gray-500">Lớp</span>
+            <select
+              className="input-field"
+              value={autoCreateForm.grade}
+              onChange={(e) => setAutoCreateForm((prev) => ({ ...prev, grade: e.target.value, topic: '' }))}
+            >
+              <option value="">Chọn lớp</option>
+              {curriculumGrades.map((grade) => (
+                <option key={grade} value={grade}>Lớp {grade}</option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-gray-500">Chủ đề</span>
+            <select
+              className="input-field"
+              value={autoCreateForm.topic}
+              onChange={(e) => setAutoCreateForm((prev) => ({ ...prev, topic: e.target.value }))}
+              disabled={!autoCreateForm.grade}
+            >
+              <option value="">Chọn chủ đề</option>
+              {selectedTopics.map((topic, index) => (
+                <option key={`${topic}-${index}`} value={topic}>{topic}</option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            onClick={handleAutoCreateLessons}
+            disabled={autoCreating || !autoCreateForm.course || !autoCreateForm.grade || !autoCreateForm.topic}
+            className="btn-secondary flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            <FiZap size={16} /> {autoCreating ? 'Đang tạo...' : 'Tạo từ chủ đề'}
+          </button>
+        </div>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
