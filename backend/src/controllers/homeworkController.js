@@ -29,6 +29,11 @@ function getParentPrintUrl(homework) {
 
 function examPackageToHomeworkText(examPackage) {
   if (!examPackage) return '';
+  const hasQuestions = Boolean(
+    (examPackage.questions?.multipleChoice || []).length ||
+    (examPackage.questions?.essay || []).length
+  );
+  if (!hasQuestions) return '';
   const mc = (examPackage.questions?.multipleChoice || []).map((q, i) => {
     const options = ['A', 'B', 'C', 'D'].map(key => `${key}. ${q.options?.[key] || ''}`).join('\n');
     return `Cau ${q.number || i + 1}. ${q.question || ''}\n${options}`;
@@ -47,6 +52,13 @@ function examPackageToAnswerKey(examPackage) {
     ...(examPackage.questions?.multipleChoice || []).map((q, i) => `Cau ${q.number || i + 1}: ${q.answer || ''}`),
     ...(examPackage.questions?.essay || []).map((q, i) => `Bai ${i + 1}: ${q.solution || ''}`),
   ].filter(Boolean).join('\n');
+}
+
+function hasExamPackageQuestions(examPackage) {
+  return Boolean(
+    (examPackage?.questions?.multipleChoice || []).length ||
+    (examPackage?.questions?.essay || []).length
+  );
 }
 
 async function ensurePrintShareToken(homework) {
@@ -75,7 +87,9 @@ function withParentPrintUrl(homework) {
     sourceExam.examPackage !== undefined ||
     sourceExam.pdfAttachments !== undefined
   );
-  const sourceExamPackage = hasSourceExamDetail ? sourceExam.examPackage : null;
+  const sourceExamPackage = hasSourceExamDetail && hasExamPackageQuestions(sourceExam.examPackage)
+    ? sourceExam.examPackage
+    : null;
   const sourceDescription = hasSourceExamDetail
     ? (examPackageToHomeworkText(sourceExamPackage) || sourceExam.content || obj.description)
     : obj.description;
@@ -84,7 +98,7 @@ function withParentPrintUrl(homework) {
     ...obj,
     title: sourceExam?.title || obj.title,
     description: sourceDescription,
-    examPackage: sourceExamPackage || obj.examPackage || null,
+    examPackage: sourceExamPackage || (hasExamPackageQuestions(obj.examPackage) ? obj.examPackage : null),
     answerKey: hasSourceExamDetail ? (examPackageToAnswerKey(sourceExamPackage) || obj.answerKey || '') : obj.answerKey,
     pdfAttachments: hasSourceExamDetail ? (sourceExam.pdfAttachments || []) : (obj.pdfAttachments || []),
     parentPrintUrl: getParentPrintUrl(obj),
@@ -678,14 +692,18 @@ const getPublicHomeworkPrintByToken = async (req, res) => {
 
     const sourceExam = homework.sourceExam?.examPackage !== undefined ? homework.sourceExam : null;
     const sourceExamObj = sourceExam?.toObject ? sourceExam.toObject() : sourceExam;
+    const sourceExamPackage = hasExamPackageQuestions(sourceExamObj?.examPackage) ? sourceExamObj.examPackage : null;
+    const homeworkPackage = hasExamPackageQuestions(homework.examPackage) ? homework.examPackage : null;
 
     res.json({
       title: sourceExamObj?.title || homework.title,
-      description: sourceExamObj ? (sourceExamObj.content || homework.description) : homework.description,
+      description: sourceExamObj
+        ? (examPackageToHomeworkText(sourceExamPackage) || sourceExamObj.content || homework.description)
+        : (examPackageToHomeworkText(homeworkPackage) || homework.description),
       class: homework.class,
       lesson: homework.lesson,
       sourceExam: sourceExamObj ? { _id: sourceExamObj._id, title: sourceExamObj.title } : homework.sourceExam,
-      examPackage: sourceExamObj?.examPackage || homework.examPackage || null,
+      examPackage: sourceExamPackage || homeworkPackage || null,
       dueDate: homework.dueDate,
       pdfAttachments: sourceExamObj ? (sourceExamObj.pdfAttachments || []) : (homework.pdfAttachments || []),
       parentPrintUrl: getParentPrintUrl(homework),
@@ -799,18 +817,29 @@ const gradeSubmission = async (req, res) => {
     const { score, feedback, aiModel } = req.body;
   
 
-    const submission = await HomeworkSubmission.findOne({
+    const homework = await Homework.findById(homeworkId);
+    if (!homework) {
+      return res.status(404).json({ message: 'Không tìm thấy bài tập' });
+    }
+
+    let submission = await HomeworkSubmission.findOne({
       homework: homeworkId,
       student: studentId
     });
 
     if (!submission) {
-      return res.status(404).json({ message: 'Không tìm thấy bài làm' });
-    }
+      if ((aiModel || 'manual') !== 'manual') {
+        return res.status(404).json({ message: 'Không tìm thấy bài làm' });
+      }
 
-    const homework = await Homework.findById(homeworkId);
-    if (!homework) {
-      return res.status(404).json({ message: 'Không tìm thấy bài tập' });
+      submission = await HomeworkSubmission.create({
+        homework: homeworkId,
+        student: studentId,
+        class: homework.class,
+        submissionImages: [],
+        submittedAt: new Date(),
+        status: 'pending',
+      });
     }
 
     const student = await User.findById(studentId);
@@ -976,15 +1005,6 @@ const adminSubmitHomework = async (req, res) => {
 
     const homework = await Homework.findById(req.params.id);
     if (!homework) return res.status(404).json({ message: 'Không tìm thấy bài tập' });
-
-    const existingSubmission = await HomeworkSubmission.findOne({
-      homework: req.params.id,
-      student: studentId
-    });
-
-    if (!existingSubmission && submissionImages.length === 0) {
-      return res.status(400).json({ message: 'Cần ít nhất một ảnh' });
-    }
 
     // Tạo hoặc cập nhật submission
     const submission = await HomeworkSubmission.findOneAndUpdate(

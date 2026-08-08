@@ -238,6 +238,11 @@ function examPackageToText(examPackage) {
 
 function examPackageToHomeworkText(examPackage) {
   if (!examPackage) return '';
+  const hasQuestions = Boolean(
+    (examPackage.questions?.multipleChoice || []).length ||
+    (examPackage.questions?.essay || []).length
+  );
+  if (!hasQuestions) return '';
   const mc = (examPackage.questions?.multipleChoice || []).map((q, i) => {
     const options = ['A', 'B', 'C', 'D'].map(key => `${key}. ${q.options?.[key] || ''}`).join('\n');
     return `Cau ${q.number || i + 1}. ${q.question || ''}\n${options}`;

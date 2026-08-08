@@ -112,8 +112,15 @@ function examPackageHtml(paper) {
   `;
 }
 
+function hasExamPackageQuestions(paper) {
+  return Boolean(
+    (paper?.questions?.multipleChoice || []).length ||
+    (paper?.questions?.essay || []).length
+  );
+}
+
 function homeworkContentHtml(homework) {
-  if (homework?.examPackage) return examPackageHtml(homework.examPackage);
+  if (hasExamPackageQuestions(homework?.examPackage)) return examPackageHtml(homework.examPackage);
   if (hasHtml(homework?.description)) return renderStoredHtmlWithMath(homework.description);
   return renderMathHtml(homework?.description || '').replace(/\n/g, '<br />');
 }

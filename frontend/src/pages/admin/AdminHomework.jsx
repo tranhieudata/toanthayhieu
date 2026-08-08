@@ -28,6 +28,11 @@ const HOMEWORKS_PER_PAGE = 20;
 
 function examPackageToHomeworkText(paper) {
   if (!paper) return '';
+  const hasQuestions = Boolean(
+    (paper.questions?.multipleChoice || []).length ||
+    (paper.questions?.essay || []).length
+  );
+  if (!hasQuestions) return '';
   const mc = (paper.questions?.multipleChoice || []).map((q, index) => {
     const options = ['A', 'B', 'C', 'D'].map(key => `${key}. ${q.options?.[key] || ''}`).join('\n');
     return `Câu ${q.number || index + 1}. ${q.question || ''}\n${options}`;
@@ -550,17 +555,47 @@ export default function AdminHomework() {
     await saveAdminSubmissionImages(student._id, nextImages, 'Xóa ảnh thành công');
   };
 
-  const handleAdminSubmitHomework = async (studentId) => {
-    if (adminUploadImages.length === 0) {
-      return toast.error('Vui lòng upload ít nhất một ảnh');
-    }
+  const createEmptySubmissionForGrading = async (student) => {
+    if (!selectedHomework || !student?._id) return;
 
+    try {
+      const { data } = await api.post(`/homeworks/${selectedHomework._id}/submissions/admin-submit`, {
+        studentId: student._id,
+        submissionImages: [],
+      });
+
+      setSubmissions(prev => {
+        const exists = prev.some(sub => {
+          const submittedStudentId = sub.student?._id || sub.student;
+          return submittedStudentId?.toString() === student._id?.toString();
+        });
+        if (exists) {
+          return prev.map(sub => {
+            const submittedStudentId = sub.student?._id || sub.student;
+            return submittedStudentId?.toString() === student._id?.toString() ? data : sub;
+          });
+        }
+        return [...prev, data];
+      });
+
+      setAdminUploadingStudent(null);
+      setAdminUploadImages([]);
+      setGradingError('');
+      setGradingForm({ score: '', feedback: '', aiModel: 'manual' });
+      setGradingStudent(student);
+    } catch (err) {
+      console.error('Create empty submission error:', err);
+      toast.error(err.response?.data?.message || 'Lỗi tạo bài làm để chấm');
+    }
+  };
+
+  const handleAdminSubmitHomework = async (studentId) => {
     try {
       await api.post(`/homeworks/${selectedHomework._id}/submissions/admin-submit`, {
         studentId,
         submissionImages: adminUploadImages
       });
-      toast.success('Tạo bài làm thành công');
+      toast.success(adminUploadImages.length > 0 ? 'Tạo bài làm thành công' : 'Tạo bài làm để chấm thành công');
       setAdminUploadingStudent(null);
       setAdminUploadImages([]);
       loadSubmissions(selectedHomework._id);
@@ -1608,7 +1643,7 @@ export default function AdminHomework() {
                                     
                                     <div>
                                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                                        Ảnh bài làm *
+                                        Ảnh bài làm
                                       </label>
                                       <div
                                         tabIndex={0}
@@ -1706,15 +1741,25 @@ export default function AdminHomework() {
                                     </div>
                                   </div>
                                 ) : (
-                                  <button
-                                    onClick={() => {
-                                      setAdminUploadingStudent(student);
-                                      setAdminUploadImages([]);
-                                    }}
-                                    className="w-full px-3 py-2 bg-green-50 text-green-600 border border-green-300 rounded-lg hover:bg-green-100 flex items-center justify-center gap-2"
-                                  >
-                                    <FiCamera /> Chụp / Upload bài làm
-                                  </button>
+                                  <div className="grid gap-2 sm:grid-cols-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => createEmptySubmissionForGrading(student)}
+                                      className="w-full px-3 py-2 bg-blue-50 text-blue-600 border border-blue-300 rounded-lg hover:bg-blue-100 flex items-center justify-center gap-2"
+                                    >
+                                      <FiEdit3 /> Chấm điểm
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setAdminUploadingStudent(student);
+                                        setAdminUploadImages([]);
+                                      }}
+                                      className="w-full px-3 py-2 bg-green-50 text-green-600 border border-green-300 rounded-lg hover:bg-green-100 flex items-center justify-center gap-2"
+                                    >
+                                      <FiCamera /> Chụp / Upload bài làm
+                                    </button>
+                                  </div>
                                 )}
                               </>
                             )}

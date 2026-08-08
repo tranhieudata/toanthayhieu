@@ -145,6 +145,11 @@ function buildPrintablePdfs({ homeworks, manualPdfs }) {
 
 function examPackageToHomeworkText(paper) {
   if (!paper) return '';
+  const hasQuestions = Boolean(
+    (paper.questions?.multipleChoice || []).length ||
+    (paper.questions?.essay || []).length
+  );
+  if (!hasQuestions) return '';
   const mc = (paper.questions?.multipleChoice || []).map((q, index) => {
     const options = ['A', 'B', 'C', 'D'].map((key) => `${key}. ${q.options?.[key] || ''}`).join('\n');
     return `Câu ${q.number || index + 1}. ${q.question || ''}\n${options}`;
