@@ -174,10 +174,14 @@ export default function PublicHomeworkPrintPage() {
             </button>
           </div>
           <div className="mt-2 space-y-1 text-sm text-gray-500">
+            <p>Toán Thầy Hiếu - Học Là Hiểu - 038.2468.988</p>
+            {/* hiển thị ngày dạng 20-08-2026 */}
+            
             {homework.class?.name && <p>Lớp: {homework.class.name}</p>}
             {homework.lesson?.title && <p>Bài học: {homework.lesson.title}</p>}
-            {homework.sourceExam?.title && <p>Nguồn đề: {homework.sourceExam.title}</p>}
-            {homework.dueDate && <p>Hạn nộp: {formatDate(homework.dueDate)}</p>}
+            
+            
+
           </div>
         </div>
 

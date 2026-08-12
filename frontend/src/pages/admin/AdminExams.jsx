@@ -440,6 +440,29 @@ export default function AdminExams() {
     }
   };
 
+  const openParentPrintLink = async (examId) => {
+    const printWindow = window.open('', '_blank');
+    try {
+      const { data } = await api.get('/homeworks', { params: { sourceExam: examId } });
+      const homework = (data || []).find(item => item.parentPrintUrl) || data?.[0];
+      const printUrl = homework?.parentPrintUrl || (homework?.printShareToken ? `/print/homework/${homework.printShareToken}` : '');
+
+      if (!printUrl) {
+        printWindow?.close();
+        return toast.error('Đề này chưa có link phụ huynh');
+      }
+
+      if (printWindow) {
+        printWindow.location.href = printUrl;
+      } else {
+        window.location.href = printUrl;
+      }
+    } catch {
+      printWindow?.close();
+      toast.error('Không mở được link phụ huynh');
+    }
+  };
+
   const downloadWord = async (exam) => {
     if (!exam?.examPackage) {
       return toast.error('Đề này chưa có gói Word từ tab soạn đề AI');
@@ -582,8 +605,9 @@ export default function AdminExams() {
                 <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900 group-hover:text-blue-700">
                   {exam.title || 'Tạo Đề'}
                 </span>
-                <div className="flex shrink-0 items-center gap-1">
+                <div className="flex shrink-0 items-center gap-2">
                   <button onClick={(e) => { e.stopPropagation(); openPreview(exam._id); }} className="p-1.5 text-emerald-600 hover:bg-emerald-100 rounded" title="Xem đề"><FiEye size={15} /></button>
+                  <button onClick={(e) => { e.stopPropagation(); openParentPrintLink(exam._id); }} className="p-1.5 text-purple-600 hover:bg-purple-100 rounded" title="Xem link phụ huynh"><FiPrinter size={15} /></button>
                   <button onClick={(e) => { e.stopPropagation(); navigate(`/admin/exams/${exam._id}/edit`); }} className="p-1.5 text-blue-500 hover:bg-blue-100 rounded" title="Sửa"><FiEdit2 size={15} /></button>
                   <button onClick={(e) => { e.stopPropagation(); handleDelete(exam._id); }} disabled={deleting === exam._id} className="p-1.5 text-red-400 hover:bg-red-100 rounded disabled:opacity-40" title="Xóa"><FiTrash2 size={15} /></button>
                 </div>
