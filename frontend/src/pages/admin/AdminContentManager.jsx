@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../../api/axios';
 import toast from 'react-hot-toast';
-import { FiBook, FiFileText, FiLayers, FiPlus, FiEdit2, FiTrash2, FiX, FiChevronRight, FiArrowLeft, FiDownload, FiEye, FiToggleLeft, FiToggleRight, FiPrinter, FiMenu, FiZap } from 'react-icons/fi';
+import { FiBook, FiFileText, FiLayers, FiPlus, FiEdit2, FiTrash2, FiX, FiChevronRight, FiArrowLeft, FiDownload, FiEye, FiToggleLeft, FiToggleRight, FiPrinter, FiMenu, FiZap, FiExternalLink } from 'react-icons/fi';
 import VN_MATH_CURRICULUM from '../../utils/vnMathCurriculum';
 import 'katex/dist/katex.min.css';
 import katex from 'katex';
@@ -230,6 +230,14 @@ export default function AdminContentManager() {
 
   const openEditLesson = (lesson) => {
     navigate(`/admin/lessons/${lesson._id}/edit`);
+  };
+
+  const openCourseAsStudent = (courseId) => {
+    window.open(`/courses/${courseId}`, '_blank', 'noopener,noreferrer');
+  };
+
+  const openLessonAsStudent = (lessonId) => {
+    window.open(`/lesson/${lessonId}`, '_blank', 'noopener,noreferrer');
   };
 
   const handleDeleteLesson = async (id) => {
@@ -491,6 +499,13 @@ export default function AdminContentManager() {
                           <FiEye size={18} />
                         </button>
                         <button
+                          onClick={() => openCourseAsStudent(course._id)}
+                          className="text-emerald-600 hover:text-emerald-800 p-2 hover:bg-emerald-50 rounded-lg transition-colors"
+                          title="Xem như học sinh"
+                        >
+                          <FiExternalLink size={18} />
+                        </button>
+                        <button
                           onClick={() => handleEditCourse(course)}
                           className="text-green-600 hover:text-green-800 p-2 hover:bg-green-50 rounded-lg transition-colors"
                           title="Sửa khóa học"
@@ -610,6 +625,13 @@ export default function AdminContentManager() {
                 >
                   <FiPlus size={16} /> Thêm bài học
                 </button>
+                <button
+                  type="button"
+                  onClick={() => openCourseAsStudent(selectedCourse._id)}
+                  className="btn-secondary flex items-center gap-2"
+                >
+                  <FiExternalLink size={16} /> Xem khóa học như học sinh
+                </button>
               </div>
             </div>
           </div>
@@ -691,6 +713,13 @@ export default function AdminContentManager() {
                         >
                           <FiChevronRight size={18} />
                         </button>
+                        <button
+                          onClick={e => { e.stopPropagation(); openLessonAsStudent(lesson._id); }}
+                          className="text-emerald-600 hover:text-emerald-800 p-2 hover:bg-emerald-50 rounded-lg"
+                          title="Xem như học sinh"
+                        >
+                          <FiExternalLink size={18} />
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -737,6 +766,12 @@ export default function AdminContentManager() {
                       className="flex items-center gap-1 text-xs bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700"
                     >
                       <FiPrinter size={14} /> In bài
+                    </button>
+                    <button
+                      onClick={() => openLessonAsStudent(selectedLesson._id)}
+                      className="flex items-center gap-1 text-xs bg-emerald-600 text-white px-3 py-1.5 rounded hover:bg-emerald-700"
+                    >
+                      <FiExternalLink size={14} /> Xem như học sinh
                     </button>
                     <button onClick={() => { setSelectedLesson(null); setExercises([]); }}>
                       <FiX size={24} />

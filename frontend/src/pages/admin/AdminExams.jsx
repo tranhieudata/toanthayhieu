@@ -200,11 +200,15 @@ function buildPrintableExamHtml(paper) {
 }
 
 function printExamContent(exam) {
-  const html = hasExamPackageQuestions(exam.examPackage)
+  const examHtml = hasExamPackageQuestions(exam.examPackage)
     ? buildPrintableExamHtml(exam.examPackage)
     : hasMeaningfulHtml(exam.content)
       ? renderStoredExamContentHtml(exam.content)
       : '';
+  const solutionHtml = hasMeaningfulHtml(exam.solutionContent)
+    ? `<section class="solution-content"><h3>Lời giải / đáp án</h3>${renderStoredExamContentHtml(exam.solutionContent)}</section>`
+    : '';
+  const html = [examHtml, solutionHtml].filter(Boolean).join('');
   if (!html) return toast.error('Đề này chưa có nội dung để in');
   const inheritedStyles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
     .map(node => node.outerHTML)
@@ -340,6 +344,16 @@ function PaperPreview({ paper }) {
       <section className="border-t pt-4">
         <h3 className="font-bold mb-2">Đáp án và hướng dẫn chấm</h3>
         <p><strong>Trắc nghiệm:</strong> {(paper.questions?.multipleChoice || []).map(q => `${q.number}${q.answer}`).join(' - ')}</p>
+        {(paper.questions?.multipleChoice || []).some(q => q.explanation) && (
+          <div className="mt-3 space-y-2">
+            {(paper.questions?.multipleChoice || []).filter(q => q.explanation).map((q, index) => (
+              <div key={q.number || index}>
+                <p className="font-bold">Câu {q.number || index + 1}</p>
+                <p>{renderMathText(q.explanation)}</p>
+              </div>
+            ))}
+          </div>
+        )}
         <div className="mt-3 space-y-2">
           {(paper.questions?.essay || []).map((q, index) => (
             <div key={q.number}>
@@ -698,7 +712,7 @@ export default function AdminExams() {
                 <div className="flex justify-center py-12">
                   <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
                 </div>
-              ) : hasExamPackageQuestions(previewExam?.examPackage) || hasMeaningfulHtml(previewExam?.content) || previewExam?.pdfAttachments?.length ? (
+              ) : hasExamPackageQuestions(previewExam?.examPackage) || hasMeaningfulHtml(previewExam?.content) || hasMeaningfulHtml(previewExam?.solutionContent) || previewExam?.pdfAttachments?.length ? (
                 <div className="space-y-5">
                   {previewExam?.pdfAttachments?.length > 0 && (
                     <div className="rounded-lg border border-blue-100 bg-blue-50 p-3">
@@ -727,6 +741,15 @@ export default function AdminExams() {
                       dangerouslySetInnerHTML={{ __html: renderStoredExamContentHtml(previewExam.content) }}
                     />
                   ) : null}
+                  {hasMeaningfulHtml(previewExam?.solutionContent) && (
+                    <section className="mt-8 border-t border-emerald-100 pt-5">
+                      <h3 className="mb-3 font-semibold text-emerald-700">Lời giải / đáp án cho admin</h3>
+                      <div
+                        className="prose max-w-none rounded-lg border border-emerald-100 bg-emerald-50/40 p-4"
+                        dangerouslySetInnerHTML={{ __html: renderStoredExamContentHtml(previewExam.solutionContent) }}
+                      />
+                    </section>
+                  )}
                 </div>
               ) : (
                 <div className="text-center text-gray-400 py-12">

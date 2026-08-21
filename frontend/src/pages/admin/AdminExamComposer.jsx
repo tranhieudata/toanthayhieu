@@ -33,8 +33,8 @@ const defaultForm = {
   essayPoints: 7,
 };
 
-const round2 = (value) => Number((Number(value) || 0).toFixed(2));
-const pointText = (value) => Number(value || 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 });
+const round2 = (value) => Number((Number(value) || 0).toFixed(4));
+const pointText = (value) => Number(value || 0).toLocaleString('vi-VN', { maximumFractionDigits: 4 });
 
 function extractGradeFromLevel(level) {
   const match = String(level?.name || '').match(/\d+/);
@@ -57,7 +57,10 @@ function examPackageToHomeworkText(paper) {
 
 function examPackageToAnswerKey(paper) {
   if (!paper) return '';
-  const mc = (paper.questions?.multipleChoice || []).map((q, index) => `Câu ${q.number || index + 1}: ${q.answer || ''}`);
+  const mc = (paper.questions?.multipleChoice || []).map((q, index) => {
+    const explanation = q.explanation ? ` - ${q.explanation}` : '';
+    return `Câu ${q.number || index + 1}: ${q.answer || ''}${explanation}`;
+  });
   const essay = (paper.questions?.essay || []).map((q, index) => `Bài ${index + 1}: ${q.solution || ''}`);
   return [...mc, ...essay].filter(Boolean).join('\n');
 }
@@ -187,7 +190,7 @@ function CellInput({ value, onChange }) {
       <input
         type="number"
         min="0"
-        step="0.25"
+        step="any"
         className="w-full rounded-lg border border-gray-300 px-2 py-1 text-center text-blue-700"
         value={value.points}
         onChange={e => onChange({ ...value, points: Math.max(0, Number(e.target.value) || 0) })}
@@ -494,7 +497,7 @@ export default function AdminExamComposer({ onSaved }) {
                 </label>
                 <label className="space-y-1">
                   <span className="text-sm">Tổng điểm TN</span>
-                  <input type="number" min="0" step="0.25" className="w-full rounded-lg border border-gray-300 px-3 py-2" value={form.mcPoints} onChange={e => updateForm('mcPoints', e.target.value)} />
+                  <input type="number" min="0" step="any" className="w-full rounded-lg border border-gray-300 px-3 py-2" value={form.mcPoints} onChange={e => updateForm('mcPoints', e.target.value)} />
                 </label>
               </div>
             </div>
@@ -507,7 +510,7 @@ export default function AdminExamComposer({ onSaved }) {
                 </label>
                 <label className="space-y-1">
                   <span className="text-sm">Tổng điểm TL</span>
-                  <input type="number" min="0" step="0.25" className="w-full rounded-lg border border-gray-300 px-3 py-2" value={form.essayPoints} onChange={e => updateForm('essayPoints', e.target.value)} />
+                  <input type="number" min="0" step="any" className="w-full rounded-lg border border-gray-300 px-3 py-2" value={form.essayPoints} onChange={e => updateForm('essayPoints', e.target.value)} />
                 </label>
               </div>
             </div>
@@ -707,6 +710,16 @@ export default function AdminExamComposer({ onSaved }) {
               <section className="no-print mt-5 border-t pt-4 text-sm">
                 <h3 className="mb-2 font-bold">Đáp án nhanh</h3>
                 <p>Trắc nghiệm: {paper.questions.multipleChoice.map(q => `${q.number}${q.answer}`).join(' - ')}</p>
+                {paper.questions.multipleChoice.some(q => q.explanation) && (
+                  <div className="mt-3 space-y-2">
+                    {paper.questions.multipleChoice.filter(q => q.explanation).map((q, idx) => (
+                      <div key={q.number || idx}>
+                        <p className="font-medium">Câu {q.number || idx + 1}</p>
+                        <p>{renderMathText(q.explanation)}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div className="mt-3 space-y-2">
                   {paper.questions.essay.map((q, idx) => (
                     <div key={q.number}>

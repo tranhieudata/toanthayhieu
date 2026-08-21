@@ -7,7 +7,7 @@ import { FiBookOpen, FiClock, FiPlay, FiLock, FiCheckCircle, FiAlertCircle } fro
 
 export default function CourseDetailPage() {
   const { id } = useParams();
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const [course, setCourse] = useState(null);
   const [lessons, setLessons] = useState([]);
   const [hasAccess, setHasAccess] = useState(false);   // approved class enrollment
@@ -25,7 +25,7 @@ export default function CourseDetailPage() {
     Promise.all([fetchCourse, fetchLessons]).then(([courseRes, lessonsRes]) => {
       setCourse(courseRes.data);
       setLessons(lessonsRes.data);
-      setHasAccess(lessonsRes.ok);
+      setHasAccess(isAdmin || lessonsRes.ok);
       // 403 means no approved access - check if pending
       if (!lessonsRes.ok && lessonsRes.status === 403 && user) {
         api.get('/class-enrollments/my')
@@ -39,7 +39,7 @@ export default function CourseDetailPage() {
           .catch(() => {});
       }
     }).finally(() => setLoading(false));
-  }, [id, user]);
+  }, [id, user, isAdmin]);
 
   if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div></div>;
   if (!course) return <div className="min-h-screen flex items-center justify-center text-gray-500">Không tìm thấy khóa học</div>;
@@ -63,7 +63,11 @@ export default function CourseDetailPage() {
           </div>
           <div className="card p-6 text-gray-900">
             <img src={course.thumbnail || 'https://via.placeholder.com/400x220?text=Khóa+học'} alt={course.title} className="rounded-lg mb-4 w-full h-40 object-cover" />
-            {hasAccess ? (
+            {isAdmin ? (
+              <div className="flex items-center gap-2 text-green-600 font-semibold">
+                <FiCheckCircle /> Admin đang xem như học sinh
+              </div>
+            ) : hasAccess ? (
               <div className="flex items-center gap-2 text-green-600 font-semibold">
                 <FiCheckCircle /> Đã được vào lớp học
               </div>

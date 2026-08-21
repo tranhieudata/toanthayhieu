@@ -13,8 +13,8 @@ const FALLBACK_LEVELS = [
   { key: 'VDC', name: 'Vận dụng cao' },
 ];
 
-const round2 = value => Number((Number(value) || 0).toFixed(2));
-const pointText = value => Number(value || 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 });
+const round2 = value => Number((Number(value) || 0).toFixed(4));
+const pointText = value => Number(value || 0).toLocaleString('vi-VN', { maximumFractionDigits: 4 });
 
 function toLocalDatetimeInput(dateStr) {
   if (!dateStr) return '';
@@ -150,7 +150,10 @@ function examPackageToHomeworkText(paper) {
 
 function examPackageToAnswerKey(paper) {
   if (!paper) return '';
-  const mc = (paper.questions?.multipleChoice || []).map((q, index) => `Câu ${q.number || index + 1}: ${q.answer || ''}`);
+  const mc = (paper.questions?.multipleChoice || []).map((q, index) => {
+    const explanation = q.explanation ? ` - ${q.explanation}` : '';
+    return `Câu ${q.number || index + 1}: ${q.answer || ''}${explanation}`;
+  });
   const essay = (paper.questions?.essay || []).map((q, index) => `Bài ${index + 1}: ${q.solution || ''}`);
   return [...mc, ...essay].filter(Boolean).join('\n');
 }
@@ -254,7 +257,7 @@ function CellInput({ value, onChange }) {
       <input
         type="number"
         min="0"
-        step="0.1"
+        step="any"
         className="w-full rounded-lg border border-gray-300 px-2 py-1 text-center text-sm text-blue-700"
         value={value?.points ?? 0}
         onChange={e => onChange({ ...value, points: Math.max(0, Number(e.target.value) || 0) })}
@@ -276,6 +279,7 @@ export default function AdminExamEditor() {
   const [form, setForm] = useState({
     title: '',
     content: '',
+    solutionContent: '',
     course: '',
     lesson: '',
     level: '',
@@ -352,6 +356,7 @@ export default function AdminExamEditor() {
         setForm({
           title: exam.title || '',
           content: exam.content || '',
+          solutionContent: exam.solutionContent || '',
           course: exam.course?._id || exam.course || exam.lesson?.course?._id || exam.lesson?.course || '',
           lesson: exam.lesson?._id || exam.lesson || '',
           level: exam.level?._id || exam.level || '',
@@ -417,6 +422,7 @@ export default function AdminExamEditor() {
         ...f,
         title: '',
         content: '',
+        solutionContent: '',
         course: '',
         lesson: '',
         level: '',
@@ -439,6 +445,7 @@ export default function AdminExamEditor() {
         ...f,
         title: exam.title || f.title,
         content: exam.content || '',
+        solutionContent: exam.solutionContent || '',
         course: exam.course?._id || exam.course || exam.lesson?.course?._id || exam.lesson?.course || f.course || '',
         lesson: exam.lesson?._id || exam.lesson || '',
         level: exam.level?._id || exam.level || '',
@@ -569,6 +576,7 @@ export default function AdminExamEditor() {
       const payload = {
         title: form.title,
         content: form.content,
+        solutionContent: form.solutionContent,
         course: form.course || null,
         totalQuestions: totals.totalQuestions,
         isTemplate: form.isTemplate,
@@ -621,7 +629,7 @@ export default function AdminExamEditor() {
             sourceExam: sourceExamId,
             examPackage,
             pdfAttachments: [],
-            answerKey: examPackageToAnswerKey(examPackage),
+            answerKey: examPackageToAnswerKey(examPackage) || form.solutionContent,
             maxScore: totals.totalPoints || 10,
             dueDate: form.homeworkDueDate || undefined,
           };
@@ -897,7 +905,7 @@ export default function AdminExamEditor() {
                           <input
                             type="number"
                             min="0"
-                            step="0.1"
+                            step="any"
                             className="w-20 rounded-lg border border-gray-300 px-2 py-1 text-sm"
                             value={question.points ?? ''}
                             onChange={e => updatePackageQuestion('multipleChoice', index, q => ({ ...q, points: Number(e.target.value) || 0 }))}
@@ -961,7 +969,7 @@ export default function AdminExamEditor() {
                           <input
                             type="number"
                             min="0"
-                            step="0.1"
+                            step="any"
                             className="w-20 rounded-lg border border-gray-300 px-2 py-1 text-sm"
                             value={question.points ?? ''}
                             onChange={e => updatePackageQuestion('essay', index, q => ({ ...q, points: Number(e.target.value) || 0 }))}
@@ -996,6 +1004,15 @@ export default function AdminExamEditor() {
             placeholder="Nhập nội dung đề kiểm tra. Dùng nút ƒx để chèn công thức toán..."
           />
           )}
+        </div>
+
+        <div className="space-y-3 rounded-xl bg-white p-6 shadow-sm">
+          <h2 className="font-semibold text-gray-800">Lời giải / đáp án cho admin</h2>
+          <RichTextEditor
+            value={form.solutionContent}
+            onChange={html => setForm(f => ({ ...f, solutionContent: html }))}
+            placeholder="Nhập lời giải, đáp án hoặc hướng dẫn chấm. Phần này chỉ hiển thị cho admin, không hiện trong link phụ huynh."
+          />
         </div>
 
         <div className="space-y-5 rounded-xl bg-white p-6 shadow-sm">

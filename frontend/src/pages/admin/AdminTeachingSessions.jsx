@@ -146,7 +146,10 @@ function examPackageToHomeworkText(paper) {
 
 function examPackageToAnswerKey(paper) {
   if (!paper) return '';
-  const mc = (paper.questions?.multipleChoice || []).map((q, index) => `Câu ${q.number || index + 1}: ${q.answer || ''}`);
+  const mc = (paper.questions?.multipleChoice || []).map((q, index) => {
+    const explanation = q.explanation ? ` - ${q.explanation}` : '';
+    return `Câu ${q.number || index + 1}: ${q.answer || ''}${explanation}`;
+  });
   const essay = (paper.questions?.essay || []).map((q, index) => `Bài ${index + 1}: ${q.solution || ''}`);
   return [...mc, ...essay].filter(Boolean).join('\n');
 }

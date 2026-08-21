@@ -225,7 +225,10 @@ function examPackageToText(examPackage) {
     return `Bài ${i + 1}. ${q.question || ''}`;
   });
   const answer = [
-    ...(examPackage.questions?.multipleChoice || []).map((q, i) => `Câu ${q.number || i + 1}: ${q.answer || ''}`),
+    ...(examPackage.questions?.multipleChoice || []).map((q, i) => {
+      const explanation = q.explanation ? ` - ${q.explanation}` : '';
+      return `Câu ${q.number || i + 1}: ${q.answer || ''}${explanation}`;
+    }),
     ...(examPackage.questions?.essay || []).map((q, i) => `Bài ${i + 1}: ${q.solution || ''}`),
   ];
   return [
@@ -258,7 +261,10 @@ function examPackageToHomeworkText(examPackage) {
 function examPackageToAnswerKey(examPackage) {
   if (!examPackage) return '';
   return [
-    ...(examPackage.questions?.multipleChoice || []).map((q, i) => `Cau ${q.number || i + 1}: ${q.answer || ''}`),
+    ...(examPackage.questions?.multipleChoice || []).map((q, i) => {
+      const explanation = q.explanation ? ` - ${q.explanation}` : '';
+      return `Cau ${q.number || i + 1}: ${q.answer || ''}${explanation}`;
+    }),
     ...(examPackage.questions?.essay || []).map((q, i) => `Bai ${i + 1}: ${q.solution || ''}`),
   ].filter(Boolean).join('\n');
 }
@@ -320,7 +326,7 @@ async function syncSourceExamHomeworks(exam) {
     homework.description = examPackageToHomeworkText(exam.examPackage) || exam.content || exam.title;
     homework.examPackage = exam.examPackage || null;
     homework.pdfAttachments = exam.pdfAttachments || [];
-    homework.answerKey = examPackageToAnswerKey(exam.examPackage);
+    homework.answerKey = examPackageToAnswerKey(exam.examPackage) || exam.solutionContent || homework.answerKey || '';
     homework.maxScore = maxScoreForExam(exam) || homework.maxScore || 10;
     if (exam.lesson) homework.lesson = exam.lesson?._id || exam.lesson;
     homework.dueDate = examDueDateForClass(exam, homework.class) || homework.dueDate;
@@ -390,7 +396,7 @@ const getExamById = async (req, res) => {
 const createExam = async (req, res) => {
   try {
     console.log('[createExam] classSchedules received:', JSON.stringify(req.body.classSchedules));
-    const allowed = ['title', 'content', 'course', 'lesson', 'level', 'totalQuestions', 'isTemplate', 'note', 'pdfAttachments', 'levels', 'classSchedules', 'examPackage'];
+    const allowed = ['title', 'content', 'solutionContent', 'course', 'lesson', 'level', 'totalQuestions', 'isTemplate', 'note', 'pdfAttachments', 'levels', 'classSchedules', 'examPackage'];
     const data = {};
     allowed.forEach(field => { if (field in req.body) data[field] = req.body[field]; });
     data.createdBy = req.user._id;
@@ -405,7 +411,7 @@ const createExam = async (req, res) => {
 const updateExam = async (req, res) => {
   try {
     console.log('[updateExam] classSchedules received:', JSON.stringify(req.body.classSchedules));
-    const allowed = ['title', 'content', 'course', 'lesson', 'level', 'totalQuestions', 'isTemplate', 'note', 'pdfAttachments', 'levels', 'classSchedules', 'examPackage'];
+    const allowed = ['title', 'content', 'solutionContent', 'course', 'lesson', 'level', 'totalQuestions', 'isTemplate', 'note', 'pdfAttachments', 'levels', 'classSchedules', 'examPackage'];
     const $set = {};
     allowed.forEach(field => {
       if (field in req.body) $set[field] = req.body[field];
@@ -601,7 +607,10 @@ const aiGradeExamResult = async (req, res) => {
       return res.status(400).json({ message: 'Không đọc được ảnh bài làm' });
     }
 
-    const examText = examPackageToText(exam.examPackage) || exam.content || exam.title;
+    const examText = [
+      examPackageToText(exam.examPackage) || exam.content || exam.title,
+      exam.solutionContent ? `Lời giải/hướng dẫn chấm:\n${exam.solutionContent}` : '',
+    ].filter(Boolean).join('\n\n');
     const prompt = `Bạn là giáo viên Toán Việt Nam. Hãy chấm bài kiểm tra từ ảnh bài làm của học sinh.
 
 Tên đề: ${exam.title}
