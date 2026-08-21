@@ -1,13 +1,12 @@
-import { useEffect, useState, useMemo } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useEffect, useState, useMemo, useRef } from 'react';
+import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import api, { getUploadUrl } from '../api/axios';
 import toast from 'react-hot-toast';
 import Navbar from '../components/Navbar';
-import { FiArrowLeft, FiDownload, FiFileText, FiCheckCircle, FiClock, FiLock, FiMenu, FiX } from 'react-icons/fi';
+import { FiArrowLeft, FiChevronLeft, FiChevronRight, FiDownload, FiFileText, FiCheckCircle, FiClock, FiLock, FiMaximize2, FiMenu, FiMinimize2, FiX } from 'react-icons/fi';
 import 'katex/dist/katex.min.css';
 import 'quill/dist/quill.snow.css';
 import katex from 'katex';
-import ExercisePage from './ExercisePage';
 // Xử lý LaTeX đồng bộ trước khi render (tránh race condition với setTimeout)
 function processLatexContent(html) {
   if (!html) return '';
@@ -66,6 +65,44 @@ function processLatexContent(html) {
   }
 }
 
+function hasVisibleLessonNode(element) {
+  return element.textContent.trim()
+    || element.querySelector('img, iframe, video, table, .katex, .katex-display, .ql-formula');
+}
+
+function buildLessonSlides(html) {
+  if (!html) return [];
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const blocks = Array.from(doc.body.children).filter(hasVisibleLessonNode);
+    if (!blocks.length) return [];
+
+    const hasMajorHeadings = blocks.some((block) => ['H1', 'H2'].includes(block.tagName));
+    if (!hasMajorHeadings) {
+      const slides = [];
+      for (let i = 0; i < blocks.length; i += 4) {
+        slides.push({ blocks: blocks.slice(i, i + 4).map((block) => block.outerHTML) });
+      }
+      return slides;
+    }
+
+    const slides = [];
+    let current = [];
+    blocks.forEach((block) => {
+      const startsNewSlide = ['H1', 'H2'].includes(block.tagName);
+      if (startsNewSlide && current.length) {
+        slides.push({ blocks: current.map((item) => item.outerHTML) });
+        current = [];
+      }
+      current.push(block);
+    });
+    if (current.length) slides.push({ blocks: current.map((item) => item.outerHTML) });
+    return slides;
+  } catch {
+    return [{ blocks: [html] }];
+  }
+}
+
 export default function LessonDetailPage() {
   const { lessonId } = useParams();
   const navigate = useNavigate();
@@ -74,6 +111,11 @@ export default function LessonDetailPage() {
   const [lesson, setLesson] = useState(null);
   const [exercises, setExercises] = useState([]);
   const [bundle, setBundle] = useState({ homeworks: [] });
+  const slideRef = useRef(null);
+  const [contentMode, setContentMode] = useState('slide');
+  const [slideIndex, setSlideIndex] = useState(0);
+  const [visibleBlockCount, setVisibleBlockCount] = useState(1);
+  const [isSlideFullscreen, setIsSlideFullscreen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [siblings, setSiblings] = useState([]); // danh sách bài học cùng khóa
   const [sidebarOpen, setSidebarOpen] = useState(false); // mobile sidebar toggle
@@ -115,6 +157,68 @@ export default function LessonDetailPage() {
 
   // Xử lý LaTeX đồng bộ bằng useMemo (không cần setTimeout, tránh race condition)
   const processedContent = useMemo(() => processLatexContent(lesson?.content), [lesson?.content]);
+  const lessonSlides = useMemo(() => buildLessonSlides(processedContent), [processedContent]);
+  const currentSlide = lessonSlides[slideIndex] || null;
+  const totalSlideBlocks = currentSlide?.blocks?.length || 0;
+  const canRevealMore = visibleBlockCount < totalSlideBlocks;
+  const canGoBack = slideIndex > 0 || visibleBlockCount > 1;
+
+  useEffect(() => {
+    setSlideIndex(0);
+    setVisibleBlockCount(1);
+  }, [lessonId, processedContent]);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsSlideFullscreen(document.fullscreenElement === slideRef.current);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  const handlePreviousSlideStep = () => {
+    if (visibleBlockCount > 1) {
+      setVisibleBlockCount((count) => Math.max(1, count - 1));
+      return;
+    }
+    if (slideIndex <= 0) return;
+    setSlideIndex((index) => {
+      const previousIndex = Math.max(0, index - 1);
+      const previousSlideBlocks = lessonSlides[previousIndex]?.blocks?.length || 1;
+      setVisibleBlockCount(previousSlideBlocks);
+      return previousIndex;
+    });
+  };
+
+  const handleNextSlideStep = () => {
+    if (canRevealMore) {
+      setVisibleBlockCount((count) => Math.min(totalSlideBlocks, count + 1));
+      return;
+    }
+    if (slideIndex < lessonSlides.length - 1) {
+      setSlideIndex((index) => index + 1);
+      setVisibleBlockCount(1);
+    }
+  };
+
+  const handleToggleSlideFullscreen = async () => {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+        return;
+      }
+      await slideRef.current?.requestFullscreen();
+    } catch {
+      toast.error('Không thể bật toàn màn hình');
+    }
+  };
+
+  const handleSetContentMode = async (mode) => {
+    if (mode === 'normal' && document.fullscreenElement) {
+      await document.exitFullscreen().catch(() => {});
+    }
+    setContentMode(mode);
+  };
 
   if (loading) {
     return (
@@ -254,10 +358,82 @@ export default function LessonDetailPage() {
             {/* Content */}
             {lesson.content && (
               <div className="lesson-content mb-8">
-                <div
-                  className="ql-editor"
-                  dangerouslySetInnerHTML={{ __html: processedContent }}
-                />
+                <div className="lesson-content-modebar">
+                  <button
+                    type="button"
+                    onClick={() => handleSetContentMode('normal')}
+                    className={`lesson-mode-button ${contentMode === 'normal' ? 'is-active' : ''}`}
+                  >
+                    Nội dung
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSetContentMode('slide')}
+                    className={`lesson-mode-button ${contentMode === 'slide' ? 'is-active' : ''}`}
+                    disabled={!lessonSlides.length}
+                  >
+                    Slide
+                  </button>
+                </div>
+                {contentMode === 'slide' && lessonSlides.length ? (
+                  <div ref={slideRef} className="lesson-slide">
+                    <div className="lesson-slide-topbar">
+                      <span className="lesson-slide-count">Slide {slideIndex + 1}/{lessonSlides.length}</span>
+                      <button
+                        type="button"
+                        onClick={handleToggleSlideFullscreen}
+                        className="lesson-slide-icon-button"
+                        title={isSlideFullscreen ? 'Thoát toàn màn hình' : 'Toàn màn hình'}
+                        aria-label={isSlideFullscreen ? 'Thoát toàn màn hình' : 'Toàn màn hình'}
+                      >
+                        {isSlideFullscreen ? <FiMinimize2 size={18} /> : <FiMaximize2 size={18} />}
+                      </button>
+                      <span className="lesson-slide-count">Ý {Math.min(visibleBlockCount, totalSlideBlocks)}/{totalSlideBlocks || 1}</span>
+                    </div>
+                    <div className="lesson-slide-progress" aria-hidden="true">
+                      <div
+                        className="lesson-slide-progress-bar"
+                        style={{
+                          width: `${lessonSlides.length
+                            ? (((slideIndex + (totalSlideBlocks ? visibleBlockCount / totalSlideBlocks : 1)) / lessonSlides.length) * 100)
+                            : 0}%`,
+                        }}
+                      />
+                    </div>
+                    <div className="ql-editor lesson-slide-content">
+                      {currentSlide?.blocks?.slice(0, visibleBlockCount).map((blockHtml, blockIndex) => (
+                        <div
+                          key={`${slideIndex}-${blockIndex}`}
+                          className="lesson-slide-block"
+                          dangerouslySetInnerHTML={{ __html: blockHtml }}
+                        />
+                      ))}
+                    </div>
+                    <div className="lesson-slide-controls">
+                      <button
+                        type="button"
+                        onClick={handlePreviousSlideStep}
+                        disabled={!canGoBack}
+                        className="lesson-slide-button"
+                      >
+                        <FiChevronLeft size={18} /> Trước
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleNextSlideStep}
+                        disabled={!canRevealMore && slideIndex >= lessonSlides.length - 1}
+                        className="lesson-slide-button lesson-slide-button-primary"
+                      >
+                        Tiếp <FiChevronRight size={18} />
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    className="ql-editor"
+                    dangerouslySetInnerHTML={{ __html: processedContent }}
+                  />
+                )}
               </div>
             )}
 
@@ -295,7 +471,7 @@ export default function LessonDetailPage() {
                       <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
                         <div>
                           <p className="font-semibold text-gray-900">{homework.title}</p>
-                          {homework.description && <p className="mt-1 text-sm text-gray-600 whitespace-pre-wrap">{homework.description}</p>}
+                          <p className="mt-1 text-sm text-gray-500">Mở trong mục Bài tập để xem và nộp bài.</p>
                         </div>
                         {homework.dueDate && (
                           <span className="text-xs text-gray-500">Hạn: {new Date(homework.dueDate).toLocaleDateString('vi-VN')}</span>
@@ -304,6 +480,12 @@ export default function LessonDetailPage() {
                       {homework.sourceExam?.title && (
                         <p className="mt-2 text-xs text-emerald-600">Gắn từ đề: {homework.sourceExam.title}</p>
                       )}
+                      <Link
+                        to="/homeworks"
+                        className="mt-3 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                      >
+                        Mở bài tập
+                      </Link>
                       {homework.pdfAttachments?.length > 0 && (
                         <div className="mt-3 flex flex-wrap gap-2">
                           {homework.pdfAttachments.map((file, index) => (
@@ -338,11 +520,23 @@ export default function LessonDetailPage() {
             {exercises.length > 0 && (
               <div className="pt-8 border-t border-gray-200">
                 <h2 className="text-xl font-bold text-gray-900 mb-4">📝 Bài tập</h2>
-                <div className="space-y-8">
+                <div className="space-y-3">
                   {exercises.map((exercise) => (
-                    <div key={exercise._id} className="border border-gray-200 rounded-lg p-4 sm:p-6">
-                      <ExercisePage exerciseId={exercise._id} embedded />
-                    </div>
+                    <Link
+                      key={exercise._id}
+                      to={`/exercises/${exercise._id}`}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 p-4 transition-colors hover:border-blue-300 hover:bg-blue-50"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-semibold text-gray-900">{exercise.title || 'Bài tập'}</p>
+                        <p className="mt-1 text-sm text-gray-500">
+                          {exercise.questions?.length || 0} câu
+                          {exercise.timeLimit ? ` · ${exercise.timeLimit} phút` : ''}
+                          {exercise.passingScore ? ` · Đạt ${exercise.passingScore}%` : ''}
+                        </p>
+                      </div>
+                      <span className="shrink-0 text-sm font-semibold text-blue-600">Làm bài</span>
+                    </Link>
                   ))}
                 </div>
               </div>
@@ -390,6 +584,154 @@ export default function LessonDetailPage() {
           justify-content: center;
           margin: 1.5em 0;
           overflow-x: auto;
+        }
+        .lesson-content-modebar {
+          display: inline-flex;
+          gap: 4px;
+          padding: 4px;
+          margin-bottom: 12px;
+          border: 1px solid #d1d5db;
+          border-radius: 8px;
+          background: #f8fafc;
+        }
+        .lesson-mode-button {
+          min-height: 34px;
+          padding: 0 14px;
+          border-radius: 6px;
+          color: #475569;
+          font-weight: 600;
+          font-size: 0.875rem;
+          transition: background 150ms ease, color 150ms ease;
+        }
+        .lesson-mode-button:hover:not(:disabled) {
+          background: #e0f2fe;
+          color: #1d4ed8;
+        }
+        .lesson-mode-button.is-active {
+          background: #2563eb;
+          color: #ffffff;
+        }
+        .lesson-mode-button:disabled {
+          cursor: not-allowed;
+          opacity: 0.45;
+        }
+        .lesson-slide {
+          border: 1px solid #dbeafe;
+          border-radius: 8px;
+          background: #ffffff;
+          overflow: hidden;
+        }
+        .lesson-slide:fullscreen {
+          width: 100vw;
+          height: 100vh;
+          border: none;
+          border-radius: 0;
+          display: flex;
+          flex-direction: column;
+          background: #ffffff;
+        }
+        .lesson-slide-topbar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 12px 16px;
+          border-bottom: 1px solid #e5e7eb;
+          background: #f8fafc;
+        }
+        .lesson-slide-count {
+          color: #475569;
+          font-size: 0.875rem;
+          font-weight: 600;
+          white-space: nowrap;
+        }
+        .lesson-slide-icon-button {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 36px;
+          height: 36px;
+          border-radius: 8px;
+          color: #334155;
+        }
+        .lesson-slide-icon-button:hover {
+          background: #e0f2fe;
+          color: #1d4ed8;
+        }
+        .lesson-slide-progress {
+          height: 4px;
+          background: #e2e8f0;
+          overflow: hidden;
+        }
+        .lesson-slide-progress-bar {
+          height: 100%;
+          background: #2563eb;
+          transition: width 180ms ease;
+        }
+        .lesson-slide-content {
+          min-height: min(52vh, 520px);
+          padding: 18px 18px 8px;
+        }
+        .lesson-slide:fullscreen .lesson-slide-content {
+          flex: 1;
+          min-height: 0;
+          overflow: auto;
+          padding: 32px clamp(24px, 6vw, 80px);
+          font-size: 1.25rem;
+        }
+        .lesson-slide-block {
+          animation: lessonSlideReveal 160ms ease-out;
+        }
+        .lesson-slide-controls {
+          display: flex;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 14px 16px;
+          border-top: 1px solid #e5e7eb;
+          background: #f8fafc;
+        }
+        .lesson-slide-button {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          min-width: 112px;
+          min-height: 40px;
+          border-radius: 8px;
+          border: 1px solid #d1d5db;
+          background: #ffffff;
+          color: #374151;
+          font-weight: 600;
+          transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+        }
+        .lesson-slide-button:hover:not(:disabled) {
+          border-color: #93c5fd;
+          color: #1d4ed8;
+          background: #eff6ff;
+        }
+        .lesson-slide-button:disabled {
+          cursor: not-allowed;
+          opacity: 0.45;
+        }
+        .lesson-slide-button-primary {
+          border-color: #2563eb;
+          background: #2563eb;
+          color: #ffffff;
+        }
+        .lesson-slide-button-primary:hover:not(:disabled) {
+          border-color: #1d4ed8;
+          background: #1d4ed8;
+          color: #ffffff;
+        }
+        @keyframes lessonSlideReveal {
+          from {
+            opacity: 0;
+            transform: translateY(6px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
         }
         .ql-editor {
           padding: 0;

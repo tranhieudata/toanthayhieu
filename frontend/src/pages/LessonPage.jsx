@@ -121,7 +121,7 @@ export default function LessonPage() {
                     <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
                       <div>
                         <p className="font-medium text-gray-900">{homework.title}</p>
-                        {homework.description && <p className="mt-1 text-sm text-gray-600 whitespace-pre-wrap">{homework.description}</p>}
+                        <p className="mt-1 text-sm text-gray-500">Mở trong mục Bài tập để xem và nộp bài.</p>
                       </div>
                       {homework.dueDate && (
                         <span className="text-xs text-gray-500">Hạn: {new Date(homework.dueDate).toLocaleDateString('vi-VN')}</span>
@@ -130,6 +130,12 @@ export default function LessonPage() {
                     {homework.sourceExam?.title && (
                       <p className="mt-2 text-xs text-emerald-600">Gắn từ đề: {homework.sourceExam.title}</p>
                     )}
+                    <Link
+                      to="/homeworks"
+                      className="mt-3 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                    >
+                      Mở bài tập
+                    </Link>
                     {homework.pdfAttachments?.length > 0 && (
                       <div className="mt-3 space-y-2">
                         {homework.pdfAttachments.map((file, index) => (
