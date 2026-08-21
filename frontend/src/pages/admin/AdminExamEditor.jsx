@@ -350,13 +350,15 @@ export default function AdminExamEditor() {
           .map((homework) => homework.class?._id || homework.class)
           .filter(Boolean)
           .map(String);
+        const linkedAnswerKey = (linkedHomeworks || [])
+          .find((homework) => homework.answerKey?.trim())?.answerKey || '';
         setSourceHomeworks(linkedHomeworks || []);
         setCurriculumGrade(grade);
         setCognitiveLevels(levels);
         setForm({
           title: exam.title || '',
           content: exam.content || '',
-          solutionContent: exam.solutionContent || '',
+          solutionContent: exam.solutionContent || linkedAnswerKey || '',
           course: exam.course?._id || exam.course || exam.lesson?.course?._id || exam.lesson?.course || '',
           lesson: exam.lesson?._id || exam.lesson || '',
           level: exam.level?._id || exam.level || '',
@@ -573,10 +575,13 @@ export default function AdminExamEditor() {
           totalPoints: totals.totalPoints,
         },
       };
+      const preservedSolutionContent = form.solutionContent
+        || sourceHomeworks.find((homework) => homework.answerKey?.trim())?.answerKey
+        || '';
       const payload = {
         title: form.title,
         content: form.content,
-        solutionContent: form.solutionContent,
+        solutionContent: preservedSolutionContent,
         course: form.course || null,
         totalQuestions: totals.totalQuestions,
         isTemplate: form.isTemplate,
@@ -629,7 +634,7 @@ export default function AdminExamEditor() {
             sourceExam: sourceExamId,
             examPackage,
             pdfAttachments: [],
-            answerKey: examPackageToAnswerKey(examPackage) || form.solutionContent,
+            answerKey: examPackageToAnswerKey(examPackage) || preservedSolutionContent,
             maxScore: totals.totalPoints || 10,
             dueDate: form.homeworkDueDate || undefined,
           };

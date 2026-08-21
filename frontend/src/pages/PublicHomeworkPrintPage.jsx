@@ -26,7 +26,7 @@ function hasHtml(value) {
 
 function renderMathHtml(value) {
   const source = String(value || '');
-  const parts = source.split(/(\\\(.+?\\\)|\\\[.+?\\\]|\$\$[\s\S]+?\$\$|\$[^$\n]+?\$)/g);
+  const parts = source.split(/(\\\([\s\S]+?\\\)|\\\[[\s\S]+?\\\]|\$\$[\s\S]+?\$\$|\$[^$\n]+?\$)/g);
   return parts.map((part) => {
     const displayDollar = part.startsWith('$$') && part.endsWith('$$');
     const displayBracket = part.startsWith('\\[') && part.endsWith('\\]');
@@ -125,6 +125,37 @@ function homeworkContentHtml(homework) {
   return renderMathHtml(homework?.description || '').replace(/\n/g, '<br />');
 }
 
+function answerContentHtml(homework) {
+  const parts = [];
+  if (homework?.adminSolutionContent?.trim()) {
+    parts.push(
+      hasHtml(homework.adminSolutionContent)
+        ? renderStoredHtmlWithMath(homework.adminSolutionContent)
+        : renderMathHtml(homework.adminSolutionContent).replace(/\n/g, '<br />')
+    );
+  }
+  if (homework?.adminAnswerKey?.trim()) {
+    parts.push(
+      hasHtml(homework.adminAnswerKey)
+        ? renderStoredHtmlWithMath(homework.adminAnswerKey)
+        : renderMathHtml(homework.adminAnswerKey).replace(/\n/g, '<br />')
+    );
+  }
+  return parts.join('<hr class="answer-divider" />');
+}
+
+function hasAdminAnswers(homework) {
+  return Boolean(
+    homework?.canViewAnswers &&
+    (
+      homework.adminSolutionContent?.trim() ||
+      homework.adminAnswerKey?.trim() ||
+      homework.solutionImages?.length ||
+      homework.solutionPdfAttachments?.length
+    )
+  );
+}
+
 export default function PublicHomeworkPrintPage() {
   const { token } = useParams();
   const [homework, setHomework] = useState(null);
@@ -133,7 +164,18 @@ export default function PublicHomeworkPrintPage() {
 
   useEffect(() => {
     api.get(`/homeworks/public-print/${token}`)
-      .then((res) => setHomework(res.data))
+      .then(async (res) => {
+        let nextHomework = res.data;
+        if (localStorage.getItem('token')) {
+          const answersRes = await api.get(`/homeworks/public-print/${token}/answers`, {
+            validateStatus: status => status < 500,
+          });
+          if (answersRes.status === 200) {
+            nextHomework = { ...nextHomework, ...answersRes.data };
+          }
+        }
+        setHomework(nextHomework);
+      })
       .catch((err) => setError(err.response?.data?.message || 'Link bài tập không tồn tại'))
       .finally(() => setLoading(false));
   }, [token]);
@@ -195,6 +237,56 @@ export default function PublicHomeworkPrintPage() {
           />
         </section>
 
+        {hasAdminAnswers(homework) && (
+          <section className="answer-content pt-5">
+            <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+              <h2 className="flex items-center gap-2 font-semibold text-emerald-800">
+                <FiFileText className="text-emerald-600" /> Đáp án / lời giải
+              </h2>
+              <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 print:hidden">
+                Chỉ admin nhìn thấy
+              </span>
+            </div>
+            {(homework.adminSolutionContent?.trim() || homework.adminAnswerKey?.trim()) && (
+              <div
+                className="prose max-w-none rounded-lg border border-emerald-100 bg-emerald-50/40 p-4 text-gray-900 print:border-0 print:bg-white print:p-0"
+                dangerouslySetInnerHTML={{ __html: answerContentHtml(homework) }}
+              />
+            )}
+            {homework.solutionImages?.length > 0 && (
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 print:grid-cols-1">
+                {homework.solutionImages.map((img, index) => (
+                  <a
+                    key={`${img.url}-${index}`}
+                    href={getUploadUrl(img.url)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block overflow-hidden rounded-lg border border-emerald-100 bg-white p-2 hover:bg-emerald-50"
+                  >
+                    <img src={getUploadUrl(img.url)} alt={`Đáp án ${index + 1}`} className="w-full rounded object-contain" />
+                  </a>
+                ))}
+              </div>
+            )}
+            {homework.solutionPdfAttachments?.length > 0 && (
+              <div className="mt-4 space-y-3 print:hidden">
+                {homework.solutionPdfAttachments.map((file, index) => (
+                  <a
+                    key={`${file.url}-${index}`}
+                    href={getUploadUrl(file.url)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-between gap-3 rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3 text-emerald-700 hover:bg-emerald-100"
+                  >
+                    <span className="min-w-0 truncate">{file.filename || `Đáp án ${index + 1}.pdf`}</span>
+                    <FiDownload className="shrink-0" />
+                  </a>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
         <section className="pt-5 print:hidden">
           {homework.pdfAttachments?.length ? (
             <>
@@ -225,6 +317,8 @@ export default function PublicHomeworkPrintPage() {
         .print-content p { margin: 0.4rem 0; }
         .print-question { break-inside: avoid; margin-bottom: 0.9rem; }
         .print-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.15rem 1.25rem; }
+        .answer-content { break-inside: auto; }
+        .answer-divider { border: 0; border-top: 1px solid #d1fae5; margin: 1rem 0; }
         .katex { font-size: 1.04em; }
         .katex-display { overflow-x: auto; overflow-y: hidden; }
         @media print {

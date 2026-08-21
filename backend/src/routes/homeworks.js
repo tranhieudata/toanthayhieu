@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { protect, adminOnly } = require('../middleware/auth');
+const { protect, adminOnly, optionalProtect } = require('../middleware/auth');
 const {
   getStudentHomeworks,
   getHomeworks,
@@ -16,10 +16,12 @@ const {
   autoCreateSubmissions,
   getClassStudents,
   getPublicHomeworkPrintByToken,
+  getPublicHomeworkPrintAnswersByToken,
   adminSubmitHomework,
 } = require('../controllers/homeworkController');
 
-router.get('/public-print/:token', getPublicHomeworkPrintByToken);
+router.get('/public-print/:token/answers', protect, adminOnly, getPublicHomeworkPrintAnswersByToken);
+router.get('/public-print/:token', optionalProtect, getPublicHomeworkPrintByToken);
 
 // Student routes (phải đặt TRƯỚC /:id để không bị match nhầm)
 router.get('/student/list', protect, getStudentHomeworks);

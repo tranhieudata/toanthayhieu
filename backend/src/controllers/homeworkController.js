@@ -76,6 +76,18 @@ function examPackageForQuestionsOnly(examPackage) {
   };
 }
 
+function buildAdminPrintAnswerPayload(homework, sourceExamObj = null) {
+  const sourceExamPackageRaw = hasExamPackageQuestions(sourceExamObj?.examPackage) ? sourceExamObj.examPackage : null;
+  const homeworkPackageRaw = hasExamPackageQuestions(homework?.examPackage) ? homework.examPackage : null;
+  return {
+    canViewAnswers: true,
+    adminAnswerKey: examPackageToAnswerKey(sourceExamPackageRaw || homeworkPackageRaw) || sourceExamObj?.solutionContent || homework?.answerKey || '',
+    adminSolutionContent: sourceExamObj?.solutionContent || '',
+    solutionImages: homework?.solutionImages || [],
+    solutionPdfAttachments: homework?.solutionPdfAttachments || [],
+  };
+}
+
 function hasExamPackageQuestions(examPackage) {
   return Boolean(
     (examPackage?.questions?.multipleChoice || []).length ||
@@ -714,8 +726,18 @@ const getPublicHomeworkPrintByToken = async (req, res) => {
 
     const sourceExam = homework.sourceExam?.examPackage !== undefined ? homework.sourceExam : null;
     const sourceExamObj = sourceExam?.toObject ? sourceExam.toObject() : sourceExam;
-    const sourceExamPackage = hasExamPackageQuestions(sourceExamObj?.examPackage) ? examPackageForQuestionsOnly(sourceExamObj.examPackage) : null;
-    const homeworkPackage = hasExamPackageQuestions(homework.examPackage) ? examPackageForQuestionsOnly(homework.examPackage) : null;
+    const sourceExamPackageRaw = hasExamPackageQuestions(sourceExamObj?.examPackage) ? sourceExamObj.examPackage : null;
+    const homeworkPackageRaw = hasExamPackageQuestions(homework.examPackage) ? homework.examPackage : null;
+    const sourceExamPackage = sourceExamPackageRaw ? examPackageForQuestionsOnly(sourceExamPackageRaw) : null;
+    const homeworkPackage = homeworkPackageRaw ? examPackageForQuestionsOnly(homeworkPackageRaw) : null;
+    const isAdmin = req.user?.role === 'admin';
+    const adminAnswers = isAdmin ? buildAdminPrintAnswerPayload(homework, sourceExamObj) : {
+      canViewAnswers: false,
+      adminAnswerKey: '',
+      adminSolutionContent: '',
+      solutionImages: [],
+      solutionPdfAttachments: [],
+    };
 
     res.json({
       title: sourceExamObj?.title || homework.title,
@@ -728,8 +750,26 @@ const getPublicHomeworkPrintByToken = async (req, res) => {
       examPackage: sourceExamPackage || homeworkPackage || null,
       dueDate: homework.dueDate,
       pdfAttachments: sourceExamObj ? (sourceExamObj.pdfAttachments || []) : (homework.pdfAttachments || []),
+      ...adminAnswers,
       parentPrintUrl: getParentPrintUrl(homework),
     });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// GET /api/homeworks/public-print/:token/answers - Admin-only answer payload for parent print page
+const getPublicHomeworkPrintAnswersByToken = async (req, res) => {
+  try {
+    const homework = await Homework.findOne({ printShareToken: req.params.token })
+      .populate('sourceExam', 'title solutionContent examPackage');
+
+    if (!homework || homework.printShareEnabled === false) {
+      return res.status(404).json({ message: 'Link bài tập không tồn tại hoặc đã bị tắt' });
+    }
+
+    const sourceExamObj = homework.sourceExam?.toObject ? homework.sourceExam.toObject() : homework.sourceExam;
+    res.json(buildAdminPrintAnswerPayload(homework, sourceExamObj));
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -1088,6 +1128,7 @@ const autoCreateSubmissions = async (req, res) => {
 module.exports = {
   getStudentHomeworks,
   getPublicHomeworkPrintByToken,
+  getPublicHomeworkPrintAnswersByToken,
   getHomeworks,
   getHomeworkById,
   createHomework,
