@@ -70,33 +70,65 @@ function hasVisibleLessonNode(element) {
     || element.querySelector('img, iframe, video, table, .katex, .katex-display, .ql-formula');
 }
 
+function cloneElementWithNodes(element, nodes) {
+  const clone = element.cloneNode(false);
+  nodes.forEach((node) => clone.appendChild(node.cloneNode(true)));
+  return clone;
+}
+
+function splitElementByBreaks(element) {
+  const lines = [];
+  let currentNodes = [];
+
+  element.childNodes.forEach((node) => {
+    if (node.nodeName === 'BR') {
+      if (currentNodes.length) {
+        lines.push(cloneElementWithNodes(element, currentNodes));
+        currentNodes = [];
+      }
+      return;
+    }
+    currentNodes.push(node);
+  });
+
+  if (currentNodes.length) lines.push(cloneElementWithNodes(element, currentNodes));
+  return lines.filter(hasVisibleLessonNode).map((line) => line.outerHTML);
+}
+
+function buildLessonRevealBlocks(block) {
+  if (['UL', 'OL'].includes(block.tagName)) {
+    const listStart = Number(block.getAttribute('start')) || 1;
+    return Array.from(block.children)
+      .filter((child) => child.tagName === 'LI' && hasVisibleLessonNode(child))
+      .map((item, index) => {
+        const list = cloneElementWithNodes(block, [item]);
+        if (block.tagName === 'OL') list.setAttribute('start', String(listStart + index));
+        return list.outerHTML;
+      });
+  }
+
+  if (block.querySelector('br')) {
+    const splitLines = splitElementByBreaks(block);
+    if (splitLines.length) return splitLines;
+  }
+
+  return [block.outerHTML];
+}
+
 function buildLessonSlides(html) {
   if (!html) return [];
   try {
     const doc = new DOMParser().parseFromString(html, 'text/html');
     const blocks = Array.from(doc.body.children).filter(hasVisibleLessonNode);
     if (!blocks.length) return [];
+    const revealBlocks = blocks.flatMap(buildLessonRevealBlocks);
+    const linesPerSlide = 13;
+    const slides = [];
 
-    const hasMajorHeadings = blocks.some((block) => ['H1', 'H2'].includes(block.tagName));
-    if (!hasMajorHeadings) {
-      const slides = [];
-      for (let i = 0; i < blocks.length; i += 4) {
-        slides.push({ blocks: blocks.slice(i, i + 4).map((block) => block.outerHTML) });
-      }
-      return slides;
+    for (let index = 0; index < revealBlocks.length; index += linesPerSlide) {
+      slides.push({ blocks: revealBlocks.slice(index, index + linesPerSlide) });
     }
 
-    const slides = [];
-    let current = [];
-    blocks.forEach((block) => {
-      const startsNewSlide = ['H1', 'H2'].includes(block.tagName);
-      if (startsNewSlide && current.length) {
-        slides.push({ blocks: current.map((item) => item.outerHTML) });
-        current = [];
-      }
-      current.push(block);
-    });
-    if (current.length) slides.push({ blocks: current.map((item) => item.outerHTML) });
     return slides;
   } catch {
     return [{ blocks: [html] }];
