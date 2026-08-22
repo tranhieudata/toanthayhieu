@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef } from 'react';
+import { useEffect, useState, useMemo, useRef, useLayoutEffect } from 'react';
 import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import api, { getUploadUrl } from '../api/axios';
 import toast from 'react-hot-toast';
@@ -115,24 +115,79 @@ function buildLessonRevealBlocks(block) {
   return [block.outerHTML];
 }
 
-function buildLessonSlides(html) {
+function buildLessonRevealBlocksFromHtml(html) {
   if (!html) return [];
   try {
     const doc = new DOMParser().parseFromString(html, 'text/html');
     const blocks = Array.from(doc.body.children).filter(hasVisibleLessonNode);
     if (!blocks.length) return [];
-    const revealBlocks = blocks.flatMap(buildLessonRevealBlocks);
-    const linesPerSlide = 13;
-    const slides = [];
 
-    for (let index = 0; index < revealBlocks.length; index += linesPerSlide) {
-      slides.push({ blocks: revealBlocks.slice(index, index + linesPerSlide) });
+    return blocks.flatMap(buildLessonRevealBlocks);
+  } catch {
+    return [html];
+  }
+}
+
+function buildFixedCountSlides(revealBlocks, linesPerSlide = 13) {
+  const slides = [];
+  for (let index = 0; index < revealBlocks.length; index += linesPerSlide) {
+    slides.push({ blocks: revealBlocks.slice(index, index + linesPerSlide) });
+  }
+  return slides;
+}
+
+function paginateMeasuredBlocks(revealBlocks, measuredBlocks, availableHeight) {
+  if (!revealBlocks.length) return [];
+  if (measuredBlocks.length !== revealBlocks.length || availableHeight <= 0) return buildFixedCountSlides(revealBlocks);
+
+  const slides = [];
+  let startIndex = 0;
+
+  while (startIndex < revealBlocks.length) {
+    const startTop = measuredBlocks[startIndex].getBoundingClientRect().top;
+    let endIndex = startIndex;
+
+    while (endIndex < revealBlocks.length) {
+      const blockBottom = measuredBlocks[endIndex].getBoundingClientRect().bottom;
+      const pageHeight = blockBottom - startTop;
+      if (pageHeight > availableHeight && endIndex > startIndex) break;
+      endIndex += 1;
     }
 
-    return slides;
-  } catch {
-    return [{ blocks: [html] }];
+    slides.push({ blocks: revealBlocks.slice(startIndex, endIndex) });
+    startIndex = endIndex;
   }
+
+  return slides;
+}
+
+function areSlidesEqual(firstSlides, secondSlides) {
+  if (firstSlides.length !== secondSlides.length) return false;
+  return firstSlides.every((slide, index) => {
+    const otherSlide = secondSlides[index];
+    if (slide.blocks.length !== otherSlide.blocks.length) return false;
+    return slide.blocks.every((block, blockIndex) => block === otherSlide.blocks[blockIndex]);
+  });
+}
+
+function getSlideContentHeight(contentElement) {
+  if (!contentElement) return 0;
+  const styles = window.getComputedStyle(contentElement);
+  const paddingTop = Number.parseFloat(styles.paddingTop) || 0;
+  const paddingBottom = Number.parseFloat(styles.paddingBottom) || 0;
+  return Math.max(0, contentElement.clientHeight - paddingTop - paddingBottom);
+}
+
+function setMeasurementWidth(measureElement, contentElement) {
+  if (!measureElement || !contentElement) return;
+  measureElement.style.width = `${contentElement.clientWidth}px`;
+}
+
+function buildLessonSlidesFromMeasurements(revealBlocks, measureElement, contentElement) {
+  if (!revealBlocks.length) return [];
+  setMeasurementWidth(measureElement, contentElement);
+  const measuredBlocks = Array.from(measureElement?.querySelectorAll('.lesson-slide-measure-block') || []);
+  return paginateMeasuredBlocks(revealBlocks, measuredBlocks, getSlideContentHeight(contentElement));
 }
 
 export default function LessonDetailPage() {
@@ -144,9 +199,12 @@ export default function LessonDetailPage() {
   const [exercises, setExercises] = useState([]);
   const [bundle, setBundle] = useState({ homeworks: [] });
   const slideRef = useRef(null);
+  const slideContentRef = useRef(null);
+  const slideMeasureRef = useRef(null);
   const [contentMode, setContentMode] = useState('slide');
   const [slideIndex, setSlideIndex] = useState(0);
   const [visibleBlockCount, setVisibleBlockCount] = useState(1);
+  const [lessonSlides, setLessonSlides] = useState([]);
   const [isSlideFullscreen, setIsSlideFullscreen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [siblings, setSiblings] = useState([]); // danh sách bài học cùng khóa
@@ -189,16 +247,56 @@ export default function LessonDetailPage() {
 
   // Xử lý LaTeX đồng bộ bằng useMemo (không cần setTimeout, tránh race condition)
   const processedContent = useMemo(() => processLatexContent(lesson?.content), [lesson?.content]);
-  const lessonSlides = useMemo(() => buildLessonSlides(processedContent), [processedContent]);
+  const revealBlocks = useMemo(() => buildLessonRevealBlocksFromHtml(processedContent), [processedContent]);
   const currentSlide = lessonSlides[slideIndex] || null;
   const totalSlideBlocks = currentSlide?.blocks?.length || 0;
   const canRevealMore = visibleBlockCount < totalSlideBlocks;
   const canGoBack = slideIndex > 0 || visibleBlockCount > 1;
 
   useEffect(() => {
+    setLessonSlides(buildFixedCountSlides(revealBlocks));
     setSlideIndex(0);
     setVisibleBlockCount(1);
-  }, [lessonId, processedContent]);
+  }, [lessonId, revealBlocks]);
+
+  useLayoutEffect(() => {
+    if (contentMode !== 'slide' || !revealBlocks.length) return undefined;
+
+    let frameId = 0;
+    const updateMeasuredSlides = () => {
+      frameId = window.requestAnimationFrame(() => {
+        const nextSlides = buildLessonSlidesFromMeasurements(
+          revealBlocks,
+          slideMeasureRef.current,
+          slideContentRef.current,
+        );
+        if (!nextSlides.length) return;
+
+        setLessonSlides((currentSlides) => (
+          areSlidesEqual(currentSlides, nextSlides) ? currentSlides : nextSlides
+        ));
+        setSlideIndex((index) => Math.min(index, nextSlides.length - 1));
+        setVisibleBlockCount((count) => {
+          const blocksInCurrentSlide = nextSlides[Math.min(slideIndex, nextSlides.length - 1)]?.blocks?.length || 1;
+          return Math.min(Math.max(1, count), blocksInCurrentSlide);
+        });
+      });
+    };
+
+    updateMeasuredSlides();
+
+    const resizeObserver = new ResizeObserver(updateMeasuredSlides);
+    if (slideRef.current) resizeObserver.observe(slideRef.current);
+    if (slideContentRef.current) resizeObserver.observe(slideContentRef.current);
+    window.addEventListener('resize', updateMeasuredSlides);
+    document.fonts?.ready?.then(updateMeasuredSlides).catch(() => {});
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', updateMeasuredSlides);
+    };
+  }, [contentMode, isSlideFullscreen, revealBlocks, slideIndex]);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -432,11 +530,20 @@ export default function LessonDetailPage() {
                         }}
                       />
                     </div>
-                    <div className="ql-editor lesson-slide-content">
+                    <div ref={slideContentRef} className="ql-editor lesson-slide-content">
                       {currentSlide?.blocks?.slice(0, visibleBlockCount).map((blockHtml, blockIndex) => (
                         <div
                           key={`${slideIndex}-${blockIndex}`}
                           className="lesson-slide-block"
+                          dangerouslySetInnerHTML={{ __html: blockHtml }}
+                        />
+                      ))}
+                    </div>
+                    <div ref={slideMeasureRef} className="ql-editor lesson-slide-measure" aria-hidden="true">
+                      {revealBlocks.map((blockHtml, blockIndex) => (
+                        <div
+                          key={`measure-${blockIndex}`}
+                          className="lesson-slide-measure-block"
                           dangerouslySetInnerHTML={{ __html: blockHtml }}
                         />
                       ))}
@@ -652,6 +759,7 @@ export default function LessonDetailPage() {
           border-radius: 8px;
           background: #ffffff;
           overflow: hidden;
+          position: relative;
         }
         .lesson-slide:fullscreen {
           width: 100vw;
@@ -701,13 +809,29 @@ export default function LessonDetailPage() {
           transition: width 180ms ease;
         }
         .lesson-slide-content {
-          min-height: min(52vh, 520px);
+          height: min(52vh, 520px);
+          min-height: 280px;
+          overflow: hidden;
           padding: 18px 18px 8px;
         }
         .lesson-slide:fullscreen .lesson-slide-content {
           flex: 1;
+          height: auto;
           min-height: 0;
-          overflow: auto;
+          overflow: hidden;
+          padding: 32px clamp(24px, 6vw, 80px);
+          font-size: 1.25rem;
+        }
+        .lesson-slide-measure {
+          position: absolute;
+          left: 0;
+          top: 0;
+          z-index: -1;
+          visibility: hidden;
+          pointer-events: none;
+          padding: 18px 18px 8px;
+        }
+        .lesson-slide:fullscreen .lesson-slide-measure {
           padding: 32px clamp(24px, 6vw, 80px);
           font-size: 1.25rem;
         }
