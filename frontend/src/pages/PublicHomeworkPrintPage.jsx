@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import api, { getUploadUrl } from '../api/axios';
-import { FiDownload, FiFileText, FiPrinter } from 'react-icons/fi';
+import { FiDownload, FiEdit3, FiFileText, FiMinusCircle, FiPrinter, FiTrash2 } from 'react-icons/fi';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 
@@ -156,11 +156,21 @@ function hasAdminAnswers(homework) {
   );
 }
 
+const INK_COLORS = ['#dc2626', '#2563eb', '#16a34a', '#111827'];
+
 export default function PublicHomeworkPrintPage() {
   const { token } = useParams();
+  const printPageRef = useRef(null);
+  const inkCanvasRef = useRef(null);
+  const isDrawingRef = useRef(false);
+  const lastInkPointRef = useRef(null);
   const [homework, setHomework] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [isInkMode, setIsInkMode] = useState(false);
+  const [inkTool, setInkTool] = useState('pen');
+  const [inkColor, setInkColor] = useState(INK_COLORS[0]);
+  const [isPrinting, setIsPrinting] = useState(false);
 
   useEffect(() => {
     api.get(`/homeworks/public-print/${token}`)
@@ -179,6 +189,148 @@ export default function PublicHomeworkPrintPage() {
       .catch((err) => setError(err.response?.data?.message || 'Link bài tập không tồn tại'))
       .finally(() => setLoading(false));
   }, [token]);
+
+  const resizeInkCanvas = () => {
+    const canvas = inkCanvasRef.current;
+    const page = printPageRef.current;
+    if (!canvas || !page) return;
+
+    const scale = window.devicePixelRatio || 1;
+    const width = page.offsetWidth;
+    const height = page.offsetHeight;
+    const nextWidth = Math.max(1, Math.floor(width * scale));
+    const nextHeight = Math.max(1, Math.floor(height * scale));
+
+    if (canvas.width === nextWidth && canvas.height === nextHeight) return;
+    const previousCanvas = document.createElement('canvas');
+    previousCanvas.width = canvas.width;
+    previousCanvas.height = canvas.height;
+    if (canvas.width && canvas.height) {
+      previousCanvas.getContext('2d').drawImage(canvas, 0, 0);
+    }
+
+    canvas.width = nextWidth;
+    canvas.height = nextHeight;
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+
+    const context = canvas.getContext('2d');
+    if (previousCanvas.width && previousCanvas.height) {
+      context.drawImage(previousCanvas, 0, 0, previousCanvas.width, previousCanvas.height, 0, 0, nextWidth, nextHeight);
+    }
+    context.setTransform(scale, 0, 0, scale, 0, 0);
+    context.lineCap = 'round';
+    context.lineJoin = 'round';
+  };
+
+  useLayoutEffect(() => {
+    if (!homework) return undefined;
+
+    let frameId = window.requestAnimationFrame(resizeInkCanvas);
+    const handleResize = () => {
+      window.cancelAnimationFrame(frameId);
+      frameId = window.requestAnimationFrame(resizeInkCanvas);
+    };
+
+    window.addEventListener('resize', handleResize);
+    const resizeObserver = new ResizeObserver(handleResize);
+    if (printPageRef.current) resizeObserver.observe(printPageRef.current);
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [homework]);
+
+  const handleClearInk = () => {
+    const canvas = inkCanvasRef.current;
+    if (!canvas) return;
+    const context = canvas.getContext('2d');
+    context.clearRect(0, 0, canvas.width, canvas.height);
+  };
+
+  const handleSelectInkTool = (tool) => {
+    setInkTool(tool);
+    setIsInkMode((currentMode) => (currentMode && inkTool === tool ? false : true));
+  };
+
+  const getInkPoint = (event) => {
+    const canvas = inkCanvasRef.current;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+    };
+  };
+
+  const drawInkSegment = (fromPoint, toPoint) => {
+    const context = inkCanvasRef.current?.getContext('2d');
+    if (!fromPoint || !toPoint || !context) return;
+
+    context.globalCompositeOperation = inkTool === 'eraser' ? 'destination-out' : 'source-over';
+    context.strokeStyle = inkTool === 'eraser' ? 'rgba(0, 0, 0, 1)' : inkColor;
+    context.fillStyle = inkTool === 'eraser' ? 'rgba(0, 0, 0, 1)' : inkColor;
+    context.lineWidth = inkTool === 'eraser' ? 22 : 3;
+    context.lineCap = 'round';
+    context.lineJoin = 'round';
+    if (fromPoint.x === toPoint.x && fromPoint.y === toPoint.y) {
+      context.beginPath();
+      context.arc(fromPoint.x, fromPoint.y, context.lineWidth / 2, 0, Math.PI * 2);
+      context.fill();
+    } else {
+      context.beginPath();
+      context.moveTo(fromPoint.x, fromPoint.y);
+      context.lineTo(toPoint.x, toPoint.y);
+      context.stroke();
+    }
+    context.globalCompositeOperation = 'source-over';
+  };
+
+  const canDrawWithPointer = (event) => event.pointerType !== 'touch';
+
+  const handleInkPointerDown = (event) => {
+    if (!isInkMode) return;
+    event.preventDefault();
+    if (!canDrawWithPointer(event)) return;
+    resizeInkCanvas();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    isDrawingRef.current = true;
+    const startPoint = getInkPoint(event);
+    lastInkPointRef.current = startPoint;
+    if (startPoint) drawInkSegment(startPoint, startPoint);
+  };
+
+  const handleInkPointerMove = (event) => {
+    if (!isInkMode) return;
+    event.preventDefault();
+    if (!isDrawingRef.current || !canDrawWithPointer(event)) return;
+    const nextPoint = getInkPoint(event);
+    drawInkSegment(lastInkPointRef.current, nextPoint);
+    lastInkPointRef.current = nextPoint;
+  };
+
+  const handleInkPointerUp = (event) => {
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    isDrawingRef.current = false;
+    lastInkPointRef.current = null;
+  };
+
+  useEffect(() => {
+    const handleAfterPrint = () => setIsPrinting(false);
+    window.addEventListener('afterprint', handleAfterPrint);
+    return () => window.removeEventListener('afterprint', handleAfterPrint);
+  }, []);
+
+  const handlePrint = () => {
+    setIsPrinting(true);
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        window.print();
+        window.setTimeout(() => setIsPrinting(false), 800);
+      });
+    });
+  };
 
   if (loading) {
     return (
@@ -200,7 +352,61 @@ export default function PublicHomeworkPrintPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 px-4 py-8">
-      <main className="mx-auto max-w-3xl rounded-lg border border-gray-200 bg-white p-6 shadow-sm print:border-0 print:shadow-none">
+      <div className={`print-ink-toolbar print:hidden ${isPrinting ? 'is-printing' : ''}`}>
+        <button
+          type="button"
+          onClick={() => handleSelectInkTool('pen')}
+          className={`print-ink-button ${isInkMode && inkTool === 'pen' ? 'is-active' : ''}`}
+          title={isInkMode && inkTool === 'pen' ? 'Tắt viết lên bài' : 'Viết lên bài'}
+          aria-label={isInkMode && inkTool === 'pen' ? 'Tắt viết lên bài' : 'Viết lên bài'}
+        >
+          <FiEdit3 size={18} />
+        </button>
+        <button
+          type="button"
+          onClick={() => handleSelectInkTool('eraser')}
+          className={`print-ink-button ${isInkMode && inkTool === 'eraser' ? 'is-active is-eraser' : ''}`}
+          title={isInkMode && inkTool === 'eraser' ? 'Tắt tẩy chi tiết' : 'Tẩy chi tiết'}
+          aria-label={isInkMode && inkTool === 'eraser' ? 'Tắt tẩy chi tiết' : 'Tẩy chi tiết'}
+        >
+          <FiMinusCircle size={18} />
+        </button>
+        <div className="print-ink-colors" aria-label="Chọn màu bút">
+          {INK_COLORS.map((color) => (
+            <button
+              key={color}
+              type="button"
+              onClick={() => {
+                setInkColor(color);
+                setInkTool('pen');
+                setIsInkMode(true);
+              }}
+              className={`print-ink-color ${inkColor === color ? 'is-active' : ''}`}
+              style={{ backgroundColor: color }}
+              title="Chọn màu bút"
+              aria-label="Chọn màu bút"
+            />
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={handleClearInk}
+          className="print-ink-button"
+          title="Xóa toàn bộ nét viết"
+          aria-label="Xóa toàn bộ nét viết"
+        >
+          <FiTrash2 size={18} />
+        </button>
+        <button
+          type="button"
+          onClick={handlePrint}
+          className="print-ink-print-button"
+        >
+          <FiPrinter /> In bài
+        </button>
+      </div>
+
+      <main ref={printPageRef} className="print-page mx-auto max-w-3xl rounded-lg border border-gray-200 bg-white p-6 shadow-sm print:border-0 print:shadow-none">
         <div className="border-b border-gray-200 pb-5">
           <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-lg bg-blue-50 text-blue-600 print:hidden">
             <FiFileText size={22} />
@@ -209,7 +415,7 @@ export default function PublicHomeworkPrintPage() {
             <h1 className="text-2xl font-bold text-gray-900">{homework.title}</h1>
             <button
               type="button"
-              onClick={() => window.print()}
+              onClick={handlePrint}
               className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 print:hidden"
             >
               <FiPrinter /> In bài
@@ -310,8 +516,115 @@ export default function PublicHomeworkPrintPage() {
             </>
           ) : null}
         </section>
+        <canvas
+          ref={inkCanvasRef}
+          className={`print-ink-canvas ${isInkMode ? 'is-active' : ''} ${inkTool === 'eraser' ? 'is-eraser' : ''}`}
+          onPointerDown={handleInkPointerDown}
+          onPointerMove={handleInkPointerMove}
+          onPointerUp={handleInkPointerUp}
+          onPointerCancel={handleInkPointerUp}
+          onContextMenu={(event) => isInkMode && event.preventDefault()}
+          aria-hidden="true"
+        />
       </main>
       <style>{`
+        .print-ink-toolbar {
+          position: sticky;
+          top: 12px;
+          z-index: 30;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          flex-wrap: wrap;
+          width: fit-content;
+          max-width: min(100%, 48rem);
+          margin: 0 auto 12px;
+          padding: 8px;
+          border: 1px solid #dbeafe;
+          border-radius: 8px;
+          background: rgba(255, 255, 255, 0.95);
+          box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+          backdrop-filter: blur(8px);
+        }
+        .print-ink-toolbar.is-printing {
+          display: none;
+        }
+        .print-ink-button,
+        .print-ink-print-button {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          min-height: 38px;
+          border-radius: 8px;
+          color: #334155;
+          font-weight: 600;
+          transition: background 150ms ease, color 150ms ease;
+        }
+        .print-ink-button {
+          width: 38px;
+        }
+        .print-ink-button:hover,
+        .print-ink-print-button:hover {
+          background: #e0f2fe;
+          color: #1d4ed8;
+        }
+        .print-ink-button.is-active {
+          background: #fee2e2;
+          color: #dc2626;
+        }
+        .print-ink-button.is-eraser {
+          background: #e0f2fe;
+          color: #0369a1;
+        }
+        .print-ink-print-button {
+          padding: 0 12px;
+          background: #2563eb;
+          color: #ffffff;
+        }
+        .print-ink-print-button:hover {
+          background: #1d4ed8;
+          color: #ffffff;
+        }
+        .print-ink-colors {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 0 4px;
+        }
+        .print-ink-color {
+          width: 28px;
+          height: 28px;
+          border-radius: 999px;
+          border: 2px solid #ffffff;
+          box-shadow: 0 0 0 1px #cbd5e1;
+        }
+        .print-ink-color.is-active {
+          box-shadow: 0 0 0 3px #93c5fd;
+        }
+        .print-page {
+          position: relative;
+        }
+        .print-ink-canvas {
+          position: absolute;
+          inset: 0;
+          z-index: 20;
+          width: 100%;
+          height: 100%;
+          pointer-events: none;
+        }
+        .print-ink-canvas.is-active {
+          cursor: crosshair;
+          pointer-events: auto;
+          touch-action: none;
+          user-select: none;
+          -webkit-user-select: none;
+          -webkit-touch-callout: none;
+        }
+        .print-ink-canvas.is-eraser {
+          cursor: cell;
+        }
         .print-content h2 { font-size: 1.25rem; font-weight: 700; margin: 1rem 0 0.5rem; }
         .print-content h3 { font-size: 1.05rem; font-weight: 700; margin: 1rem 0 0.5rem; }
         .print-content p { margin: 0.4rem 0; }
@@ -323,6 +636,10 @@ export default function PublicHomeworkPrintPage() {
         .katex-display { overflow-x: auto; overflow-y: hidden; }
         @media print {
           body { background: white; }
+          .print-ink-canvas {
+            display: block;
+            pointer-events: none;
+          }
           @page { margin: 16mm 14mm; }
         }
       `}</style>

@@ -190,6 +190,8 @@ function buildLessonSlidesFromMeasurements(revealBlocks, measureElement, content
   return paginateMeasuredBlocks(revealBlocks, measuredBlocks, getSlideContentHeight(contentElement));
 }
 
+const INK_COLORS = ['#dc2626', '#2563eb', '#16a34a', '#111827'];
+
 export default function LessonDetailPage() {
   const { lessonId } = useParams();
   const navigate = useNavigate();
@@ -211,6 +213,7 @@ export default function LessonDetailPage() {
   const [isSlideFullscreen, setIsSlideFullscreen] = useState(false);
   const [isInkMode, setIsInkMode] = useState(false);
   const [inkTool, setInkTool] = useState('pen');
+  const [inkColor, setInkColor] = useState(INK_COLORS[0]);
   const [loading, setLoading] = useState(true);
   const [siblings, setSiblings] = useState([]); // danh sách bài học cùng khóa
   const [sidebarOpen, setSidebarOpen] = useState(false); // mobile sidebar toggle
@@ -326,12 +329,22 @@ export default function LessonDetailPage() {
     const nextHeight = Math.max(1, Math.floor(rect.height * scale));
 
     if (canvas.width === nextWidth && canvas.height === nextHeight) return;
+    const previousCanvas = document.createElement('canvas');
+    previousCanvas.width = canvas.width;
+    previousCanvas.height = canvas.height;
+    if (canvas.width && canvas.height) {
+      previousCanvas.getContext('2d').drawImage(canvas, 0, 0);
+    }
+
     canvas.width = nextWidth;
     canvas.height = nextHeight;
     canvas.style.width = `${rect.width}px`;
     canvas.style.height = `${rect.height}px`;
 
     const context = canvas.getContext('2d');
+    if (previousCanvas.width && previousCanvas.height) {
+      context.drawImage(previousCanvas, 0, 0, previousCanvas.width, previousCanvas.height, 0, 0, nextWidth, nextHeight);
+    }
     context.setTransform(scale, 0, 0, scale, 0, 0);
     context.lineCap = 'round';
     context.lineJoin = 'round';
@@ -424,8 +437,8 @@ export default function LessonDetailPage() {
     if (!fromPoint || !toPoint || !context) return;
 
     context.globalCompositeOperation = inkTool === 'eraser' ? 'destination-out' : 'source-over';
-    context.strokeStyle = inkTool === 'eraser' ? 'rgba(0, 0, 0, 1)' : '#dc2626';
-    context.fillStyle = inkTool === 'eraser' ? 'rgba(0, 0, 0, 1)' : '#dc2626';
+    context.strokeStyle = inkTool === 'eraser' ? 'rgba(0, 0, 0, 1)' : inkColor;
+    context.fillStyle = inkTool === 'eraser' ? 'rgba(0, 0, 0, 1)' : inkColor;
     context.lineWidth = inkTool === 'eraser' ? 22 : 3;
     context.lineCap = 'round';
     context.lineJoin = 'round';
@@ -442,9 +455,12 @@ export default function LessonDetailPage() {
     context.globalCompositeOperation = 'source-over';
   };
 
+  const canDrawWithPointer = (event) => event.pointerType !== 'touch';
+
   const handleInkPointerDown = (event) => {
     if (!isInkMode) return;
     event.preventDefault();
+    if (!canDrawWithPointer(event)) return;
     resizeInkCanvas();
     event.currentTarget.setPointerCapture?.(event.pointerId);
     isDrawingRef.current = true;
@@ -454,8 +470,9 @@ export default function LessonDetailPage() {
   };
 
   const handleInkPointerMove = (event) => {
-    if (!isInkMode || !isDrawingRef.current) return;
+    if (!isInkMode) return;
     event.preventDefault();
+    if (!isDrawingRef.current || !canDrawWithPointer(event)) return;
 
     const nextPoint = getInkPoint(event);
     const previousPoint = lastInkPointRef.current;
@@ -656,6 +673,23 @@ export default function LessonDetailPage() {
                             >
                               <FiMinusCircle size={18} />
                             </button>
+                            <div className="lesson-slide-color-palette" aria-label="Chọn màu bút">
+                              {INK_COLORS.map((color) => (
+                                <button
+                                  key={color}
+                                  type="button"
+                                  onClick={() => {
+                                    setInkColor(color);
+                                    setInkTool('pen');
+                                    setIsInkMode(true);
+                                  }}
+                                  className={`lesson-slide-color-button ${inkColor === color ? 'is-active' : ''}`}
+                                  style={{ backgroundColor: color }}
+                                  title="Chọn màu bút"
+                                  aria-label="Chọn màu bút"
+                                />
+                              ))}
+                            </div>
                             <button
                               type="button"
                               onClick={handleClearInk}
@@ -706,6 +740,7 @@ export default function LessonDetailPage() {
                         onPointerMove={handleInkPointerMove}
                         onPointerUp={handleInkPointerUp}
                         onPointerCancel={handleInkPointerUp}
+                        onContextMenu={(event) => isInkMode && event.preventDefault()}
                         aria-hidden="true"
                       />
                     </div>
@@ -960,6 +995,7 @@ export default function LessonDetailPage() {
           align-items: center;
           justify-content: center;
           gap: 6px;
+          flex-wrap: wrap;
         }
         .lesson-slide-icon-button {
           display: inline-flex;
@@ -982,6 +1018,22 @@ export default function LessonDetailPage() {
         .lesson-slide-icon-button.is-eraser {
           background: #e0f2fe;
           color: #0369a1;
+        }
+        .lesson-slide-color-palette {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          padding: 0 4px;
+        }
+        .lesson-slide-color-button {
+          width: 28px;
+          height: 28px;
+          border-radius: 999px;
+          border: 2px solid #ffffff;
+          box-shadow: 0 0 0 1px #cbd5e1;
+        }
+        .lesson-slide-color-button.is-active {
+          box-shadow: 0 0 0 3px #93c5fd;
         }
         .lesson-slide-progress {
           height: 4px;
@@ -1025,6 +1077,9 @@ export default function LessonDetailPage() {
           cursor: crosshair;
           pointer-events: auto;
           touch-action: none;
+          user-select: none;
+          -webkit-user-select: none;
+          -webkit-touch-callout: none;
         }
         .lesson-slide-ink-canvas.is-eraser {
           cursor: cell;
