@@ -3,7 +3,7 @@ import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import api, { getUploadUrl } from '../api/axios';
 import toast from 'react-hot-toast';
 import Navbar from '../components/Navbar';
-import { FiArrowLeft, FiChevronLeft, FiChevronRight, FiDownload, FiFileText, FiCheckCircle, FiClock, FiLock, FiMaximize2, FiMenu, FiMinimize2, FiX } from 'react-icons/fi';
+import { FiArrowLeft, FiChevronLeft, FiChevronRight, FiDownload, FiFileText, FiCheckCircle, FiClock, FiEdit3, FiLock, FiMaximize2, FiMenu, FiMinimize2, FiMinusCircle, FiTrash2, FiX } from 'react-icons/fi';
 import 'katex/dist/katex.min.css';
 import 'quill/dist/quill.snow.css';
 import katex from 'katex';
@@ -201,11 +201,16 @@ export default function LessonDetailPage() {
   const slideRef = useRef(null);
   const slideContentRef = useRef(null);
   const slideMeasureRef = useRef(null);
+  const inkCanvasRef = useRef(null);
+  const isDrawingRef = useRef(false);
+  const lastInkPointRef = useRef(null);
   const [contentMode, setContentMode] = useState('slide');
   const [slideIndex, setSlideIndex] = useState(0);
   const [visibleBlockCount, setVisibleBlockCount] = useState(1);
   const [lessonSlides, setLessonSlides] = useState([]);
   const [isSlideFullscreen, setIsSlideFullscreen] = useState(false);
+  const [isInkMode, setIsInkMode] = useState(false);
+  const [inkTool, setInkTool] = useState('pen');
   const [loading, setLoading] = useState(true);
   const [siblings, setSiblings] = useState([]); // danh sách bài học cùng khóa
   const [sidebarOpen, setSidebarOpen] = useState(false); // mobile sidebar toggle
@@ -306,6 +311,55 @@ export default function LessonDetailPage() {
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
 
+  useEffect(() => {
+    if (!isSlideFullscreen) setIsInkMode(false);
+  }, [isSlideFullscreen]);
+
+  const resizeInkCanvas = () => {
+    const canvas = inkCanvasRef.current;
+    const stage = canvas?.parentElement;
+    if (!canvas || !stage) return;
+
+    const rect = stage.getBoundingClientRect();
+    const scale = window.devicePixelRatio || 1;
+    const nextWidth = Math.max(1, Math.floor(rect.width * scale));
+    const nextHeight = Math.max(1, Math.floor(rect.height * scale));
+
+    if (canvas.width === nextWidth && canvas.height === nextHeight) return;
+    canvas.width = nextWidth;
+    canvas.height = nextHeight;
+    canvas.style.width = `${rect.width}px`;
+    canvas.style.height = `${rect.height}px`;
+
+    const context = canvas.getContext('2d');
+    context.setTransform(scale, 0, 0, scale, 0, 0);
+    context.lineCap = 'round';
+    context.lineJoin = 'round';
+  };
+
+  useLayoutEffect(() => {
+    if (contentMode !== 'slide' || !lessonSlides.length) return undefined;
+
+    let frameId = window.requestAnimationFrame(resizeInkCanvas);
+    const handleResize = () => {
+      window.cancelAnimationFrame(frameId);
+      frameId = window.requestAnimationFrame(resizeInkCanvas);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [contentMode, isSlideFullscreen, slideIndex, visibleBlockCount, lessonSlides.length]);
+
+  useEffect(() => {
+    const canvas = inkCanvasRef.current;
+    if (!canvas) return;
+    const context = canvas.getContext('2d');
+    context.clearRect(0, 0, canvas.width, canvas.height);
+  }, [slideIndex]);
+
   const handlePreviousSlideStep = () => {
     if (visibleBlockCount > 1) {
       setVisibleBlockCount((count) => Math.max(1, count - 1));
@@ -341,6 +395,78 @@ export default function LessonDetailPage() {
     } catch {
       toast.error('Không thể bật toàn màn hình');
     }
+  };
+
+  const handleClearInk = () => {
+    const canvas = inkCanvasRef.current;
+    if (!canvas) return;
+    const context = canvas.getContext('2d');
+    context.clearRect(0, 0, canvas.width, canvas.height);
+  };
+
+  const handleSelectInkTool = (tool) => {
+    setInkTool(tool);
+    setIsInkMode((currentMode) => (currentMode && inkTool === tool ? false : true));
+  };
+
+  const getInkPoint = (event) => {
+    const canvas = inkCanvasRef.current;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+    };
+  };
+
+  const drawInkSegment = (fromPoint, toPoint) => {
+    const context = inkCanvasRef.current?.getContext('2d');
+    if (!fromPoint || !toPoint || !context) return;
+
+    context.globalCompositeOperation = inkTool === 'eraser' ? 'destination-out' : 'source-over';
+    context.strokeStyle = inkTool === 'eraser' ? 'rgba(0, 0, 0, 1)' : '#dc2626';
+    context.fillStyle = inkTool === 'eraser' ? 'rgba(0, 0, 0, 1)' : '#dc2626';
+    context.lineWidth = inkTool === 'eraser' ? 22 : 3;
+    context.lineCap = 'round';
+    context.lineJoin = 'round';
+    if (fromPoint.x === toPoint.x && fromPoint.y === toPoint.y) {
+      context.beginPath();
+      context.arc(fromPoint.x, fromPoint.y, context.lineWidth / 2, 0, Math.PI * 2);
+      context.fill();
+    } else {
+      context.beginPath();
+      context.moveTo(fromPoint.x, fromPoint.y);
+      context.lineTo(toPoint.x, toPoint.y);
+      context.stroke();
+    }
+    context.globalCompositeOperation = 'source-over';
+  };
+
+  const handleInkPointerDown = (event) => {
+    if (!isInkMode) return;
+    event.preventDefault();
+    resizeInkCanvas();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    isDrawingRef.current = true;
+    const startPoint = getInkPoint(event);
+    lastInkPointRef.current = startPoint;
+    if (startPoint) drawInkSegment(startPoint, startPoint);
+  };
+
+  const handleInkPointerMove = (event) => {
+    if (!isInkMode || !isDrawingRef.current) return;
+    event.preventDefault();
+
+    const nextPoint = getInkPoint(event);
+    const previousPoint = lastInkPointRef.current;
+    drawInkSegment(previousPoint, nextPoint);
+    lastInkPointRef.current = nextPoint;
+  };
+
+  const handleInkPointerUp = (event) => {
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    isDrawingRef.current = false;
+    lastInkPointRef.current = null;
   };
 
   const handleSetContentMode = async (mode) => {
@@ -509,15 +635,48 @@ export default function LessonDetailPage() {
                   <div ref={slideRef} className="lesson-slide">
                     <div className="lesson-slide-topbar">
                       <span className="lesson-slide-count">Slide {slideIndex + 1}/{lessonSlides.length}</span>
-                      <button
-                        type="button"
-                        onClick={handleToggleSlideFullscreen}
-                        className="lesson-slide-icon-button"
-                        title={isSlideFullscreen ? 'Thoát toàn màn hình' : 'Toàn màn hình'}
-                        aria-label={isSlideFullscreen ? 'Thoát toàn màn hình' : 'Toàn màn hình'}
-                      >
-                        {isSlideFullscreen ? <FiMinimize2 size={18} /> : <FiMaximize2 size={18} />}
-                      </button>
+                      <div className="lesson-slide-toolbar">
+                        {isSlideFullscreen && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleSelectInkTool('pen')}
+                              className={`lesson-slide-icon-button ${isInkMode && inkTool === 'pen' ? 'is-active' : ''}`}
+                              title={isInkMode && inkTool === 'pen' ? 'Tắt viết lên slide' : 'Viết lên slide'}
+                              aria-label={isInkMode && inkTool === 'pen' ? 'Tắt viết lên slide' : 'Viết lên slide'}
+                            >
+                              <FiEdit3 size={18} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSelectInkTool('eraser')}
+                              className={`lesson-slide-icon-button ${isInkMode && inkTool === 'eraser' ? 'is-active is-eraser' : ''}`}
+                              title={isInkMode && inkTool === 'eraser' ? 'Tắt tẩy chi tiết' : 'Tẩy chi tiết'}
+                              aria-label={isInkMode && inkTool === 'eraser' ? 'Tắt tẩy chi tiết' : 'Tẩy chi tiết'}
+                            >
+                              <FiMinusCircle size={18} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleClearInk}
+                              className="lesson-slide-icon-button"
+                              title="Xóa nét viết"
+                              aria-label="Xóa nét viết"
+                            >
+                              <FiTrash2 size={18} />
+                            </button>
+                          </>
+                        )}
+                        <button
+                          type="button"
+                          onClick={handleToggleSlideFullscreen}
+                          className="lesson-slide-icon-button"
+                          title={isSlideFullscreen ? 'Thoát toàn màn hình' : 'Toàn màn hình'}
+                          aria-label={isSlideFullscreen ? 'Thoát toàn màn hình' : 'Toàn màn hình'}
+                        >
+                          {isSlideFullscreen ? <FiMinimize2 size={18} /> : <FiMaximize2 size={18} />}
+                        </button>
+                      </div>
                       <span className="lesson-slide-count">Ý {Math.min(visibleBlockCount, totalSlideBlocks)}/{totalSlideBlocks || 1}</span>
                     </div>
                     <div className="lesson-slide-progress" aria-hidden="true">
@@ -530,14 +689,25 @@ export default function LessonDetailPage() {
                         }}
                       />
                     </div>
-                    <div ref={slideContentRef} className="ql-editor lesson-slide-content">
-                      {currentSlide?.blocks?.slice(0, visibleBlockCount).map((blockHtml, blockIndex) => (
-                        <div
-                          key={`${slideIndex}-${blockIndex}`}
-                          className="lesson-slide-block"
-                          dangerouslySetInnerHTML={{ __html: blockHtml }}
-                        />
-                      ))}
+                    <div className="lesson-slide-stage">
+                      <div ref={slideContentRef} className="ql-editor lesson-slide-content">
+                        {currentSlide?.blocks?.slice(0, visibleBlockCount).map((blockHtml, blockIndex) => (
+                          <div
+                            key={`${slideIndex}-${blockIndex}`}
+                            className="lesson-slide-block"
+                            dangerouslySetInnerHTML={{ __html: blockHtml }}
+                          />
+                        ))}
+                      </div>
+                      <canvas
+                        ref={inkCanvasRef}
+                        className={`lesson-slide-ink-canvas ${isInkMode ? 'is-active' : ''} ${inkTool === 'eraser' ? 'is-eraser' : ''}`}
+                        onPointerDown={handleInkPointerDown}
+                        onPointerMove={handleInkPointerMove}
+                        onPointerUp={handleInkPointerUp}
+                        onPointerCancel={handleInkPointerUp}
+                        aria-hidden="true"
+                      />
                     </div>
                     <div ref={slideMeasureRef} className="ql-editor lesson-slide-measure" aria-hidden="true">
                       {revealBlocks.map((blockHtml, blockIndex) => (
@@ -785,6 +955,12 @@ export default function LessonDetailPage() {
           font-weight: 600;
           white-space: nowrap;
         }
+        .lesson-slide-toolbar {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+        }
         .lesson-slide-icon-button {
           display: inline-flex;
           align-items: center;
@@ -793,10 +969,19 @@ export default function LessonDetailPage() {
           height: 36px;
           border-radius: 8px;
           color: #334155;
+          transition: background 150ms ease, color 150ms ease;
         }
         .lesson-slide-icon-button:hover {
           background: #e0f2fe;
           color: #1d4ed8;
+        }
+        .lesson-slide-icon-button.is-active {
+          background: #fee2e2;
+          color: #dc2626;
+        }
+        .lesson-slide-icon-button.is-eraser {
+          background: #e0f2fe;
+          color: #0369a1;
         }
         .lesson-slide-progress {
           height: 4px;
@@ -808,6 +993,13 @@ export default function LessonDetailPage() {
           background: #2563eb;
           transition: width 180ms ease;
         }
+        .lesson-slide-stage {
+          position: relative;
+        }
+        .lesson-slide:fullscreen .lesson-slide-stage {
+          flex: 1;
+          min-height: 0;
+        }
         .lesson-slide-content {
           height: min(52vh, 520px);
           min-height: 280px;
@@ -815,12 +1007,27 @@ export default function LessonDetailPage() {
           padding: 18px 18px 8px;
         }
         .lesson-slide:fullscreen .lesson-slide-content {
-          flex: 1;
-          height: auto;
+          height: 100%;
           min-height: 0;
           overflow: hidden;
           padding: 32px clamp(24px, 6vw, 80px);
           font-size: 1.25rem;
+        }
+        .lesson-slide-ink-canvas {
+          position: absolute;
+          inset: 0;
+          z-index: 2;
+          width: 100%;
+          height: 100%;
+          pointer-events: none;
+        }
+        .lesson-slide-ink-canvas.is-active {
+          cursor: crosshair;
+          pointer-events: auto;
+          touch-action: none;
+        }
+        .lesson-slide-ink-canvas.is-eraser {
+          cursor: cell;
         }
         .lesson-slide-measure {
           position: absolute;
