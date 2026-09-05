@@ -112,7 +112,8 @@ async function ensurePrintShareToken(homework) {
   return homework;
 }
 
-function withParentPrintUrl(homework) {
+function withParentPrintUrl(homework, options = {}) {
+  const { includeAnswers = true } = options;
   const obj = homework?.toObject ? homework.toObject() : homework;
   if (!obj) return obj;
   const sourceExam = obj.sourceExam && typeof obj.sourceExam === 'object' ? obj.sourceExam : null;
@@ -132,10 +133,53 @@ function withParentPrintUrl(homework) {
     ...obj,
     title: sourceExam?.title || obj.title,
     description: sourceDescription,
-    examPackage: sourceExamPackage || (hasExamPackageQuestions(obj.examPackage) ? obj.examPackage : null),
-    answerKey: hasSourceExamDetail ? (examPackageToAnswerKey(sourceExamPackage) || sourceExam.solutionContent || obj.answerKey || '') : obj.answerKey,
+    examPackage: includeAnswers
+      ? (sourceExamPackage || (hasExamPackageQuestions(obj.examPackage) ? obj.examPackage : null))
+      : (sourceExamPackage ? examPackageForQuestionsOnly(sourceExamPackage) : (hasExamPackageQuestions(obj.examPackage) ? examPackageForQuestionsOnly(obj.examPackage) : null)),
+    answerKey: includeAnswers
+      ? (hasSourceExamDetail ? (examPackageToAnswerKey(sourceExamPackage) || sourceExam.solutionContent || obj.answerKey || '') : obj.answerKey)
+      : '',
+    solutionImages: includeAnswers ? (obj.solutionImages || []) : [],
+    solutionPdfAttachments: includeAnswers ? (obj.solutionPdfAttachments || []) : [],
     pdfAttachments: hasSourceExamDetail ? (sourceExam.pdfAttachments || []) : (obj.pdfAttachments || []),
     parentPrintUrl: getParentPrintUrl(obj),
+  };
+}
+
+function buildStudentAnswerPayload(homework) {
+  const obj = homework?.toObject ? homework.toObject() : homework;
+  if (!obj) return { answerKey: '', solutionImages: [], solutionPdfAttachments: [] };
+  const sourceExam = obj.sourceExam && typeof obj.sourceExam === 'object' ? obj.sourceExam : null;
+  const sourceExamPackage = hasExamPackageQuestions(sourceExam?.examPackage) ? sourceExam.examPackage : null;
+
+  return {
+    answerKey: sourceExam
+      ? (examPackageToAnswerKey(sourceExamPackage) || sourceExam.solutionContent || obj.answerKey || '')
+      : (obj.answerKey || ''),
+    solutionImages: obj.solutionImages || [],
+    solutionPdfAttachments: obj.solutionPdfAttachments || [],
+  };
+}
+
+function canViewHomeworkAnswersFromSubmission(submission) {
+  return Boolean((submission?.submissionImages || []).length > 0);
+}
+
+function withStudentSubmissionAnswerPayload(submission) {
+  const obj = submission?.toObject ? submission.toObject() : submission;
+  if (!obj) return obj;
+  const homework = submission?.homework;
+  const canViewAnswers = canViewHomeworkAnswersFromSubmission(obj);
+
+  return {
+    ...obj,
+    homework: homework ? withParentPrintUrl(homework, { includeAnswers: false }) : obj.homework,
+    canViewAnswers,
+    ...(canViewAnswers ? buildStudentAnswerPayload(homework) : {
+      answerKey: '',
+      solutionImages: [],
+      solutionPdfAttachments: [],
+    }),
   };
 }
 
@@ -579,13 +623,13 @@ const getStudentHomeworks = async (req, res) => {
     const homeworks = await Homework.find({ class: { $in: classIds }, isPublished: true })
       .populate('class', 'name')
       .populate('lesson', 'title')
-      .populate('sourceExam', 'title content solutionContent examPackage pdfAttachments')
+      .populate('sourceExam', 'title content examPackage pdfAttachments')
       .sort({ createdAt: -1 });
     
   
 
     for (const homework of homeworks) await ensurePrintShareToken(homework);
-    res.json(homeworks.map(withParentPrintUrl));
+    res.json(homeworks.map(homework => withParentPrintUrl(homework, { includeAnswers: false })));
   } catch (err) {
     console.error('Get student homeworks error:', err);
     res.status(500).json({ message: err.message });
@@ -813,7 +857,10 @@ const getStudentSubmission = async (req, res) => {
       homework: homeworkId,
       student: studentId
     })
-      .populate('homework')
+      .populate({
+        path: 'homework',
+        populate: { path: 'sourceExam', select: 'title solutionContent examPackage' },
+      })
       .populate('student', 'name email')
       .populate('gradedBy', 'name');
 
@@ -821,7 +868,7 @@ const getStudentSubmission = async (req, res) => {
       return res.status(404).json({ message: 'Không tìm thấy bài làm' });
     }
 
-    res.json(submission);
+    res.json(withStudentSubmissionAnswerPayload(submission));
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -862,11 +909,14 @@ const submitHomework = async (req, res) => {
       },
       { new: true, upsert: true, runValidators: false }
     )
-      .populate('homework')
+      .populate({
+        path: 'homework',
+        populate: { path: 'sourceExam', select: 'title solutionContent examPackage' },
+      })
       .populate('student', 'name email')
       .populate('gradedBy', 'name');
 
-    res.json(submission);
+    res.json(withStudentSubmissionAnswerPayload(submission));
   } catch (err) {
     res.status(400).json({ message: err.message });
   }

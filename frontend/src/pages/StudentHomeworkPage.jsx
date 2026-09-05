@@ -17,19 +17,13 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
-function renderLatexText(value) {
-  const text = String(value || '')
-    .replace(/\r\n/g, '\n')
-    .split('\n')
-    .map(line => line.trim())
-    .filter(Boolean)
-    .join('\n');
+function renderMathInText(text, ownerDoc) {
   const mathPattern = /(\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)|\$[^$\n]+?\$)/g;
+  const fragment = ownerDoc.createDocumentFragment();
   let cursor = 0;
-  let html = '';
 
-  text.replace(mathPattern, (match, _full, offset) => {
-    html += escapeHtml(text.slice(cursor, offset)).replace(/\n/g, '<br />');
+  String(text || '').replace(mathPattern, (match, _full, offset) => {
+    if (offset > cursor) fragment.appendChild(ownerDoc.createTextNode(text.slice(cursor, offset)));
 
     let tex = match;
     let displayMode = false;
@@ -45,18 +39,76 @@ function renderLatexText(value) {
       tex = match.slice(1, -1);
     }
 
+    const span = ownerDoc.createElement('span');
     try {
-      html += katex.renderToString(tex.trim(), { displayMode, throwOnError: false });
+      span.innerHTML = katex.renderToString(tex.trim(), { displayMode, throwOnError: false });
     } catch {
-      html += escapeHtml(match);
+      span.textContent = match;
     }
-
+    fragment.appendChild(span);
     cursor = offset + match.length;
     return match;
   });
 
-  html += escapeHtml(text.slice(cursor)).replace(/\n/g, '<br />');
-  return html;
+  if (cursor < text.length) fragment.appendChild(ownerDoc.createTextNode(text.slice(cursor)));
+  return fragment;
+}
+
+function renderLatexContent(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+
+  const looksLikeHtml = /<\/?[a-z][\s\S]*>/i.test(raw);
+  const html = looksLikeHtml
+    ? raw
+    : escapeHtml(raw).replace(/\r\n/g, '\n').replace(/\n/g, '<br />');
+
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const body = doc.body;
+    const ownerDoc = body.ownerDocument;
+
+    body.querySelectorAll('script, style').forEach(el => el.remove());
+    body.querySelectorAll('*').forEach(el => {
+      [...el.attributes].forEach(attr => {
+        if (/^on/i.test(attr.name) || attr.name === 'style') el.removeAttribute(attr.name);
+      });
+    });
+
+    body.querySelectorAll('.ql-formula').forEach(span => {
+      const formula = span.getAttribute('data-value') || span.textContent;
+      if (!formula) return;
+      try {
+        span.innerHTML = katex.renderToString(formula.trim(), { throwOnError: false });
+      } catch {
+        span.textContent = formula;
+      }
+    });
+
+    const walker = ownerDoc.createTreeWalker(body, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        let el = node.parentElement;
+        while (el && el !== body) {
+          if (el.classList.contains('ql-formula') || el.classList.contains('katex') || el.classList.contains('katex-display')) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          el = el.parentElement;
+        }
+        return /(\$|\\\(|\\\[)/.test(node.textContent) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+      },
+    });
+
+    const textNodes = [];
+    let node;
+    while ((node = walker.nextNode())) textNodes.push(node);
+    textNodes.forEach(textNode => {
+      textNode.parentNode.replaceChild(renderMathInText(textNode.textContent, ownerDoc), textNode);
+    });
+
+    return body.innerHTML;
+  } catch {
+    return escapeHtml(raw).replace(/\r\n/g, '\n').replace(/\n/g, '<br />');
+  }
 }
 
 function HomeworkScoreChart({ data }) {
@@ -475,6 +527,11 @@ export default function StudentHomeworkPage() {
               const sub = submissions[hw._id];
               const status = getStatus(sub);
               const isExpanded = expandedHw === hw._id;
+              const hasSubmitted = Boolean(sub?.submittedAt || sub?.submissionImages?.length);
+              const answerKey = sub?.answerKey || '';
+              const solutionImages = sub?.solutionImages || [];
+              const solutionPdfAttachments = sub?.solutionPdfAttachments || [];
+              const hasAnswers = Boolean(answerKey.trim() || solutionImages.length > 0 || solutionPdfAttachments.length > 0);
 
               return (
                 <div
@@ -512,7 +569,10 @@ export default function StudentHomeworkPage() {
                       {hw.description && (
                         <div className="mb-6">
                           <h3 className="font-medium text-gray-900 mb-2">Đề bài:</h3>
-                          <p className="text-gray-700 whitespace-pre-wrap">{hw.description}</p>
+                          <div
+                            className="lesson-content text-gray-700 leading-7 overflow-x-auto"
+                            dangerouslySetInnerHTML={{ __html: renderLatexContent(hw.description) }}
+                          />
                         </div>
                       )}
 
@@ -686,7 +746,7 @@ export default function StudentHomeworkPage() {
                                   <p className="text-sm font-medium text-gray-700 mb-2">Đáp án tham khảo:</p>
                                   <div
                                     className="lesson-content text-sm text-gray-700 bg-blue-50 border border-blue-100 p-2 rounded leading-6 overflow-x-auto"
-                                    dangerouslySetInnerHTML={{ __html: renderLatexText(hw.answerKey) }}
+                                    dangerouslySetInnerHTML={{ __html: renderLatexContent(hw.answerKey) }}
                                   />
                                 </div>
                               )}
@@ -735,6 +795,69 @@ export default function StudentHomeworkPage() {
                                   </div>
                                 </div>
                               )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {hasSubmitted && hasAnswers && (
+                        <div className="mt-4 bg-white rounded-lg p-4 border border-blue-200">
+                          <h3 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
+                            <FiHelpCircle className="text-blue-600" /> Đáp án sau khi nộp bài
+                          </h3>
+
+                          {answerKey.trim() && (
+                            <div className="mb-4">
+                              <p className="text-sm font-medium text-gray-700 mb-2">Đáp án tham khảo:</p>
+                              <div
+                                className="lesson-content text-sm text-gray-700 bg-blue-50 border border-blue-100 p-3 rounded leading-6 overflow-x-auto"
+                                dangerouslySetInnerHTML={{ __html: renderLatexContent(answerKey) }}
+                              />
+                            </div>
+                          )}
+
+                          {solutionImages.length > 0 && (
+                            <div>
+                              <p className="text-sm font-medium text-gray-700 mb-2">Ảnh lời giải mẫu:</p>
+                              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                {solutionImages.map((img, idx) => (
+                                  <button
+                                    key={`${img.url}-${idx}`}
+                                    type="button"
+                                    onClick={() => setPreviewImage(getUploadUrl(img.url))}
+                                    className="relative group"
+                                  >
+                                    <img
+                                      src={getUploadUrl(img.url)}
+                                      alt={`Đáp án ${idx + 1}`}
+                                      className="w-full h-32 object-cover rounded border border-blue-100 cursor-pointer hover:opacity-75 transition"
+                                    />
+                                    <span className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
+                                      <FiEye className="text-white" size={20} />
+                                    </span>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {solutionPdfAttachments.length > 0 && (
+                            <div className="mt-4">
+                              <p className="text-sm font-medium text-gray-700 mb-2">File PDF lời giải mẫu:</p>
+                              <div className="space-y-2">
+                                {solutionPdfAttachments.map((file, index) => (
+                                  <a
+                                    key={`${file.url}-${index}`}
+                                    href={getUploadUrl(file.url)}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center justify-between gap-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-700 hover:bg-blue-100"
+                                  >
+                                    <span className="truncate">{file.filename || `Loi giai ${index + 1}.pdf`}</span>
+                                    <FiDownload className="shrink-0" size={15} />
+                                  </a>
+                                ))}
+                              </div>
                             </div>
                           )}
                         </div>
