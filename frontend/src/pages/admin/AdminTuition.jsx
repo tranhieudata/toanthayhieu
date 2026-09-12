@@ -22,6 +22,25 @@ function formatVND(amount) {
   return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
 }
 
+function getEntityId(entity) {
+  return entity?._id || entity || '';
+}
+
+function buildStudentAdjustment(student, adjustment = {}, options = {}) {
+  const studentId = getEntityId(student);
+  if (!studentId) return null;
+
+  return {
+    student: String(studentId),
+    name: student?.name || adjustment.studentName || '',
+    email: student?.email || adjustment.studentEmail || '',
+    absentSessions: adjustment.absentSessions || 0,
+    extraSessions: adjustment.extraSessions || 0,
+    note: adjustment.note || '',
+    isArchivedStudent: !!options.isArchivedStudent,
+  };
+}
+
 export default function AdminTuition() {
   const now = new Date();
   const [classes, setClasses] = useState([]);
@@ -85,22 +104,35 @@ export default function AdminTuition() {
         // map adjustments
         const adjMap = {};
         (record.studentAdjustments || []).forEach((a) => {
-          adjMap[a.student._id || a.student] = a;
+          const studentId = getEntityId(a.student);
+          if (studentId) adjMap[String(studentId)] = a;
         });
+
+        const currentStudentIds = new Set((cls.students || []).map((s) => String(getEntityId(s))).filter(Boolean));
+        const archivedAdjustments = (record.studentAdjustments || [])
+          .filter((a) => {
+            const studentId = getEntityId(a.student);
+            return studentId && !currentStudentIds.has(String(studentId));
+          })
+          .map((a) => buildStudentAdjustment(a.student, a, { isArchivedStudent: true }))
+          .filter(Boolean);
         
         setStudentAdjustments(
-          (cls.students || []).map((s) => {
-            const sid = s._id || s;
-            const adj = adjMap[sid] || {};
-            return { student: sid, name: s.name || '', email: s.email || '', absentSessions: adj.absentSessions || 0, extraSessions: adj.extraSessions || 0, note: adj.note || '' };
-          })
+          [
+            ...(cls.students || [])
+            .map((s) => buildStudentAdjustment(s, adjMap[String(getEntityId(s))] || {}))
+              .filter(Boolean),
+            ...archivedAdjustments,
+          ]
         );
       } else {
         setExistingRecordId(null);
         setHolidaySessions(0);
         setRecordNote('');
         setStudentAdjustments(
-          (cls.students || []).map((s) => ({ student: s._id || s, name: s.name || '', email: s.email || '', absentSessions: 0, extraSessions: 0, note: '' }))
+          (cls.students || [])
+            .map((s) => buildStudentAdjustment(s))
+            .filter(Boolean)
         );
       }
     } catch (err) {
@@ -150,7 +182,14 @@ export default function AdminTuition() {
         totalSessions,
         holidaySessions,
         feePerSession,
-        studentAdjustments: studentAdjustments.map((a) => ({ student: a.student, absentSessions: a.absentSessions, extraSessions: a.extraSessions, note: a.note })),
+        studentAdjustments: studentAdjustments.map((a) => ({
+          student: a.student,
+          studentName: a.name,
+          studentEmail: a.email,
+          absentSessions: a.absentSessions,
+          extraSessions: a.extraSessions,
+          note: a.note,
+        })),
         note: recordNote,
       });
       toast.success('Đã lưu bảng học phí tháng ' + month + '/' + year);
@@ -321,7 +360,10 @@ export default function AdminTuition() {
                       return (
                         <tr key={adj.student} className="hover:bg-gray-50">
                           <td className="py-3 pr-4">
-                            <div className="font-medium text-gray-900">{adj.name || 'Học sinh'}</div>
+                            <div className="font-medium text-gray-900">
+                              {adj.name || 'Học sinh'}
+                              {adj.isArchivedStudent && <span className="ml-2 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">Đã xóa/rời lớp</span>}
+                            </div>
                             <div className="text-xs text-gray-400">{adj.email}</div>
                           </td>
                           <td className="py-3 px-4">

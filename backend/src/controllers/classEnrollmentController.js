@@ -1,5 +1,6 @@
 const ClassEnrollment = require('../models/ClassEnrollment');
 const Class = require('../models/Class');
+const User = require('../models/User');
 
 // POST /api/class-enrollments — học sinh đăng ký tham gia lớp
 const applyToClass = async (req, res) => {
@@ -44,14 +45,36 @@ const getAllEnrollments = async (req, res) => {
 
     const total = await ClassEnrollment.countDocuments(filter);
     const enrollments = await ClassEnrollment.find(filter)
-      .populate('student', 'name email avatar')
-      .populate('class', 'name')
-      .populate('reviewedBy', 'name')
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
-      .limit(Number(limit));
+      .limit(Number(limit))
+      .lean();
 
-    res.json({ enrollments, total, page: Number(page), pages: Math.ceil(total / limit) });
+    const studentIds = enrollments.map((enrollment) => enrollment.student).filter(Boolean);
+    const classIds = enrollments.map((enrollment) => enrollment.class).filter(Boolean);
+    const reviewerIds = enrollments.map((enrollment) => enrollment.reviewedBy).filter(Boolean);
+    const [students, classes, reviewers] = await Promise.all([
+      User.find({ _id: { $in: studentIds } }).select('name email avatar').lean(),
+      Class.find({ _id: { $in: classIds } }).select('name').lean(),
+      User.find({ _id: { $in: reviewerIds } }).select('name').lean(),
+    ]);
+    const studentMap = new Map(students.map((student) => [String(student._id), student]));
+    const classMap = new Map(classes.map((cls) => [String(cls._id), cls]));
+    const reviewerMap = new Map(reviewers.map((reviewer) => [String(reviewer._id), reviewer]));
+
+    const normalizedEnrollments = enrollments.map((enrollment) => {
+      const student = studentMap.get(String(enrollment.student));
+      return {
+        ...enrollment,
+        student: student || enrollment.student,
+        studentName: enrollment.studentName || student?.name || '',
+        studentEmail: enrollment.studentEmail || student?.email || '',
+        class: classMap.get(String(enrollment.class)) || enrollment.class,
+        reviewedBy: reviewerMap.get(String(enrollment.reviewedBy)) || enrollment.reviewedBy,
+      };
+    });
+
+    res.json({ enrollments: normalizedEnrollments, total, page: Number(page), pages: Math.ceil(total / limit) });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -147,11 +170,17 @@ const adminAddStudent = async (req, res) => {
     const cls = await Class.findById(classId);
     if (!cls) return res.status(404).json({ message: 'Không tìm thấy lớp học' });
 
+    const student = await User.findById(studentId).select('name email');
+    if (!student) return res.status(404).json({ message: 'KhÃ´ng tÃ¬m tháº¥y há»c sinh' });
+
     const enrollment = await ClassEnrollment.findOneAndUpdate(
       { student: studentId, class: classId },
       { student: studentId, class: classId, status: 'approved', reviewedBy: req.user._id, reviewedAt: new Date(), adminNote: 'Thêm trực tiếp bởi admin' },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
+    enrollment.studentName = student.name || '';
+    enrollment.studentEmail = student.email || '';
+    await enrollment.save();
     await Class.findByIdAndUpdate(classId, { $addToSet: { students: studentId } });
     await enrollment.populate('student', 'name email avatar');
     res.status(201).json(enrollment);

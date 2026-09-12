@@ -1,5 +1,6 @@
 const TuitionRecord = require('../models/TuitionRecord');
 const Class = require('../models/Class');
+const User = require('../models/User');
 
 // GET /api/tuition?classId=&month=&year=
 const getTuitionRecord = async (req, res) => {
@@ -8,8 +9,22 @@ const getTuitionRecord = async (req, res) => {
     if (!classId || !month || !year) {
       return res.status(400).json({ message: 'Thiếu classId, month hoặc year' });
     }
-    const record = await TuitionRecord.findOne({ class: classId, month: Number(month), year: Number(year) })
-      .populate('studentAdjustments.student', 'name email');
+    const record = await TuitionRecord.findOne({ class: classId, month: Number(month), year: Number(year) }).lean();
+    if (record) {
+      const studentIds = (record.studentAdjustments || []).map((a) => a.student).filter(Boolean);
+      const students = await User.find({ _id: { $in: studentIds } }).select('name email').lean();
+      const studentMap = new Map(students.map((student) => [String(student._id), student]));
+
+      record.studentAdjustments = (record.studentAdjustments || []).map((a) => {
+        const student = studentMap.get(String(a.student));
+        return {
+          ...a,
+          student: student || a.student,
+          studentName: a.studentName || student?.name || '',
+          studentEmail: a.studentEmail || student?.email || '',
+        };
+      });
+    }
     res.json(record || null);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -46,6 +61,8 @@ const upsertTuitionRecord = async (req, res) => {
           const previousPayment = existingPaymentByStudent.get(String(studentId));
           return {
             student: studentId,
+            studentName: a.studentName || a.name || a.student?.name || '',
+            studentEmail: a.studentEmail || a.email || a.student?.email || '',
             absentSessions: Number(a.absentSessions) || 0,
             extraSessions: Number(a.extraSessions) || 0,
             isPaid: a.isPaid != null ? !!a.isPaid : !!previousPayment?.isPaid,
@@ -125,7 +142,7 @@ const updateTuitionPayment = async (req, res) => {
       ? record.studentAdjustments.id(adjustmentId)
       : record.studentAdjustments.find((item) => {
           const sameStudentId = studentId && String(item.student?._id || item.student) === String(studentId);
-          const sameStudentName = studentName && item.student?.name === studentName;
+          const sameStudentName = studentName && (item.student?.name === studentName || item.studentName === studentName);
           return sameStudentId || sameStudentName;
         });
     if (!adjustment) return res.status(404).json({ message: 'Không tìm thấy học sinh trong bảng học phí' });
@@ -182,7 +199,8 @@ const getRevenueReport = async (req, res) => {
             year: record.year,
             classId: record.class?._id || record.class,
             className: record.class?.name || '',
-            studentName: adj.student?.name || '',
+            studentName: adj.student?.name || adj.studentName || '',
+            studentEmail: adj.student?.email || adj.studentEmail || '',
             studentId: adj.student?._id || adj.student,
             sessions,
             feePerSession: record.feePerSession,

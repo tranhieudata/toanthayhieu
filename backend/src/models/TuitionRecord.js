@@ -2,6 +2,8 @@ const mongoose = require('mongoose');
 
 const studentAdjustmentSchema = new mongoose.Schema({
   student: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  studentName: { type: String, default: '' },
+  studentEmail: { type: String, default: '' },
   absentSessions: { type: Number, default: 0, min: 0 },
   extraSessions: { type: Number, default: 0, min: 0 },
   isPaid: { type: Boolean, default: false },

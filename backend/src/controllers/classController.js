@@ -114,7 +114,7 @@ const getClassStats = async (req, res) => {
     const cls = await Class.findById(classId).populate('students', 'name email avatar');
     if (!cls) return res.status(404).json({ message: 'KhÃ´ng tÃ¬m tháº¥y lá»›p há»c' });
 
-    const students = cls.students || [];
+    const students = (cls.students || []).filter(Boolean);
     const studentIds = students.map(student => student._id);
 
     const [homeworks, exams] = await Promise.all([

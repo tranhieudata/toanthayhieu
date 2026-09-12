@@ -1,6 +1,8 @@
 const bcrypt = require('bcryptjs');
 const User = require('../models/User');
 const Enrollment = require('../models/Enrollment');
+const TuitionRecord = require('../models/TuitionRecord');
+const ClassEnrollment = require('../models/ClassEnrollment');
 
 const getVietnamTodayRange = () => {
   const now = new Date();
@@ -63,7 +65,26 @@ const updateUser = async (req, res) => {
 // DELETE /api/users/:id (admin)
 const deleteUser = async (req, res) => {
   try {
-    await User.findByIdAndDelete(req.params.id);
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ message: 'KhÃ´ng tÃ¬m tháº¥y ngÆ°á»i dÃ¹ng' });
+
+    await TuitionRecord.updateMany(
+      { 'studentAdjustments.student': user._id },
+      {
+        $set: {
+          'studentAdjustments.$[item].studentName': user.name || '',
+          'studentAdjustments.$[item].studentEmail': user.email || '',
+        },
+      },
+      { arrayFilters: [{ 'item.student': user._id }] }
+    );
+
+    await ClassEnrollment.updateMany(
+      { student: user._id },
+      { $set: { studentName: user.name || '', studentEmail: user.email || '' } }
+    );
+
+    await User.findByIdAndDelete(user._id);
     res.json({ message: 'Xóa người dùng thành công' });
   } catch (err) {
     res.status(500).json({ message: err.message });

@@ -152,6 +152,10 @@ function formatScore(value) {
   return Number(value).toLocaleString('vi-VN', { maximumFractionDigits: 1 });
 }
 
+function getEntityId(entity) {
+  return entity?._id || entity || '';
+}
+
 function StudentScoreChart({ scores, color = 'blue' }) {
   const barColor = color === 'emerald' ? 'bg-emerald-500' : 'bg-blue-500';
   const softColor = color === 'emerald' ? 'bg-emerald-50 border-emerald-100' : 'bg-blue-50 border-blue-100';
@@ -437,6 +441,7 @@ export default function AdminClasses() {
   };
 
   const handleAdminRemoveStudent = async (studentId, studentName) => {
+    if (!studentId) return toast.error('Không tìm thấy mã học sinh để xóa khỏi lớp');
     if (!confirm(`Xóa ${studentName} khỏi lớp?`)) return;
     try {
       await api.post('/class-enrollments/admin-remove', { classId: selectedClass._id, studentId });
@@ -828,31 +833,38 @@ export default function AdminClasses() {
                         </tr>
                       </thead>
                       <tbody className="divide-y">
-                        {classEnrollments.map((en, idx) => (
-                          <tr key={en._id} className="hover:bg-gray-50">
-                            <td className="px-4 py-3 text-gray-400">{idx + 1}</td>
-                            <td className="px-4 py-3">
-                              <div className="flex items-center gap-2">
-                                {en.student?.avatar ? (
-                                  <img src={en.student.avatar} className="w-7 h-7 rounded-full object-cover" alt="" />
-                                ) : (
-                                  <div className="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 text-xs font-bold">
-                                    {en.student?.name?.[0]?.toUpperCase() || '?'}
-                                  </div>
-                                )}
-                                <span className="font-medium text-gray-900">{en.student?.name}</span>
-                              </div>
-                            </td>
-                            <td className="px-4 py-3 text-gray-500">{en.student?.email}</td>
-                            <td className="px-4 py-3 text-gray-400">{new Date(en.createdAt).toLocaleDateString('vi-VN')}</td>
-                            <td className="px-4 py-3">
-                              <button
-                                onClick={() => handleAdminRemoveStudent(en.student?._id, en.student?.name)}
-                                className="text-xs text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 rounded px-2 py-1"
-                              ><FiTrash2 /></button>
-                            </td>
-                          </tr>
-                        ))}
+                        {classEnrollments.map((en, idx) => {
+                          const studentId = getEntityId(en.student);
+                          const studentName = en.student?.name || en.studentName || 'Học sinh đã xóa';
+                          const studentEmail = en.student?.email || en.studentEmail || '';
+                          const isDeletedStudent = !en.student?._id;
+                          return (
+                            <tr key={en._id} className="hover:bg-gray-50">
+                              <td className="px-4 py-3 text-gray-400">{idx + 1}</td>
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-2">
+                                  {en.student?.avatar ? (
+                                    <img src={en.student.avatar} className="w-7 h-7 rounded-full object-cover" alt="" />
+                                  ) : (
+                                    <div className="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 text-xs font-bold">
+                                      {studentName?.[0]?.toUpperCase() || '?'}
+                                    </div>
+                                  )}
+                                  <span className="font-medium text-gray-900">{studentName}</span>
+                                  {isDeletedStudent && <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">Đã xóa</span>}
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-gray-500">{studentEmail || '-'}</td>
+                              <td className="px-4 py-3 text-gray-400">{new Date(en.createdAt).toLocaleDateString('vi-VN')}</td>
+                              <td className="px-4 py-3">
+                                <button
+                                  onClick={() => handleAdminRemoveStudent(studentId, studentName)}
+                                  className="text-xs text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 rounded px-2 py-1"
+                                ><FiTrash2 /></button>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   )}
