@@ -2,38 +2,45 @@ import { useState } from 'react';
 import { FiUpload, FiX, FiDownload } from 'react-icons/fi';
 import api, { getUploadUrl } from '../api/axios';
 
-export default function PdfUploader({ attachments = [], onAttachmentsChange }) {
+export default function PdfUploader({ attachments = [], onAttachmentsChange, onUploadingChange }) {
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState('');
 
   const handleFileUpload = async (e) => {
-    const files = e.target.files;
-    if (!files) return;
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    const uploadedAttachments = [...attachments];
+    setIsUploading(true);
+    onUploadingChange?.(true);
+    setError('');
 
-    for (let file of files) {
-      if (file.type !== 'application/pdf') {
-        setError('Chỉ chấp nhận file PDF');
-        continue;
+    try {
+      for (const file of files) {
+        if (file.type !== 'application/pdf') {
+          setError('Chỉ chấp nhận file PDF');
+          continue;
+        }
+
+        if (file.size > 50 * 1024 * 1024) {
+          setError('File không được vượt quá 50MB');
+          continue;
+        }
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+          const res = await api.post('/upload', formData);
+          uploadedAttachments.push({ url: res.data.url, filename: file.name, uploadedAt: new Date() });
+          onAttachmentsChange([...uploadedAttachments]);
+        } catch (err) {
+          setError('Tải file lên thất bại: ' + (err.response?.data?.message || err.message));
+        }
       }
-
-      if (file.size > 50 * 1024 * 1024) {
-        setError('File không được vượt quá 50MB');
-        continue;
-      }
-
-      setIsUploading(true);
-      setError('');
-      const formData = new FormData();
-      formData.append('file', file);
-
-      try {
-        const res = await api.post('/upload', formData);
-        onAttachmentsChange([...attachments, { url: res.data.url, filename: file.name, uploadedAt: new Date() }]);
-      } catch (err) {
-        setError('Tải file lên thất bại: ' + (err.response?.data?.message || err.message));
-      } finally {
-        setIsUploading(false);
-      }
+    } finally {
+      setIsUploading(false);
+      onUploadingChange?.(false);
+      e.target.value = '';
     }
   };
 
@@ -74,6 +81,7 @@ export default function PdfUploader({ attachments = [], onAttachmentsChange }) {
                   onClick={() => handleRemove(idx)}
                   className="text-red-500 hover:text-red-700 p-1"
                   type="button"
+                  disabled={isUploading}
                 >
                   <FiX size={16} />
                 </button>

@@ -228,6 +228,10 @@ export default function StudentExamDetailPage() {
 
   // Xử lý LaTeX đồng bộ bằng useMemo (không cần setTimeout, tránh race condition)
   const processedExamContent = useMemo(() => processLatexContent(exam?.content), [exam?.content]);
+  const hasExamContent = useMemo(() => {
+    const body = new DOMParser().parseFromString(exam?.content || '', 'text/html').body;
+    return Boolean(body.textContent.replace(/[\s\u200b\ufeff]/g, '') || body.querySelector('img, video, iframe, .ql-formula'));
+  }, [exam?.content]);
 
   const handlePickImages = async (e) => {
     const files = Array.from(e.target.files || []);
@@ -554,7 +558,7 @@ export default function StudentExamDetailPage() {
           </div>
         )}
 
-        {exam.content ? (
+        {hasExamContent ? (
           <div className="bg-white rounded-xl border border-gray-200 p-6">
             <h2 className="font-semibold text-gray-500 mb-4 pb-2 border-b border-gray-100 italic text-xs">Toán Thầy Hiếu - 038.2468.988</h2>
             <div className="exam-content">
@@ -564,11 +568,11 @@ export default function StudentExamDetailPage() {
               />
             </div>
           </div>
-        ) : (
+        ) : !exam.pdfAttachments?.length ? (
           <div className="bg-white rounded-xl border border-dashed border-gray-300 p-8 text-center text-gray-400 text-sm">
             Giáo viên chưa cập nhật nội dung đề
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );

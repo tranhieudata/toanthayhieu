@@ -24,7 +24,7 @@ const examSchema = new mongoose.Schema(
     lesson: { type: mongoose.Schema.Types.ObjectId, ref: 'Lesson' },
     level: { type: mongoose.Schema.Types.ObjectId, ref: 'Level' }, // Lớp 6, 7, 8, etc.
     classSchedules: [classScheduleSchema], // Các lớp học được giao đề + thời gian mở/đóng riêng
-    totalQuestions: { type: Number, required: true, min: 1 },
+    totalQuestions: { type: Number, default: 0, min: 0 },
     levels: [levelSchema],
     isTemplate: { type: Boolean, default: false }, // true = thuộc ngân hàng đề
     note: { type: String, default: '' },

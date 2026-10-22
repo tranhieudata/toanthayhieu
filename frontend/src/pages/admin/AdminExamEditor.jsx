@@ -4,6 +4,7 @@ import api from '../../api/axios';
 import toast from 'react-hot-toast';
 import { FiArrowLeft, FiSave, FiPlus, FiTrash2, FiRefreshCw } from 'react-icons/fi';
 import RichTextEditor from '../../components/RichTextEditor';
+import PdfUploader from '../../components/PdfUploader';
 import VN_MATH_CURRICULUM from '../../utils/vnMathCurriculum';
 
 const FALLBACK_LEVELS = [
@@ -300,9 +301,11 @@ export default function AdminExamEditor() {
   const [classLevels, setClassLevels] = useState([]);
   const [sourceHomeworks, setSourceHomeworks] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [uploadingPdf, setUploadingPdf] = useState(false);
   const [fetching, setFetching] = useState(isEdit);
 
   const totals = useMemo(() => matrixTotals(form.matrix, cognitiveLevels), [form.matrix, cognitiveLevels]);
+  const isAiExam = hasExamPackageQuestions(form.examPackage);
   const curriculumGradeOptions = useMemo(() => {
     const grades = classLevels.map(extractGradeFromLevel).filter(Boolean);
     return [...new Set(grades)].sort((a, b) => a - b);
@@ -454,7 +457,7 @@ export default function AdminExamEditor() {
         totalQuestions: exam.totalQuestions || '',
         isTemplate: false,
         note: exam.note ? `Sao chép từ ngân hàng đề: ${exam.title}` : f.note,
-        pdfAttachments: [],
+        pdfAttachments: exam.pdfAttachments || [],
         classSchedules: [],
         matrix: matrixFromExam(exam, levels, grade),
         examPackage: exam.examPackage || null,
@@ -540,16 +543,19 @@ export default function AdminExamEditor() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (uploadingPdf) return toast.error('Vui lòng chờ tải PDF lên xong');
     if (!form.title.trim()) return toast.error('Nhập tiêu đề đề kiểm tra');
-    if (totals.totalQuestions < 1) return toast.error('Ma trận cần có ít nhất một câu');
-    const totalQuestions = Number(form.totalQuestions) || totals.totalQuestions;
-    if (totalQuestions !== totals.totalQuestions) return toast.error(`Tổng số câu đang là ${totals.totalQuestions}, chưa khớp ô Tổng số câu hỏi`);
+    if (isAiExam) {
+      if (totals.totalQuestions < 1) return toast.error('Ma trận cần có ít nhất một câu');
+      const totalQuestions = Number(form.totalQuestions) || totals.totalQuestions;
+      if (totalQuestions !== totals.totalQuestions) return toast.error(`Tổng số câu đang là ${totals.totalQuestions}, chưa khớp ô Tổng số câu hỏi`);
+    }
 
     if (form.assignHomework && form.homeworkClasses.length === 0) return toast.error('Chưa chọn lớp để giao bài tập');
 
     setLoading(true);
     try {
-      const matrixWithTotals = form.matrix.map(row => {
+      const matrixWithTotals = isAiExam ? form.matrix.map(row => {
         const rt = rowTotals(row, cognitiveLevels);
         return {
           ...row,
@@ -557,12 +563,12 @@ export default function AdminExamEditor() {
           totalPoints: rt.points,
           ratio: totals.totalPoints > 0 ? round2((rt.points / totals.totalPoints) * 100) : 0,
         };
-      });
+      }) : [];
       const syncedPackage = form.examPackage?.questions
         ? syncQuestionsWithMatrix(form.examPackage, matrixWithTotals, cognitiveLevels)
         : null;
       const sourcePackage = syncedPackage || form.examPackage;
-      const examPackage = {
+      const examPackage = isAiExam ? {
         ...(sourcePackage || {}),
         title: form.title,
         cognitiveLevels,
@@ -574,16 +580,17 @@ export default function AdminExamEditor() {
           grade: curriculumGrade,
           totalPoints: totals.totalPoints,
         },
-      };
+      } : null;
       const preservedSolutionContent = form.solutionContent
         || sourceHomeworks.find((homework) => homework.answerKey?.trim())?.answerKey
         || '';
       const payload = {
         title: form.title,
         content: form.content,
+        pdfAttachments: form.pdfAttachments,
         solutionContent: preservedSolutionContent,
         course: form.course || null,
-        totalQuestions: totals.totalQuestions,
+        totalQuestions: isAiExam ? totals.totalQuestions : Number(form.totalQuestions) || 0,
         isTemplate: form.isTemplate,
         note: form.note,
         levels: buildLevelsFromMatrix(matrixWithTotals, cognitiveLevels),
@@ -633,9 +640,9 @@ export default function AdminExamEditor() {
             lessonId: form.lesson || '',
             sourceExam: sourceExamId,
             examPackage,
-            pdfAttachments: [],
+            pdfAttachments: form.pdfAttachments,
             answerKey: examPackageToAnswerKey(examPackage) || preservedSolutionContent,
-            maxScore: totals.totalPoints || 10,
+            maxScore: (isAiExam ? totals.totalPoints : 0) || 10,
             dueDate: form.homeworkDueDate || undefined,
           };
           return existingHomework?._id
@@ -743,6 +750,7 @@ export default function AdminExamEditor() {
           </div>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {isAiExam && (
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">Tổng số câu hỏi</label>
               <input
@@ -753,6 +761,7 @@ export default function AdminExamEditor() {
                 onChange={e => setForm(f => ({ ...f, totalQuestions: e.target.value }))}
               />
             </div>
+            )}
             <div className="flex items-end pb-1">
               <label className="flex cursor-pointer items-center gap-2">
                 <input
@@ -892,7 +901,7 @@ export default function AdminExamEditor() {
 
         <div className="space-y-3 rounded-xl bg-white p-6 shadow-sm">
           <h2 className="font-semibold text-gray-800">Nội dung đề kiểm tra</h2>
-          {form.examPackage?.questions ? (
+          {isAiExam ? (
             <div className="space-y-5">
               <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                 De nay duoc tao bang AI, noi dung hien thi/in se lay tu cac cau hoi ben duoi.
@@ -1009,6 +1018,14 @@ export default function AdminExamEditor() {
             placeholder="Nhập nội dung đề kiểm tra. Dùng nút ƒx để chèn công thức toán..."
           />
           )}
+          <PdfUploader
+            attachments={form.pdfAttachments}
+            onAttachmentsChange={attachments => setForm(f => ({ ...f, pdfAttachments: attachments }))}
+            onUploadingChange={setUploadingPdf}
+          />
+          <p className="text-sm text-gray-500">
+            Có thể đính kèm PDF. Nếu không nhập nội dung, file PDF sẽ được dùng làm đề bài.
+          </p>
         </div>
 
         <div className="space-y-3 rounded-xl bg-white p-6 shadow-sm">
@@ -1020,6 +1037,7 @@ export default function AdminExamEditor() {
           />
         </div>
 
+        {isAiExam && (
         <div className="space-y-5 rounded-xl bg-white p-6 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -1136,11 +1154,13 @@ export default function AdminExamEditor() {
           </div>
         </div>
 
+        )}
+
         <div className="flex gap-3 pb-8">
           <button type="button" onClick={() => navigate('/admin/exams')} className="flex-1 rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-50">
             Hủy
           </button>
-          <button disabled={loading} className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60">
+          <button disabled={loading || uploadingPdf} className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60">
             <FiSave size={15} />
             {loading ? 'Đang lưu...' : isEdit ? 'Cập nhật đề' : 'Tạo đề'}
           </button>
