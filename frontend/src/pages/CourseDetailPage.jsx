@@ -48,7 +48,7 @@ export default function CourseDetailPage() {
     <div className="min-h-screen">
       <Navbar />
       {/* Hero */}
-      <div className="bg-gray-900 text-white py-10 px-4">
+      <div className="site-theme-surface py-10 px-4">
         <div className="max-w-5xl mx-auto grid md:grid-cols-3 gap-8">
           <div className="md:col-span-2">
             {course.level && (

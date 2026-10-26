@@ -123,7 +123,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <footer className="bg-gray-900 text-gray-400 py-8 text-center">
+      <footer className="site-theme-surface py-8 text-center">
         <p>© 2025 Toán Thầy Hiếu. Nền tảng học Toán trực tuyến hàng đầu.</p>
       </footer>
     </div>

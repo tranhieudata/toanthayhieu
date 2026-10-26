@@ -324,6 +324,7 @@ export default function AdminLessons() {
                 </div>
               </div>
 
+              <button type="button" className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-left font-semibold text-emerald-800" onClick={() => openEdit(selectedLesson)}>Tạo / sửa trắc nghiệm ôn tập tưới cây →</button>
               {selectedLesson.videoUrl && (
                 <a
                   href={selectedLesson.videoUrl}

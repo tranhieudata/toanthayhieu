@@ -2,8 +2,14 @@ import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { FiHome, FiUsers, FiCalendar, FiLogOut, FiMenu, FiCheckSquare, FiFile, FiDollarSign, FiSettings, FiTrendingUp, FiClipboard, FiBookOpen, FiLock } from 'react-icons/fi';
 import { useState } from 'react';
+import { NotificationBell } from '../../components/CommunityWidgets';
+import { FriendRequestNotice } from '../../components/CommunityFriends';
+import { useCommunity } from '../../context/CommunityContext';
+import { ThemeToggle } from '../../components/ThemeControls';
 
 const navItems = [
+  { to: '/community?tab=friends', icon: <FiUsers />, label: 'Bạn bè & trò chuyện' },
+  { to: '/admin/community', icon: <FiUsers />, label: 'Cộng đồng & thử thách' },
   { to: '/admin', icon: <FiHome />, label: 'Tổng quan', exact: true },
   { to: '/admin/content', icon: <FiFile />, label: 'Quản lý nội dung' },
   { to: '/admin/teaching-sessions', icon: <FiBookOpen />, label: 'Buổi dạy' },
@@ -19,6 +25,7 @@ const navItems = [
 
 export default function AdminLayout() {
   const { user, logout } = useAuth();
+  const { friendships } = useCommunity();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -28,12 +35,12 @@ export default function AdminLayout() {
   return (
     <div className="flex h-screen bg-gray-100 overflow-hidden">
       {/* Sidebar */}
-      <aside className={`fixed inset-y-0 left-0 z-40 w-64 bg-gray-900 text-white transform transition-transform duration-300 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 lg:static lg:block`}>
+      <aside className={`admin-sidebar fixed inset-y-0 left-0 z-40 w-64 bg-gray-900 text-white transform transition-transform duration-300 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 lg:static lg:block`}>
         <div className="p-6 border-b border-gray-700">
           <Link to="/" className="text-xl font-bold text-blue-400">Toán Thầy Hiếu</Link>
           <p className="text-xs text-gray-400 mt-1">Quản trị viên</p>
         </div>
-        <nav className="p-4 space-y-1">
+        <nav className="p-4 space-y-1 max-h-[calc(100vh-270px)] overflow-y-auto">
           {navItems.map((item) => {
             const active = item.exact ? isAdminExact : isActive(item.to);
             return (
@@ -58,8 +65,8 @@ export default function AdminLayout() {
               <div className="text-xs text-gray-400">Admin</div>
             </div>
           </div>
-          <Link to="/change-password" className="flex items-center gap-2 text-gray-400 hover:text-blue-400 text-sm w-full mb-2">
-            <FiLock /> Đổi mật khẩu
+          <Link to="/account" className="flex items-center gap-2 text-gray-400 hover:text-blue-400 text-sm w-full mb-2">
+            <FiSettings /> Cài đặt tài khoản
           </Link>
           <button onClick={logout} className="flex items-center gap-2 text-gray-400 hover:text-red-400 text-sm w-full">
             <FiLogOut /> Đăng xuất
@@ -76,9 +83,15 @@ export default function AdminLayout() {
           <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-gray-500">
             <FiMenu className="text-xl" />
           </button>
-          <h2 className="font-semibold text-gray-900">Quản trị hệ thống</h2>
+          <h2 className="font-semibold text-gray-900 text-sm sm:text-base">Quản trị hệ thống</h2>
+          <div className="ml-auto flex items-center gap-3">
+            <ThemeToggle />
+            <Link to="/community?tab=friends" className="text-xs font-medium text-blue-700 rounded-full bg-blue-50 px-3 py-2">Bạn bè{friendships.incoming.length > 0 && <span className="ml-2 rounded-full bg-red-500 text-white px-2 py-0.5">{friendships.incoming.length}</span>}</Link>
+            <NotificationBell />
+          </div>
         </header>
         <main className="flex-1 overflow-y-auto p-6">
+          <FriendRequestNotice />
           <Outlet />
         </main>
       </div>

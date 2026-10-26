@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../api/axios';
 import Navbar from '../components/Navbar';
+import { useTheme } from '../context/ThemeContext';
+import { StudyPageHeading, StudyEmptyState } from '../components/StudyPageHeading';
 import { FiClipboard, FiCheckCircle, FiClock, FiAward, FiLock } from 'react-icons/fi';
 
 const STATUS_CONFIG = {
@@ -37,6 +39,7 @@ function ScoreBadge({ result }) {
 }
 
 export default function StudentExamsPage() {
+  const { theme } = useTheme();
   const [exams, setExams] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -56,28 +59,26 @@ export default function StudentExamsPage() {
   }, {});
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="study-page study-StudentExamsPage" data-theme={theme}>
       <Navbar />
-      <div className="max-w-4xl mx-auto px-4 py-8">
-        <div className="flex items-center gap-3 mb-6">
-          <FiClipboard className="text-blue-600 text-2xl" />
-          <h1 className="text-2xl font-bold text-gray-900">Đề kiểm tra của tôi</h1>
-        </div>
+      <div className="study-content">
+        <StudyPageHeading icon={FiClipboard} eyebrow="THỬ SỨC HÔM NAY. TỰ TIN NGÀY MAI." title="Sẵn sàng thử sức?" description="Mỗi bài kiểm tra là một cơ hội để hiểu mình hơn. Bình tĩnh, tập trung và làm hết sức nhé." stats={[
+          { label: 'Đề kiểm tra', value: loading ? '—' : exams.length },
+          { label: 'Đã nộp bài', value: loading ? '—' : exams.filter(exam => exam.myResult).length },
+          { label: 'Đã chấm điểm', value: loading ? '—' : exams.filter(exam => exam.myResult?.status === 'graded').length },
+        ]} />
 
         {loading ? (
           <div className="flex justify-center py-16">
             <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
           </div>
         ) : exams.length === 0 ? (
-          <div className="text-center py-16 text-gray-400">
-            <FiClipboard className="mx-auto text-4xl mb-3 opacity-40" />
-            <p>Chưa có đề kiểm tra nào</p>
-          </div>
+          <StudyEmptyState icon={FiClipboard} title="Chưa đến giờ thử sức." description="Khi có đề kiểm tra mới từ thầy cô, bạn sẽ tìm thấy ở đây. Cứ tiếp tục học từng chút một nhé!" />
         ) : (
           <div className="space-y-8">
             {Object.entries(grouped).map(([className, classExams]) => (
               <div key={className}>
-                <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3 flex items-center gap-2">
+                <h2 className="study-section-title font-semibold uppercase flex items-center gap-2">
                   <span className="w-4 h-px bg-gray-300 inline-block" />
                   {className}
                   <span className="w-4 h-px bg-gray-300 inline-block" />
@@ -95,7 +96,7 @@ export default function StudentExamsPage() {
                       <CardEl
                         key={exam._id}
                         {...cardProps}
-                        className={`block bg-white rounded-xl border transition-all p-4 ${
+                        className={`study-card study-exam-card block border transition-all ${
                           isUpcoming
                             ? 'border-gray-200 opacity-70 cursor-not-allowed'
                             : isEnded

@@ -1,0 +1,65 @@
+.garden-review { text-align: left; }
+.garden-review > button { display: flex; margin-left: auto; margin-right: auto; gap: 7px; }
+.garden-review-body { margin-top: 22px; border-top: 1px solid var(--theme-border); padding-top: 22px; }
+.garden-review-body h3 { font-size: 17px; font-weight: 700; }
+.garden-review-dialog { padding: 0; margin: auto; width: min(700px, calc(100vw - 32px)); max-width: none; max-height: calc(100dvh - 40px); border: 1px solid var(--theme-border); border-radius: 28px; background: var(--theme-surface); color: var(--theme-text); box-shadow: 0 25px 100px #0008; overflow: auto; overscroll-behavior: contain; text-align: left; }
+.garden-review-dialog::backdrop { background: #000b; backdrop-filter: blur(5px); }
+.garden-review-popup { min-width: 0; }
+.garden-review-popup-header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 13px; padding: 21px 24px; border-bottom: 1px solid var(--theme-border); background: var(--theme-surface); }
+.garden-review-popup-header h2 { font-size: 18px; font-weight: 750; }
+.garden-review-popup-header p { font-size: 11px; color: var(--theme-muted); margin-top: 5px; }
+.garden-review-popup-header > button { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--theme-border); margin-left: auto; flex-shrink: 0; }
+.garden-review-dialog .garden-review-body { margin: 0; padding: 24px; border: 0; }
+.garden-review-dialog .garden-review-choice.is-completed { opacity: 1; color: var(--theme-muted); background: var(--theme-raised); cursor: not-allowed; }
+.garden-review-choice.is-completed .garden-review-choice-status { color: var(--theme-success-text); }
+@media (max-width: 430px) { .garden-review-dialog { width: calc(100vw - 20px); max-height: calc(100dvh - 24px); border-radius: 22px; } .garden-review-popup-header { padding: 17px; gap: 10px; } .garden-review-popup-header h2 { font-size: 16px; } .garden-review-popup-header p { line-height: 1.6; } .garden-review-dialog .garden-review-body { padding: 20px 17px; } }
+.garden-review-note { font-size: 11px; line-height: 1.8; color: var(--theme-muted); margin-top: 9px; }
+.garden-review-list { display: flex; flex-direction: column; gap: 12px; margin-top: 18px; font-size: 12px; color: var(--theme-muted); }
+.garden-review-pagination { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-top: 6px; }
+.garden-review-pagination button { display: inline-flex; align-items: center; gap: 5px; padding: 9px 12px; border: 1px solid var(--theme-border); border-radius: 12px; color: var(--theme-text); }
+.garden-review-pagination button:disabled { opacity: .4; cursor: not-allowed; }
+.garden-review-pagination span { font-size: 11px; }
+.garden-review-choice { display: flex; align-items: center; justify-content: space-between; gap: 13px; border: 1px solid var(--theme-border); border-radius: 17px; padding: 15px; background: var(--theme-bg); text-align: left; width: 100%; }
+.garden-review-choice b { display: block; color: var(--theme-text); font-size: 12px; }
+.garden-review-choice small { display: block; color: var(--theme-muted); font-size: 10px; margin-top: 6px; }
+.garden-review-choice-status { color: var(--theme-accent); display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; font-size: 10px; }
+.garden-review-progress { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin: 20px 0 14px; font-size: 12px; }
+.garden-review-progress > span { color: var(--theme-muted); font-size: 10px; }
+.garden-review-numbers { display: flex; flex-wrap: wrap; gap: 7px; }
+.garden-review-numbers button { display: grid; place-items: center; width: 32px; height: 32px; background: var(--theme-bg); border: 1px solid var(--theme-border); border-radius: 10px; font-size: 11px; }
+.garden-review-numbers button.is-answered { color: var(--theme-success-text); border-color: var(--theme-success-text); }
+.garden-review-numbers button[aria-current='step'] { background: #ffda45; color: #252214; border-color: #ffda45; }
+.garden-review-question { border: 0; margin-top: 22px; min-width: 0; }
+.garden-review-question legend { font-size: 10px; font-weight: 700; color: var(--theme-accent); margin-bottom: 12px; }
+.garden-review-question > p { font-size: 14px; line-height: 1.9; }
+.review-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.review-text .katex-display { overflow-x: auto; max-width: 100%; }
+.garden-review-options { display: flex; flex-direction: column; gap: 10px; margin-top: 17px; }
+.garden-review-options label { display: flex; align-items: baseline; gap: 9px; border: 1px solid var(--theme-border); border-radius: 15px; padding: 13px; font-size: 12px; line-height: 1.8; cursor: pointer; min-width: 0; }
+.garden-review-options label.is-selected { border-color: var(--theme-accent); background: var(--theme-warm-bg); }
+.garden-review-options input { flex-shrink: 0; }
+.garden-review-controls { display: flex; justify-content: space-between; gap: 15px; margin-top: 20px; }
+.garden-review-controls button { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; padding: 9px 12px; border: 1px solid var(--theme-border); border-radius: 13px; }
+.garden-review-back { display: block; text-align: center; margin: 14px auto 0; font-size: 10px; color: var(--theme-muted); }
+.garden-review-result { text-align: center; padding: 20px 0 0; }
+.garden-review-result > svg { margin: auto; font-size: 36px; color: var(--theme-success-text); }
+.garden-review-result h4 { margin-top: 12px; font-size: 16px; font-weight: 700; }
+.garden-review-result > b { display: block; font-size: 36px; color: var(--theme-accent); margin: 12px 0; }
+.garden-review-result > p { font-size: 12px; line-height: 1.8; }
+.garden-review-solutions { text-align: left; font-size: 12px; margin-top: 20px; }
+.garden-review-solutions summary { cursor: pointer; color: var(--theme-accent); }
+.garden-review-solutions > div { padding: 14px 0; border-bottom: 1px solid var(--theme-border); line-height: 1.8; }
+.garden-review-solutions p { margin-top: 7px; color: var(--theme-muted); }
+.garden-leaderboard-heading { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+.garden-leaderboard-heading h2 { font-size: 18px; font-weight: 700; }
+.garden-leaderboard-heading p { color: var(--theme-muted); font-size: 11px; margin-top: 5px; }
+.garden-ranking li { display: flex; align-items: center; gap: 11px; padding: 13px 8px; border-bottom: 1px solid var(--theme-border); }
+.garden-ranking li.is-me { background: var(--theme-warm-bg); border-radius: 17px; }
+.garden-rank { width: 18px; flex-shrink: 0; text-align: center; font-size: 12px; color: var(--theme-muted); }
+.garden-rank.is-podium { color: var(--theme-accent); font-weight: 800; }
+.garden-rank-name { min-width: 0; flex: 1; }
+.garden-rank-name b { display: block; font-size: 12px; overflow-wrap: anywhere; }
+.garden-rank-name small { display: block; font-size: 9px; color: var(--theme-muted); margin-top: 5px; }
+.garden-ranking li > strong { color: var(--theme-accent); font-size: 17px; text-align: right; }
+.garden-ranking li > strong small { display: block; color: var(--theme-muted); font-size: 9px; font-weight: 400; }
+@media (max-width: 430px) { .garden-ranking li { gap: 8px; padding-left: 0; padding-right: 0; } .garden-review-choice { flex-wrap: wrap; } }

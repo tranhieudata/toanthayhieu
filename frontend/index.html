@@ -4,6 +4,15 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      try {
+        const pinnedToken = sessionStorage.getItem('toanthayhieu.auth.token');
+        const signedIn = pinnedToken === null ? localStorage.getItem('token') : pinnedToken;
+        const theme = signedIn && sessionStorage.getItem('toanthayhieu.theme') === 'dark' ? 'dark' : 'light';
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.style.colorScheme = theme;
+      } catch { document.documentElement.dataset.theme = 'light'; }
+    </script>
     <title>Toán Thầy Hiếu - Học Là Hiểu</title>
   </head>
   <body>

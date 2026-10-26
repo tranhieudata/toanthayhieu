@@ -1,5 +1,9 @@
 # EduOnline - Nền tảng học trực tuyến
 
+Hướng dẫn mạng xã hội học tập, kiểm duyệt, cây năng lượng và thử thách tuần: [docs/community.md](docs/community.md).
+
+Hướng dẫn đổi tên, avatar, ngày sinh và mật khẩu: [docs/account-settings.md](docs/account-settings.md).
+
 ## Cấu trúc dự án
 
 ```

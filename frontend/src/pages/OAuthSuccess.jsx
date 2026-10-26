@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../api/axios';
+import { setAuthToken } from '../utils/authSession';
 
 export default function OAuthSuccess() {
   const [params] = useSearchParams();
@@ -12,7 +13,7 @@ export default function OAuthSuccess() {
     const token = params.get('token');
     const role = params.get('role');
     if (token) {
-      localStorage.setItem('token', token);
+      setAuthToken(token);
       api.get('/auth/me').then((res) => {
         login(token, res.data.user);
         navigate(role === 'admin' ? '/admin' : '/dashboard', { replace: true });

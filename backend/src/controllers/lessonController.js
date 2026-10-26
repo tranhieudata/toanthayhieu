@@ -386,7 +386,7 @@ Phần III : Bài Tập Về Nhà.
 `.trim();
 }
 
-async function generateWithGemini(prompt) {
+async function generateWithGemini(prompt, options = {}) {
   if (!process.env.GEMINI_API_KEY) {
     const error = new Error('Chưa cấu hình GEMINI_API_KEY');
     error.status = 400;
@@ -398,7 +398,7 @@ async function generateWithGemini(prompt) {
     model: process.env.GEMINI_MODEL || 'gemini-3.5-flash',
     generationConfig: {
       temperature: 0.7,
-      maxOutputTokens: 5000,
+      maxOutputTokens: options.maxOutputTokens || 5000,
     },
   });
 
@@ -532,4 +532,4 @@ const deleteCriteria = async (req, res) => {
   }
 };
 
-module.exports = { getLessons, getLessonById, getLessonBundle, createLesson, updateLesson, reorderLessons, deleteLesson, toggleLessonStatus, generateLessonContent, addCriteria, updateCriteria, deleteCriteria };
+module.exports = { getLessons, getLessonById, getLessonBundle, createLesson, updateLesson, reorderLessons, deleteLesson, toggleLessonStatus, generateLessonContent, generateWithGemini, addCriteria, updateCriteria, deleteCriteria };

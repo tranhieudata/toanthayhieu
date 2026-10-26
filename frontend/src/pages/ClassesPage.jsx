@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import api from '../api/axios';
 import toast from 'react-hot-toast';
 import Navbar from '../components/Navbar';
+import { useTheme } from '../context/ThemeContext';
+import { StudyPageHeading, StudyEmptyState } from '../components/StudyPageHeading';
 import { FiUsers, FiCalendar, FiBookOpen, FiSend, FiArrowRight } from 'react-icons/fi';
 
 const STATUS_LABEL = { pending: 'Chờ duyệt', approved: 'Đã vào lớp', rejected: 'Bị từ chối' };
@@ -22,6 +24,7 @@ function formatSchedules(schedules) {
 }
 
 export default function ClassesPage() {
+  const { theme } = useTheme();
   const navigate = useNavigate();
   const [classes, setClasses] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -59,23 +62,27 @@ export default function ClassesPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="study-page study-ClassesPage" data-theme={theme}>
       <Navbar />
-      <div className="max-w-6xl mx-auto px-4 py-10">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Lớp học</h1>
-        <p className="text-gray-500 mb-8">Đăng ký tham gia lớp học để truy cập các khóa học và bài tập</p>
+      <div className="study-content">
+        <StudyPageHeading icon={FiUsers} eyebrow="CÙNG MỘT LỚP. CÙNG TIẾN BỘ." title="Lớp học của chúng mình." description="Tìm lớp phù hợp, gặp thầy cô và cùng bạn bè học thêm những điều mới." stats={[
+          { label: 'Lớp học', value: loading ? '—' : classes.length },
+          { label: 'Đã tham gia', value: loading ? '—' : classes.filter(cls => cls.myEnrollmentStatus === 'approved').length },
+          { label: 'Chờ duyệt', value: loading ? '—' : classes.filter(cls => cls.myEnrollmentStatus === 'pending').length },
+        ]} />
 
         {loading ? (
           <div className="flex justify-center py-20">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
           </div>
         ) : classes.length === 0 ? (
-          <div className="text-center py-20 text-gray-400">Chưa có lớp học nào</div>
+          <StudyEmptyState icon={FiUsers} title="Lớp học mới đang chờ bạn." description="Hiện chưa có lớp học nào. Hãy quay lại khi thầy cô mở lớp nhé." />
         ) : (
           
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 ">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {classes.map(cls => (
-              <div key={cls._id} className="card hover:shadow-lg transition-shadow px-2">
+              <div key={cls._id} className="study-card study-class-card">
+                <span className="study-class-mark" aria-hidden="true"><FiBookOpen /></span>
                 <div className="flex justify-between items-start mb-3">
                   <h2 className="text-lg font-bold text-gray-900">{cls.name}</h2>
                   {cls.myEnrollmentStatus && (
@@ -95,7 +102,7 @@ export default function ClassesPage() {
 
                 {/* Schedule */}
                 {cls.schedules && cls.schedules.length > 0 && (
-                  <div className="mb-4 text-sm">
+                  <div className="study-class-schedule mb-4 text-sm">
                     <p className="font-medium text-gray-700 flex items-center gap-1 mb-1.5">
                       <FiCalendar size={14} /> Lịch học
                     </p>
@@ -121,13 +128,12 @@ export default function ClassesPage() {
                     </div>
                   </div>
                 )}
-                {/* tạo nút liên hệ qua zalo để được duyệt vào lớp */}
+                <div className="study-class-actions">
+                {/* Liên hệ và đăng ký lớp */}
                 {cls.myEnrollmentStatus !== 'approved' && (
 
-                  <a href="https://zalo.me/0382468988" target="_blank">
-                    <button className="btn-secondary w-full mb-3 flex items-center justify-center gap-2">
-                      <FiSend size={14} /> Liên hệ qua Zalo để duyệt vào lớp
-                    </button>
+                  <a href="https://zalo.me/0382468988" target="_blank" rel="noopener noreferrer" className="btn-secondary w-full mb-3 flex items-center justify-center gap-2">
+                    <FiSend size={14} /> Liên hệ qua Zalo để duyệt vào lớp
                   </a>
                   )}
                 {/* Action button */}
@@ -155,6 +161,7 @@ export default function ClassesPage() {
                     <FiArrowRight size={14} /> Xem lớp học
                   </button>
                 ) : null}
+                </div>
               </div>
             ))}
           </div>
@@ -164,7 +171,7 @@ export default function ClassesPage() {
       {/* Apply modal */}
       {showModal && selectedClass && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+          <div className="study-dialog w-full max-w-md">
             <div className="p-6 border-b">
               <h2 className="text-lg font-bold">Đăng ký lớp: {selectedClass.name}</h2>
             </div>

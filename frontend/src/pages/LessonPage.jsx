@@ -2,6 +2,8 @@ import { useEffect, useState, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import api, { getUploadUrl } from '../api/axios';
 import Navbar from '../components/Navbar';
+import { useTheme } from '../context/ThemeContext';
+import '../styles/lesson-page.css';
 import { FiArrowLeft, FiBook, FiFileText, FiDownload } from 'react-icons/fi';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
@@ -40,6 +42,7 @@ function renderLatex(html) {
 }
 
 export default function LessonPage() {
+  const { theme } = useTheme();
   const { id } = useParams();
   const [lesson, setLesson] = useState(null);
   const [exercises, setExercises] = useState([]);
@@ -62,15 +65,15 @@ export default function LessonPage() {
   if (!lesson) return <div className="min-h-screen flex items-center justify-center text-gray-500">Không tìm thấy bài học</div>;
 
   return (
-    <div className="min-h-screen">
+    <div className="study-page lesson-page" data-theme={theme}>
       <Navbar />
       <div className="max-w-4xl mx-auto px-4 py-8">
         <Link to={`/courses/${lesson.course?._id}`} className="flex items-center gap-2 text-blue-600 hover:underline mb-6 text-sm">
           <FiArrowLeft /> Quay lại khóa học: {lesson.course?.title}
         </Link>
 
-        <div className="card p-6 md:p-8">
-          <h1 className="text-2xl font-bold text-gray-900 mb-6">{lesson.title}</h1>
+        <div className="lesson-article">
+          <div className="lesson-heading mb-6"><p className="study-eyebrow">TỪNG BÀI HỌC NHỎ. THÊM MỘT BƯỚC TIẾN.</p><h1>{lesson.title}</h1></div>
 
           {lesson.videoUrl && (
             <div className="mb-6 rounded-xl overflow-hidden bg-black aspect-video">

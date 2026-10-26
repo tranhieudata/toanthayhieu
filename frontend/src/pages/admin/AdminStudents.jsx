@@ -28,7 +28,7 @@ function generateEmail(name) {
     .replace(/[^a-z0-9\s]/g, '')
     .trim()
     .replace(/\s+/g, '.');
-  return slug ? `${slug}@toanthayhieu.edu` : '';
+  return slug ? `${slug}@toanthayhieu.com` : '';
 }
 
 export default function AdminStudents() {
@@ -345,7 +345,7 @@ export default function AdminStudents() {
                     <input
                       type="email"
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="email@toanthayhieu.edu"
+                      placeholder="email@toanthayhieu.com"
                       value={addEmail}
                       onChange={(e) => { setAddEmail(e.target.value); setEmailEdited(true); }}
                     />

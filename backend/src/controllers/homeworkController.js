@@ -2,6 +2,8 @@
 const HomeworkSubmission = require('../models/HomeworkSubmission');
 const Class = require('../models/Class');
 const User = require('../models/User');
+const { waterDaily } = require('../services/community');
+const { assignedHomeworkFilter } = require('../services/communityAccess');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const fs = require('fs/promises');
 const path = require('path');
@@ -613,14 +615,11 @@ const getStudentHomeworks = async (req, res) => {
     const studentId = req.user._id;
     
     // Find all enrolled classes for this student
-    const ClassEnrollment = require('../models/ClassEnrollment');
-    const enrollments = await ClassEnrollment.find({ student: studentId }).select('class');
-    const classIds = enrollments.map(e => e.class);
     
    
 
     // Get all published homeworks for those classes
-    const homeworks = await Homework.find({ class: { $in: classIds }, isPublished: true })
+    const homeworks = await Homework.find(await assignedHomeworkFilter(studentId))
       .populate('class', 'name')
       .populate('lesson', 'title')
       .populate('sourceExam', 'title content examPackage pdfAttachments')
@@ -884,6 +883,10 @@ const submitHomework = async (req, res) => {
     const homework = await Homework.findById(homeworkId);
     if (!homework) return res.status(404).json({ message: 'Không tìm thấy bài tập' });
 
+    if (!await Class.exists({ _id: homework.class, students: studentId, isActive: true })) {
+      return res.status(403).json({ message: 'Bạn cần là thành viên của lớp để nộp bài tập' });
+    }
+
     if (!Array.isArray(submissionImages)) {
       return res.status(400).json({ message: 'Danh sách ảnh không hợp lệ' });
     }
@@ -916,6 +919,10 @@ const submitHomework = async (req, res) => {
       .populate('student', 'name email')
       .populate('gradedBy', 'name');
 
+    if (submissionImages.length) {
+      // The garden endpoint reconciles a grant if a temporary database failure occurs here.
+      await waterDaily(studentId, `homework:${submission._id}`, 10).catch(err => console.error('[community] homework reward:', err.message));
+    }
     res.json(withStudentSubmissionAnswerPayload(submission));
   } catch (err) {
     res.status(400).json({ message: err.message });

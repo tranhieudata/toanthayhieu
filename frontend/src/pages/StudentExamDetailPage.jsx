@@ -3,6 +3,8 @@ import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../api/axios';
 import Navbar from '../components/Navbar';
+import { useTheme } from '../context/ThemeContext';
+import '../styles/study-pages.css';
 import toast from 'react-hot-toast';
 import { FiArrowLeft, FiCheckCircle, FiClock, FiAward, FiCamera, FiX, FiUpload, FiImage, FiLock, FiBookOpen, FiChevronDown, FiChevronUp, FiDownload } from 'react-icons/fi';
 import 'katex/dist/katex.min.css';
@@ -196,6 +198,7 @@ function SharedPracticeSection({ exam, result }) {
 }
 
 export default function StudentExamDetailPage() {
+  const { theme } = useTheme();
   const { id } = useParams();
   const { user } = useAuth();
   const [exam, setExam] = useState(null);
@@ -279,7 +282,7 @@ export default function StudentExamDetailPage() {
   };
 
   if (loading) return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="study-page study-StudentExamDetailPage" data-theme={theme}>
       <Navbar />
       <div className="flex justify-center py-24">
         <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
@@ -288,7 +291,7 @@ export default function StudentExamDetailPage() {
   );
 
   if (error) return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="study-page study-StudentExamDetailPage" data-theme={theme}>
       <Navbar />
       <div className="max-w-2xl mx-auto px-4 py-16 text-center">
         <p className="text-red-500 font-medium">{error}</p>
@@ -312,7 +315,7 @@ export default function StudentExamDetailPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="study-page study-StudentExamDetailPage" data-theme={theme}>
       <Navbar />
       <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
         {/* Header */}
@@ -518,7 +521,7 @@ export default function StudentExamDetailPage() {
               <button
                 onClick={handleSubmit}
                 disabled={uploading}
-                className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60 text-sm font-medium"
+                className="study-primary flex items-center gap-2 px-5 py-2.5 disabled:opacity-60 text-sm font-medium"
               >
                 <FiUpload size={15} />
                 {uploading ? 'Đang nộp...' : `Nộp ${pendingImages.length} ảnh`}

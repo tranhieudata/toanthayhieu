@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { getAuthToken, clearAuthToken } from '../utils/authSession';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 const UPLOAD_BASE_URL = (import.meta.env.VITE_UPLOAD_BASE_URL || '').replace(/\/$/, '');
@@ -8,7 +9,7 @@ const api = axios.create({
 });
 
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
+  const token = getAuthToken();
   if (token) config.headers.Authorization = `Bearer ${token}`;
   // Để browser tự set Content-Type (kèm boundary) khi gửi FormData
   if (config.data instanceof FormData) {
@@ -22,8 +23,8 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('token');
+    if (error.response?.status === 401 && error.config?.headers?.Authorization === `Bearer ${getAuthToken()}`) {
+      clearAuthToken();
       window.location.href = '/login';
     }
     return Promise.reject(error);

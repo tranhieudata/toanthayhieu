@@ -3,9 +3,12 @@ import { useParams, useNavigate } from 'react-router-dom';
 import api from '../api/axios';
 import toast from 'react-hot-toast';
 import Navbar from '../components/Navbar';
+import { useTheme } from '../context/ThemeContext';
+import '../styles/study-pages.css';
 import { FiArrowLeft, FiBook, FiLayers, FiChevronDown, FiChevronUp } from 'react-icons/fi';
 
 export default function ClassDetailPage() {
+  const { theme } = useTheme();
   const { classId } = useParams();
   const navigate = useNavigate();
   const [classData, setClassData] = useState(null);
@@ -69,7 +72,7 @@ export default function ClassDetailPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50">
+      <div className="study-page study-ClassDetailPage" data-theme={theme}>
         <Navbar />
         <div className="flex justify-center py-20">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
@@ -80,7 +83,7 @@ export default function ClassDetailPage() {
 
   if (!classData) {
     return (
-      <div className="min-h-screen bg-gray-50">
+      <div className="study-page study-ClassDetailPage" data-theme={theme}>
         <Navbar />
         <div className="text-center py-20 text-gray-500">Không tìm thấy lớp học</div>
       </div>
@@ -88,7 +91,7 @@ export default function ClassDetailPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="study-page study-ClassDetailPage" data-theme={theme}>
       <Navbar />
 
       <div className="max-w-6xl mx-auto px-4 py-8">

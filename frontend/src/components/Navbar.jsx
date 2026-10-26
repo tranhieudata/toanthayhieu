@@ -1,93 +1,59 @@
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { FiBookOpen, FiClipboard, FiHeart, FiHome, FiLayers, FiLock, FiLogOut, FiSettings, FiUser, FiUsers, FiChevronDown } from 'react-icons/fi';
 import { useAuth } from '../context/AuthContext';
-import { FiBook, FiUser, FiLogOut, FiSettings, FiClipboard, FiBookOpen, FiLock } from 'react-icons/fi';
-import { useState } from 'react';
+import { useTheme } from '../context/ThemeContext';
+import { ThemeToggle } from './ThemeControls';
+import { useCommunity } from '../context/CommunityContext';
+import { Avatar, NotificationBell } from './CommunityWidgets';
+import '../styles/student-navigation.css';
 
 export default function Navbar() {
   const { user, logout, isAdmin } = useAuth();
-  const navigate = useNavigate();
+  const { friendships } = useCommunity();
+  const location = useLocation(), navigate = useNavigate();
   const [dropdownOpen, setDropdownOpen] = useState(false);
-
-  const handleLogout = () => {
-    logout();
-    navigate('/');
-  };
-
-  return (
-    <nav className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center h-16">
-          <Link to="/" className="flex items-center gap-2 font-bold text-xl text-blue-600">
-            <FiBook className="text-2xl" />
-            Toán Thầy Hiếu
-          </Link>
-
-          <div className="hidden md:flex items-center gap-6">
-            {/* <Link to="/courses" className="text-gray-600 hover:text-blue-600 transition-colors">Khóa học</Link> */}
-            <Link to="/classes" className="text-gray-600 hover:text-blue-600 transition-colors">Lớp học</Link>
-            {user && (
-              <Link to="/dashboard" className="text-gray-600 hover:text-blue-600 transition-colors">Lớp học của tôi</Link>
-            )}
-            {user && !isAdmin && (
-              <>
-                <Link to="/homeworks" className="text-gray-600 hover:text-blue-600 transition-colors flex items-center gap-1">
-                  <FiBookOpen size={14} /> Bài tập
-                </Link>
-                <Link to="/exams" className="text-gray-600 hover:text-blue-600 transition-colors flex items-center gap-1">
-                  <FiClipboard size={14} /> Đề kiểm tra
-                </Link>
-              </>
-            )}
-            {isAdmin && (
-              <Link to="/admin" className="text-gray-600 hover:text-blue-600 transition-colors">Quản trị</Link>
-            )}
-          </div>
-
-          <div className="flex items-center gap-3">
-            {user ? (
-              <div className="relative">
-                <button
-                  onClick={() => setDropdownOpen(!dropdownOpen)}
-                  className="flex items-center gap-2 hover:bg-gray-100 rounded-lg px-3 py-2 transition-colors"
-                >
-                  {user.avatar ? (
-                    <img src={user.avatar} alt={user.name} className="w-8 h-8 rounded-full object-cover" />
-                  ) : (
-                    <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white font-medium text-sm">
-                      {user.name?.charAt(0).toUpperCase()}
-                    </div>
-                  )}
-                  <span className="text-sm font-medium text-gray-700 hidden sm:block">{user.name}</span>
-                </button>
-                {dropdownOpen && (
-                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-100 py-1">
-                    <Link to="/dashboard" className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onClick={() => setDropdownOpen(false)}>
-                      <FiUser /> Tài khoản của tôi
-                    </Link>
-                    {isAdmin && (
-                      <Link to="/admin" className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onClick={() => setDropdownOpen(false)}>
-                        <FiSettings /> Quản trị viên
-                      </Link>
-                    )}
-                    <Link to="/change-password" className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onClick={() => setDropdownOpen(false)}>
-                      <FiLock /> Đổi mật khẩu
-                    </Link>
-                    <hr className="my-1" />
-                    <button onClick={handleLogout} className="flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50 w-full text-left">
-                      <FiLogOut /> Đăng xuất
-                    </button>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <>
-                <Link to="/login" className="btn-secondary text-sm">Đăng nhập</Link>
-                <Link to="/register" className="btn-primary text-sm">Đăng ký</Link>
-              </>
-            )}
-          </div>
+  const { theme } = useTheme();
+  const dark = theme === 'dark';
+  const tabs = user ? [
+    { to: '/dashboard', label: 'Tổng quan', icon: FiHome, active: location.pathname === '/dashboard' && location.hash !== '#my-classes' },
+    { to: '/community', label: 'Mạng xã hội', icon: FiHeart, active: location.pathname.startsWith('/community') },
+    ...(!isAdmin ? [{ to: '/homeworks', label: 'Bài tập', icon: FiBookOpen, active: location.pathname.startsWith('/homeworks') }] : []),
+    { to: '/classes', label: 'Lớp học', icon: FiLayers, active: location.pathname === '/classes' || location.pathname.startsWith('/class/') || location.pathname.startsWith('/lesson') },
+    ...(!isAdmin ? [{ to: '/dashboard#my-classes', label: 'Lớp học của tôi', icon: FiUsers, active: location.pathname === '/dashboard' && location.hash === '#my-classes' }] : []),
+    ...(!isAdmin ? [{ to: '/exams', label: 'Đề kiểm tra', icon: FiClipboard, active: location.pathname.startsWith('/exams') }] : [{ to: '/admin', label: 'Quản trị', icon: FiSettings, active: location.pathname.startsWith('/admin') }]),
+  ] : [{ to: '/classes', label: 'Lớp học', icon: FiLayers, active: location.pathname === '/classes' }];
+  useEffect(() => { setDropdownOpen(false); }, [location.pathname, location.search]);
+  useEffect(() => {
+    if (!dropdownOpen) return;
+    const close = event => { if (event.key === 'Escape') setDropdownOpen(false); };
+    window.addEventListener('keydown', close);
+    return () => window.removeEventListener('keydown', close);
+  }, [dropdownOpen]);
+  return <header className="student-topbar" data-theme={dark ? 'dark' : 'light'}>
+    <div className="student-topbar-inner">
+      <div className="student-topbar-main">
+        <Link to={user ? '/dashboard' : '/'} className="student-school-brand"><span className="student-school-mark"><FiHeart /></span><span>Toán Thầy Hiếu<small>Học cùng nhau, lớn cùng nhau.</small></span></Link>
+        <div className="student-topbar-actions">
+          {user && <ThemeToggle />}
+          {user && friendships.incoming.length > 0 && <Link to="/community?tab=friends" aria-label={`${friendships.incoming.length} lời mời kết bạn`} className="student-invitation-link"><FiUsers /><span>{friendships.incoming.length}<span className="student-invitation-label"> lời mời</span></span></Link>}
+          {user && <NotificationBell />}
+          {user ? <div className="student-account-menu">
+            <button aria-label="Menu tài khoản" aria-expanded={dropdownOpen} onClick={() => setDropdownOpen(v => !v)} className="student-account-trigger"><Avatar person={user} /><span className="student-account-name">{user.name}</span><FiChevronDown className="student-account-chevron" /></button>
+            {dropdownOpen && <><button className="student-menu-backdrop" aria-label="Đóng menu tài khoản" onClick={() => setDropdownOpen(false)} /><div className="student-account-dropdown">
+              <div className="student-menu-identity"><b>{user.name}</b><small>{user.email}</small></div>
+              <Link to="/dashboard"><FiHome /> Tổng quan học tập</Link>
+              <Link to={`/community?author=${user._id}`}><FiUser /> Tường của tôi</Link>
+              <Link to="/account"><FiSettings /> Cài đặt tài khoản</Link>
+              <Link to="/community?tab=friends"><FiUsers /> Bạn bè & lời mời</Link>
+              {isAdmin && <Link to="/admin"><FiSettings /> Quản trị viên</Link>}
+              <Link to="/account#password"><FiLock /> Đổi mật khẩu</Link>
+              <button className="student-logout" onClick={() => { logout(); navigate('/login'); }}><FiLogOut /> Đăng xuất</button>
+            </div></>}
+          </div> : <div className="student-guest-actions"><Link to="/login">Đăng nhập</Link><Link className="student-register" to="/register">Đăng ký</Link></div>}
         </div>
       </div>
-    </nav>
-  );
+      <nav className="student-primary-tabs" aria-label="Điều hướng học sinh">{tabs.map(({ to, label, icon: Icon, active }) => <Link key={to} to={to} aria-current={active ? 'page' : undefined} className={`student-primary-tab ${active ? 'is-active' : ''}`}><Icon /><span>{label}</span></Link>)}</nav>
+    </div>
+  </header>;
 }

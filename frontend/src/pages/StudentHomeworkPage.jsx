@@ -1,12 +1,18 @@
 import { useMemo, useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useSearchParams } from 'react-router-dom';
+import { useCommunity } from '../context/CommunityContext';
 import api, { getUploadUrl } from '../api/axios';
 import toast from 'react-hot-toast';
 import Navbar from '../components/Navbar';
+import { useTheme } from '../context/ThemeContext';
+import { StudyPageHeading, StudyEmptyState } from '../components/StudyPageHeading';
 import { FiUpload, FiX, FiCheck, FiClock, FiBook, FiEye, FiEdit2, FiTrendingUp, FiTrendingDown, FiMinus, FiBarChart2, FiHelpCircle, FiDownload } from 'react-icons/fi';
 import { compressImageFile } from '../utils/imageCompression';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
+
+const HOMEWORKS_PER_PAGE = 10;
 
 function escapeHtml(value) {
   return String(value || '')
@@ -233,14 +239,42 @@ function HomeworkScoreChart({ data }) {
 }
 
 export default function StudentHomeworkPage() {
+  const { theme } = useTheme();
+  const [params, setParams] = useSearchParams();
+  const { refreshAccess } = useCommunity();
   const { user } = useAuth();
   const [homeworks, setHomeworks] = useState([]);
   const [submissions, setSubmissions] = useState({});
   const [loading, setLoading] = useState(true);
   const [submittingId, setSubmittingId] = useState(null);
-  const [expandedHw, setExpandedHw] = useState(null);
+  const [expandedHw, setExpandedHw] = useState(() => params.get('homework'));
   const [uploadingImages, setUploadingImages] = useState({});
   const [previewImage, setPreviewImage] = useState(null);
+
+  const totalPages = Math.max(1, Math.ceil(homeworks.length / HOMEWORKS_PER_PAGE));
+  const linkedHomeworkId = params.get('homework');
+  const linkedHomeworkIndex = homeworks.findIndex(hw => hw._id === linkedHomeworkId);
+  const requestedPage = Number(params.get('page'));
+  const currentPage = Math.min(totalPages, linkedHomeworkIndex >= 0
+    ? Math.floor(linkedHomeworkIndex / HOMEWORKS_PER_PAGE) + 1
+    : Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1);
+  const pageStart = (currentPage - 1) * HOMEWORKS_PER_PAGE;
+  const visibleHomeworks = homeworks.slice(pageStart, pageStart + HOMEWORKS_PER_PAGE);
+
+  useEffect(() => {
+    if (linkedHomeworkId) setExpandedHw(linkedHomeworkId);
+  }, [linkedHomeworkId]);
+
+  const changePage = (page) => {
+    const nextParams = new URLSearchParams(params);
+    nextParams.set('page', String(Math.max(1, Math.min(totalPages, page))));
+    nextParams.delete('homework');
+    setParams(nextParams);
+    setExpandedHw(null);
+    window.requestAnimationFrame(() => {
+      document.getElementById('homework-list')?.scrollIntoView({ block: 'start' });
+    });
+  };
 
   const scoreChartData = useMemo(() => {
     return homeworks
@@ -385,6 +419,7 @@ export default function StudentHomeworkPage() {
         ...prev,
         [homeworkId]: data
       }));
+      refreshAccess();
 
       toast.success('Tải ảnh thành công!');
     } catch (err) {
@@ -408,6 +443,7 @@ export default function StudentHomeworkPage() {
         ...prev,
         [homeworkId]: data
       }));
+      refreshAccess();
 
       toast.success('Xóa ảnh thành công');
     } catch (err) {
@@ -440,6 +476,7 @@ export default function StudentHomeworkPage() {
         ...prev,
         [homeworkId]: data
       }));
+      refreshAccess();
 
       toast.success('Đổi ảnh thành công');
     } catch (err) {
@@ -460,7 +497,7 @@ export default function StudentHomeworkPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50">
+      <div className="study-page study-StudentHomeworkPage" data-theme={theme}>
         <Navbar />
         <div className="flex items-center justify-center min-h-[calc(100vh-4rem)]">
         <div className="text-center">
@@ -475,15 +512,16 @@ export default function StudentHomeworkPage() {
   const TrendIcon = scoreSummary.icon;
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="study-page study-StudentHomeworkPage" data-theme={theme}>
       <Navbar />
-      <div className="max-w-4xl mx-auto py-8 px-4">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2 flex items-center gap-2">
-          <FiBook className="text-blue-600" /> Bài tập
-        </h1>
-        <p className="text-gray-600 mb-8">Nộp và theo dõi tiến độ bài tập của bạn</p>
+      <div className="study-content">
+        <StudyPageHeading icon={FiBook} eyebrow="HỌC MỘT CHÚT. GIỎI HƠN MỘT CHÚT." title="Bài tập của bạn." description="Từng bài làm nhỏ, từng bước tiến lớn. Nộp bài và nhìn lại hành trình học tập của mình." stats={[
+          { label: 'Bài được giao', value: homeworks.length },
+          { label: 'Đã nộp bài', value: homeworks.filter(hw => submissions[hw._id]?.submissionImages?.length || submissions[hw._id]?.status === 'graded').length },
+          { label: 'Đã chấm điểm', value: scoreChartData.length },
+        ]} />
 
-        <div className="bg-white rounded-lg shadow-md p-5 mb-6">
+        <div className="study-panel mb-6">
           <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-4">
             <div>
               <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
@@ -491,7 +529,7 @@ export default function StudentHomeworkPage() {
               </h2>
               <p className="text-sm text-gray-500 mt-1">Theo dõi điểm đã chấm để xem con đang tiến bộ, ổn định hay cần chú ý thêm.</p>
             </div>
-            <div className={`rounded-lg px-4 py-3 ${scoreSummary.bg} min-w-[190px]`}>
+            <div className={`study-summary px-4 py-3 ${scoreSummary.bg} min-w-[190px]`}>
               <div className={`flex items-center gap-2 text-sm font-semibold ${scoreSummary.color}`}>
                 <TrendIcon size={16} /> {scoreSummary.text}
               </div>
@@ -500,15 +538,15 @@ export default function StudentHomeworkPage() {
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
-            <div className="rounded-lg border border-gray-200 p-3">
+            <div className="study-score-stat rounded-lg border border-gray-200 p-3">
               <p className="text-xs text-gray-500">Bài đã chấm</p>
               <p className="text-xl font-bold text-gray-900">{scoreChartData.length}</p>
             </div>
-            <div className="rounded-lg border border-gray-200 p-3">
+            <div className="study-score-stat rounded-lg border border-gray-200 p-3">
               <p className="text-xs text-gray-500">Điểm trung bình</p>
               <p className="text-xl font-bold text-blue-600">{scoreChartData.length ? scoreSummary.avg.toFixed(1) : '--'}/10</p>
             </div>
-            <div className="rounded-lg border border-gray-200 p-3 col-span-2 md:col-span-1">
+            <div className="study-score-stat rounded-lg border border-gray-200 p-3 col-span-2 md:col-span-1">
               <p className="text-xs text-gray-500">Bài gần nhất</p>
               <p className="text-xl font-bold text-green-600">{scoreSummary.latest ? `${scoreSummary.latest.score10}/10` : '--'}</p>
             </div>
@@ -518,12 +556,13 @@ export default function StudentHomeworkPage() {
         </div>
 
         {homeworks.length === 0 ? (
-          <div className="bg-white rounded-lg shadow-md p-8 text-center text-gray-500">
-            Chưa có bài tập nào được giao
-          </div>
+          <StudyEmptyState icon={FiBook} title="Một khoảng nghỉ nhỏ." description="Bạn chưa có bài tập được giao. Khi thầy cô giao bài mới, chúng sẽ xuất hiện ở đây." />
         ) : (
-          <div className="space-y-4">
-            {homeworks.map((hw) => {
+          <div id="homework-list" className="space-y-4" style={{ scrollMarginTop: '148px' }}>
+            <p className="text-sm text-gray-500" role="status">
+              Hiển thị {pageStart + 1}–{Math.min(pageStart + HOMEWORKS_PER_PAGE, homeworks.length)} / {homeworks.length} bài tập
+            </p>
+            {visibleHomeworks.map((hw) => {
               const sub = submissions[hw._id];
               const status = getStatus(sub);
               const isExpanded = expandedHw === hw._id;
@@ -536,12 +575,13 @@ export default function StudentHomeworkPage() {
               return (
                 <div
                   key={hw._id}
-                  className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition"
+                  className="study-card overflow-hidden"
                 >
                   {/* Header */}
                   <button
+                    aria-expanded={isExpanded}
                     onClick={() => setExpandedHw(isExpanded ? null : hw._id)}
-                    className="w-full p-4 flex items-center justify-between hover:bg-gray-50 transition"
+                    className="study-card-header w-full flex items-center justify-between transition"
                   >
                     <div className="text-left flex-1">
                       <h2 className="text-lg font-semibold text-gray-900">{hw.title}</h2>
@@ -867,6 +907,28 @@ export default function StudentHomeworkPage() {
                 </div>
               );
             })}
+            {totalPages > 1 && (
+              <nav aria-label="Phân trang bài tập" className="flex flex-wrap items-center justify-center gap-3 pt-4 text-sm">
+                <button type="button" onClick={() => changePage(currentPage - 1)} disabled={currentPage === 1}
+                  className="rounded-lg border border-[var(--theme-border)] px-4 py-2 disabled:opacity-40 disabled:cursor-not-allowed">
+                  Trước
+                </button>
+                <label className="flex items-center gap-2">
+                  Trang
+                  <select aria-label="Chọn trang bài tập" value={currentPage} onChange={event => changePage(Number(event.target.value))}
+                    className="rounded-lg border border-[var(--theme-border)] bg-[var(--theme-surface)] px-3 py-2 text-[var(--theme-text)]">
+                    {Array.from({ length: totalPages }, (_, index) => (
+                      <option key={index + 1} value={index + 1}>{index + 1}</option>
+                    ))}
+                  </select>
+                  / {totalPages}
+                </label>
+                <button type="button" onClick={() => changePage(currentPage + 1)} disabled={currentPage === totalPages}
+                  className="rounded-lg border border-[var(--theme-border)] px-4 py-2 disabled:opacity-40 disabled:cursor-not-allowed">
+                  Sau
+                </button>
+              </nav>
+            )}
           </div>
         )}
       </div>

@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const { account } = require('./profileController');
 
 const generateToken = (id) =>
   jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '7d' });
@@ -41,7 +42,7 @@ const register = async (req, res) => {
     const token = generateToken(user._id);
     res.status(201).json({
       token,
-      user: { _id: user._id, name: user.name, email: user.email, phone: user.phone, role: user.role, avatar: user.avatar },
+      user: account(user),
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -74,7 +75,7 @@ const login = async (req, res) => {
     const token = generateToken(user._id);
     res.json({
       token,
-      user: { _id: user._id, name: user.name, email: user.email, phone: user.phone, role: user.role, avatar: user.avatar },
+      user: account(user),
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -85,8 +86,9 @@ const login = async (req, res) => {
 const getMe = async (req, res) => {
   try {
     await touchStudentSession(req.user);
+    const user = await User.findById(req.user._id).select('+password');
     res.json({
-      user: { _id: req.user._id, name: req.user.name, email: req.user.email, phone: req.user.phone, role: req.user.role, avatar: req.user.avatar },
+      user: account(user),
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -98,15 +100,16 @@ const changePassword = async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
 
-    if (!newPassword || newPassword.length < 6) {
-      return res.status(400).json({ message: 'Mật khẩu mới phải có ít nhất 6 ký tự' });
+    if (typeof newPassword !== 'string' || newPassword.length < 6 || Buffer.byteLength(newPassword, 'utf8') > 72) {
+      return res.status(400).json({ message: 'Mật khẩu mới cần ít nhất 6 ký tự và tối đa 72 byte' });
     }
 
     const user = await User.findById(req.user._id).select('+password');
     if (!user) return res.status(404).json({ message: 'Không tìm thấy tài khoản' });
+    if (!user.isActive) return res.status(403).json({ message: 'Tài khoản không hoạt động' });
 
     if (user.password) {
-      if (!currentPassword) {
+      if (typeof currentPassword !== 'string' || !currentPassword) {
         return res.status(400).json({ message: 'Vui lòng nhập mật khẩu hiện tại' });
       }
 

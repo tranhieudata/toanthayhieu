@@ -4,6 +4,7 @@ import api from '../../api/axios';
 import toast from 'react-hot-toast';
 import { FiBook, FiFileText, FiLayers, FiPlus, FiEdit2, FiTrash2, FiX, FiChevronRight, FiArrowLeft, FiDownload, FiEye, FiToggleLeft, FiToggleRight, FiPrinter, FiMenu, FiZap, FiExternalLink } from 'react-icons/fi';
 import VN_MATH_CURRICULUM from '../../utils/vnMathCurriculum';
+import { openAuthenticatedPage } from '../../utils/authSession';
 import 'katex/dist/katex.min.css';
 import katex from 'katex';
 
@@ -233,11 +234,11 @@ export default function AdminContentManager() {
   };
 
   const openCourseAsStudent = (courseId) => {
-    window.open(`/courses/${courseId}`, '_blank', 'noopener,noreferrer');
+    openAuthenticatedPage(`/courses/${courseId}`);
   };
 
   const openLessonAsStudent = (lessonId) => {
-    window.open(`/lesson/${lessonId}`, '_blank', 'noopener,noreferrer');
+    openAuthenticatedPage(`/lesson/${lessonId}`);
   };
 
   const handleDeleteLesson = async (id) => {

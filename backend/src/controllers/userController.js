@@ -169,11 +169,11 @@ const createStudent = async (req, res) => {
         .replace(/[^a-z0-9\s]/g, '')
         .trim()
         .replace(/\s+/g, '.');
-      finalEmail = `${slug}@toanthayhieu.edu`;
+      finalEmail = `${slug}@toanthayhieu.com`;
       let exists = await User.findOne({ email: finalEmail });
       let counter = 1;
       while (exists) {
-        finalEmail = `${slug}${counter}@toanthayhieu.edu`;
+        finalEmail = `${slug}${counter}@toanthayhieu.com`;
         exists = await User.findOne({ email: finalEmail });
         counter++;
       }

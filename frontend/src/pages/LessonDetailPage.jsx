@@ -3,6 +3,8 @@ import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import api, { getUploadUrl } from '../api/axios';
 import toast from 'react-hot-toast';
 import Navbar from '../components/Navbar';
+import { useTheme } from '../context/ThemeContext';
+import '../styles/lesson-page.css';
 import { FiArrowLeft, FiChevronLeft, FiChevronRight, FiDownload, FiFileText, FiCheckCircle, FiClock, FiEdit3, FiLock, FiMaximize2, FiMenu, FiMinimize2, FiMinusCircle, FiTrash2, FiX } from 'react-icons/fi';
 import 'katex/dist/katex.min.css';
 import 'quill/dist/quill.snow.css';
@@ -193,6 +195,7 @@ function buildLessonSlidesFromMeasurements(revealBlocks, measureElement, content
 const INK_COLORS = ['#dc2626', '#2563eb', '#16a34a', '#111827'];
 
 export default function LessonDetailPage() {
+  const { theme } = useTheme();
   const { lessonId } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -219,38 +222,42 @@ export default function LessonDetailPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false); // mobile sidebar toggle
 
   useEffect(() => {
+    let active = true;
     const loadLesson = async () => {
       setLoading(true);
+      setSiblings([]);
+      setExercises([]);
       try {
         const res = await api.get(`/lessons/${lessonId}/bundle`, {
           params: classId ? { classId } : {},
         });
+        if (!active) return;
         setLesson(res.data.lesson);
         setBundle({
           homeworks: res.data.homeworks || [],
         });
         // Load danh sách bài học cùng khóa
         const courseId = res.data.lesson?.course?._id || res.data.lesson?.course;
-        if (courseId) {
-          const siblingsRes = await api.get(`/lessons?course=${courseId}`);
-          setSiblings(siblingsRes.data);
-        }
-
-        // Load bài tập thuộc bài học hiện tại
-        try {
-          const exercisesRes = await api.get(`/exercises?lesson=${lessonId}`);
-          setExercises(exercisesRes.data || []);
-        } catch {
-          setExercises([]);
-        }
+        // Optional resources must not prevent reading a successfully loaded lesson.
+        setLoading(false);
+        await Promise.allSettled([
+          courseId && api.get(`/lessons?course=${courseId}`).then(({ data }) => {
+            if (active) setSiblings(data || []);
+          }),
+          api.get(`/exercises?lesson=${lessonId}`).then(({ data }) => {
+            if (active) setExercises(data || []);
+          }),
+        ]);
       } catch (err) {
-        toast.error('Không tải được bài học');
+        if (!active) return;
+        toast.error(err.response?.data?.message || 'Không tải được bài học');
         navigate('/classes');
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     };
     loadLesson();
+    return () => { active = false; };
   }, [lessonId, navigate, classId]);
 
   // Xử lý LaTeX đồng bộ bằng useMemo (không cần setTimeout, tránh race condition)
@@ -495,7 +502,7 @@ export default function LessonDetailPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50">
+      <div className="study-page lesson-page" data-theme={theme}>
         <Navbar />
         <div className="flex justify-center py-20">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
@@ -506,7 +513,7 @@ export default function LessonDetailPage() {
 
   if (!lesson) {
     return (
-      <div className="min-h-screen bg-gray-50">
+      <div className="study-page lesson-page" data-theme={theme}>
         <Navbar />
         <div className="text-center py-20 text-gray-500">Không tìm thấy bài học</div>
       </div>
@@ -514,10 +521,10 @@ export default function LessonDetailPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="study-page lesson-page" data-theme={theme}>
       <Navbar />
 
-      <div className="max-w-7xl mx-auto px-3 sm:px-4 py-4 lg:py-8 flex flex-col lg:flex-row gap-4 lg:gap-6">
+      <div className="lesson-layout flex flex-col lg:flex-row gap-4 lg:gap-6">
         {/* Mobile: top bar with back + sidebar toggle */}
         <div className="flex items-center justify-between lg:hidden mb-1">
           <button
@@ -527,6 +534,8 @@ export default function LessonDetailPage() {
             <FiArrowLeft size={16} /> Quay lại
           </button>
           <button
+            aria-expanded={sidebarOpen}
+            aria-controls="lesson-outline"
             onClick={() => setSidebarOpen(o => !o)}
             className="flex items-center gap-2 text-sm text-gray-600 bg-white border border-gray-200 rounded-lg px-3 py-1.5 shadow-sm"
           >
@@ -536,8 +545,8 @@ export default function LessonDetailPage() {
         </div>
 
         {/* Sidebar - danh sách bài học */}
-        <aside className={`lg:w-72 lg:flex-shrink-0 ${sidebarOpen ? 'block' : 'hidden'} lg:block`}>
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 lg:sticky lg:top-6">
+        <aside id="lesson-outline" className={`lesson-outline lg:w-72 lg:flex-shrink-0 ${sidebarOpen ? 'block' : 'hidden'} lg:block`}>
+          <div className="lesson-outline-panel">
             {/* Course name */}
             <div className="p-4 border-b border-gray-200">
               <h2 className="font-bold text-gray-900 text-sm leading-snug">
@@ -558,8 +567,9 @@ export default function LessonDetailPage() {
                 return (
                   <button
                     key={s._id}
+                    aria-current={isActive ? 'page' : undefined}
                     onClick={() => { navigate(`/lesson/${s._id}${classId ? `?class=${classId}` : ''}`); setSidebarOpen(false); }}
-                    className={`w-full text-left px-4 py-3 flex items-start gap-3 transition-colors border-l-2 ${
+                    className={`lesson-outline-item w-full text-left px-4 py-3 flex items-start gap-3 transition-colors border-l-2 ${
                       isActive
                         ? 'bg-blue-50 border-l-blue-600 text-blue-700'
                         : 'border-l-transparent hover:bg-gray-50 text-gray-700'
@@ -603,10 +613,12 @@ export default function LessonDetailPage() {
             <FiArrowLeft size={18} /> Quay lại danh sách bài học
           </button>
 
-          <div className="bg-white rounded-lg shadow-lg p-4 sm:p-8">
+          <div className="lesson-article">
             {/* Header */}
-            <div className="mb-6 sm:mb-8">
-              <h1 className="text-2xl sm:text-4xl font-bold text-gray-900 mb-3">{lesson.title}</h1>
+            <div className="lesson-heading mb-6 sm:mb-8">
+              <p className="study-eyebrow">TỪNG BÀI HỌC NHỎ. THÊM MỘT BƯỚC TIẾN.</p>
+              <h1>{lesson.title}</h1>
+              <div className="lesson-heading-meta"><span><FiFileText /> {lesson.course?.title || 'Bài học'}</span>{lesson.duration && <span><FiClock /> {lesson.duration} phút</span>}</div>
               {/* <div className="flex flex-wrap gap-6 text-sm text-gray-600">
                 {lesson.duration && <span>⏱️ {lesson.duration} phút</span>}
                 <span>{lesson.isPublished ? '✅ Đã đăng' : '🔒 Nháp'}</span>
@@ -826,7 +838,7 @@ export default function LessonDetailPage() {
                       )}
                       <Link
                         to="/homeworks"
-                        className="mt-3 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                        className="lesson-homework-button mt-3 inline-flex items-center gap-2 px-3 py-2 text-sm font-semibold"
                       >
                         Mở bài tập
                       </Link>
@@ -891,7 +903,7 @@ export default function LessonDetailPage() {
               const prev = siblings[currentIdx - 1];
               const next = siblings[currentIdx + 1];
               return (
-                <div className="flex justify-between gap-4 mt-10 pt-6 border-t border-gray-200">
+                <div className="lesson-next-links flex justify-between gap-4 mt-10 pt-6 border-t border-gray-200">
                   {prev ? (
                     <button onClick={() => navigate(`/lesson/${prev._id}${classId ? `?class=${classId}` : ''}`)} className="flex-1 flex items-center gap-2 text-sm text-gray-600 hover:text-blue-600 p-3 rounded-lg hover:bg-blue-50 transition-colors">
                       <FiArrowLeft size={16} />

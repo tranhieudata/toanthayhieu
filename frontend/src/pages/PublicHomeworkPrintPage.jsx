@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
+import { getAuthToken } from '../utils/authSession';
 import api, { getUploadUrl } from '../api/axios';
 import { FiDownload, FiEdit3, FiFileText, FiMinusCircle, FiPrinter, FiTrash2 } from 'react-icons/fi';
 import katex from 'katex';
@@ -176,7 +177,7 @@ export default function PublicHomeworkPrintPage() {
     api.get(`/homeworks/public-print/${token}`)
       .then(async (res) => {
         let nextHomework = res.data;
-        if (localStorage.getItem('token')) {
+        if (getAuthToken()) {
           const answersRes = await api.get(`/homeworks/public-print/${token}/answers`, {
             validateStatus: status => status < 500,
           });

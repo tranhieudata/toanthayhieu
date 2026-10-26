@@ -1,0 +1,25 @@
+.account-main { max-width: 1060px; padding: 36px 28px 65px; margin: auto; }
+.account-profile-layout { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 24px; align-items: stretch; }
+.account-settings .community-panel h2 { font-size: 18px; font-weight: 700; color: var(--theme-text); }
+.account-section-icon { display: inline-grid; place-items: center; width: 40px; height: 40px; border-radius: 14px; background: #ffda4515; color: var(--theme-accent); font-size: 18px; flex-shrink: 0; }
+.account-section-heading { display: flex; align-items: center; gap: 13px; margin-bottom: 24px; }
+.account-section-heading p { color: var(--theme-muted); font-size: 11px; line-height: 1.8; margin-top: 5px; }
+.account-avatar-panel { display: flex; flex-direction: column; align-items: center; text-align: center; }
+.account-avatar-panel > h2 { margin-top: 12px; }
+.account-avatar-preview { width: 142px; height: 142px; background: var(--theme-warm-bg); border: 3px solid var(--theme-border); border-radius: 45px; margin: 25px 0; overflow: hidden; display: grid; place-items: center; color: var(--theme-accent); font-size: 56px; font-weight: 750; }
+.account-avatar-preview img { width: 100%; height: 100%; object-fit: cover; }
+.account-settings .community-button { gap: 8px; }
+.account-remove-avatar { color: var(--theme-muted); font-size: 11px; padding: 10px 0; }
+.account-avatar-panel > p { color: var(--theme-muted); font-size: 10px; line-height: 1.9; margin-top: 14px; }
+.account-field { display: flex; flex-direction: column; gap: 9px; color: var(--theme-text); font-size: 12px; margin-bottom: 19px; min-width: 0; }
+.account-field > span { display: flex; align-items: center; gap: 7px; }
+.account-field-note { color: var(--theme-muted); font-size: 10px; line-height: 1.8; margin-top: -7px; }
+.account-login-identity { border-top: 1px solid var(--theme-border); border-bottom: 1px solid var(--theme-border); padding: 15px 0; margin: 20px 0; display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; font-size: 11px; }
+.account-login-identity > span { color: var(--theme-muted); }
+.account-login-identity b { font-weight: 500; overflow-wrap: anywhere; }
+.account-login-identity small { color: var(--theme-accent); margin-left: auto; font-size: 10px; }
+.account-password-panel { margin-top: 24px; scroll-margin-top: 150px; }
+.account-password-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.account-password-footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 16px; margin-bottom: 16px; align-items: center; }
+.account-show-password { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--theme-muted); }
+@media (max-width: 700px) { .account-main { padding: 26px 18px 45px; } .account-profile-layout { grid-template-columns: minmax(0, 1fr); gap: 18px; } .account-password-fields { grid-template-columns: minmax(0, 1fr); gap: 0; } .account-avatar-preview { width: 110px; height: 110px; border-radius: 34px; margin: 18px 0; } }

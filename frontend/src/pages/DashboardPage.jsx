@@ -1,12 +1,16 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import api from '../api/axios';
+import { Link, useLocation } from 'react-router-dom';
+import api, { getUploadUrl } from '../api/axios';
 import Navbar from '../components/Navbar';
+import { CommunityDashboard } from '../components/CommunityWidgets';
+import { FriendRequestNotice } from '../components/CommunityFriends';
 import { useAuth } from '../context/AuthContext';
+import '../styles/community.css';
+import '../styles/student-dashboard.css';
 import {
   FiBookOpen, FiAward, FiTrendingUp, FiLayers, FiClock,
   FiCheckCircle, FiXCircle, FiChevronDown, FiChevronRight,
-  FiPlay, FiLock, FiBook, FiClipboard,
+  FiPlay, FiLock, FiBook, FiClipboard, FiCamera, FiArrowUpRight, FiHeart,
 } from 'react-icons/fi';
 
 // ─── Biểu đồ đường tiến độ điểm ────────────────────────────────────────────
@@ -21,7 +25,7 @@ function ProgressLineChart({ data }) {
   const n = data.length;
   const getX = i => n > 1 ? pL + (i / (n - 1)) * cW : pL + cW / 2;
   const getY = v => pT + cH - (v / 10) * cH;
-  const scoreColor = v => v >= 9 ? '#7c3aed' : v >= 8 ? '#22c55e' : v >= 7 ? '#3b82f6' : v >= 5 ? '#f59e0b' : v >= 4 ? '#f97316' : '#ef4444';
+  const scoreColor = v => v >= 9 ? '#a78bfa' : v >= 8 ? '#86c96b' : v >= 7 ? '#6aa9ee' : v >= 5 ? '#fbbf24' : v >= 4 ? '#fbab6b' : '#f78578';
   const scoreLabel = v => v >= 9 ? 'Xuất sắc' : v >= 8 ? 'Giỏi' : v >= 7 ? 'Khá' : v >= 5 ? 'Trung bình' : v >= 4 ? 'Yếu' : 'Kém';
 
   const grid = [0, 2.5, 5, 7.5, 10];
@@ -74,8 +78,8 @@ function ProgressLineChart({ data }) {
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 'auto', display: 'block' }}>
         <defs>
           <linearGradient id="pgGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.25" />
-            <stop offset="100%" stopColor="#3b82f6" stopOpacity="0.02" />
+            <stop offset="0%" stopColor="#ffda45" stopOpacity="0.25" />
+            <stop offset="100%" stopColor="#ffda45" stopOpacity="0.02" />
           </linearGradient>
           <filter id="pgShadow">
             <feDropShadow dx="0" dy="2" stdDeviation="2" floodOpacity="0.15" />
@@ -86,7 +90,7 @@ function ProgressLineChart({ data }) {
         {grid.map(p => (
           <g key={p}>
             <line x1={pL} y1={getY(p)} x2={W - pR} y2={getY(p)}
-              stroke={p === 0 ? '#d1d5db' : '#f3f4f6'} strokeWidth={p === 0 ? 1.5 : 1} />
+              stroke={p === 0 ? '#49493e' : '#30302a'} strokeWidth={p === 0 ? 1.5 : 1} />
             <text x={pL - 6} y={getY(p) + 4} textAnchor="end" fontSize="10" fill="#9ca3af">{p}</text>
           </g>
         ))}
@@ -96,7 +100,7 @@ function ProgressLineChart({ data }) {
 
         {/* Line smooth */}
         {n > 1 && (
-          <path d={linePath} fill="none" stroke="#3b82f6" strokeWidth="2.5"
+          <path d={linePath} fill="none" stroke="#ffda45" strokeWidth="2.5"
             strokeLinejoin="round" strokeLinecap="round" />
         )}
 
@@ -117,7 +121,7 @@ function ProgressLineChart({ data }) {
               {/* invisible hover area */}
               <circle cx={cx} cy={cy} r={16} fill="transparent" />
               {/* dot */}
-              <circle cx={cx} cy={cy} r={isHov ? 7 : 5} fill="white"
+              <circle cx={cx} cy={cy} r={isHov ? 7 : 5} fill="#1d1d1b"
                 stroke={col} strokeWidth="2.5"
                 filter={isHov ? 'url(#pgShadow)' : undefined} />
               {/* x-axis date */}
@@ -132,13 +136,13 @@ function ProgressLineChart({ data }) {
               {isHov && (
                 <g>
                   <rect x={tx} y={ty} width={ttW} height={ttH} rx="6"
-                    fill="white" filter="url(#pgShadow)" stroke="#e5e7eb" strokeWidth="1" />
+                    fill="#292924" filter="url(#pgShadow)" stroke="#555548" strokeWidth="1" />
                   <text x={tx + ttW / 2} y={ty + 16} textAnchor="middle"
                     fontSize="11" fontWeight="bold" fill={col}>
                     {d.score10}/10 — {scoreLabel(d.score10)}
                   </text>
                   <text x={tx + ttW / 2} y={ty + 31} textAnchor="middle"
-                    fontSize="10" fill="#6b7280">
+                    fontSize="10" fill="#dedecb">
                     {d.title.length > 22 ? d.title.slice(0, 20) + '…' : d.title}
                   </text>
                   <text x={tx + ttW / 2} y={ty + 47} textAnchor="middle"
@@ -169,7 +173,7 @@ const CLASS_STATUS_ICON = {
 
 export default function DashboardPage() {
   const { user, isAdmin } = useAuth();
-  const navigate = useNavigate();
+  const { hash, key: locationKey } = useLocation();
   const [classEnrollments, setClassEnrollments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [exams, setExams] = useState([]);
@@ -182,6 +186,14 @@ export default function DashboardPage() {
 
   // expandedCourses: { `${classId}_${courseId}`: lessons[] | 'loading' | null }
   const [expandedCourses, setExpandedCourses] = useState({});
+
+  useEffect(() => {
+    if (hash !== '#my-classes') return;
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById('my-classes')?.scrollIntoView({ block: 'start' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [hash, locationKey, loading]);
 
   useEffect(() => {
     api.get('/class-enrollments/my')
@@ -290,70 +302,61 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="community-locket student-dashboard">
       <Navbar />
-      <div className="max-w-5xl mx-auto px-4 py-8">
+      <main className="dashboard-main">
 
         {/* Profile header */}
-        <div className="flex items-center gap-4 mb-8">
+        <section className="dashboard-welcome">
+          <div className="dashboard-welcome-copy"><p className="dashboard-eyebrow">GÓC HỌC TẬP CỦA BẠN</p><h1>Chào {user?.name},<br /><span>hôm nay mình cùng tiến bộ nhé.</span></h1><p className="dashboard-welcome-description">Một bài học mới, một khoảnh khắc vui. Mỗi chút cố gắng đều đáng được ghi nhận.</p><Link to="/community?compose=photo" className="dashboard-share"><FiCamera /> Chia sẻ khoảnh khắc <FiArrowUpRight /></Link></div>
+          <div className="dashboard-profile-card"><span className="dashboard-profile-heart"><FiHeart /></span>
           {user?.avatar ? (
-            <img src={user.avatar} alt={user.name} className="w-16 h-16 rounded-full object-cover" />
+            <img src={getUploadUrl(user.avatar)} alt={user.name} className="dashboard-profile-avatar" />
           ) : (
-            <div className="w-16 h-16 rounded-full bg-blue-600 flex items-center justify-center text-white text-2xl font-bold">
+            <div className="dashboard-profile-avatar">
               {user?.name?.charAt(0).toUpperCase()}
             </div>
           )}
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Chào, {user?.name}!</h1>
-            <p className="text-gray-500">{user?.email}</p>
+          <b>{user?.name}</b><small>{user?.email}</small><span className="dashboard-profile-note">Học một chút, lớn thêm một chút 🌱</span>
           </div>
-        </div>
+        </section>
 
         {!isAdmin && (
-          <div className="grid grid-cols-2 gap-3 mb-8 md:hidden">
-            <Link
-              to="/homeworks"
-              className="bg-white rounded-xl border border-blue-100 shadow-sm p-4 flex flex-col items-center gap-2 text-center active:scale-[0.98] transition"
-            >
-              <div className="w-11 h-11 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center">
-                <FiBookOpen size={22} />
-              </div>
-              <span className="text-sm font-semibold text-gray-900">Bài tập</span>
-            </Link>
-            <Link
-              to="/exams"
-              className="bg-white rounded-xl border border-indigo-100 shadow-sm p-4 flex flex-col items-center gap-2 text-center active:scale-[0.98] transition"
-            >
-              <div className="w-11 h-11 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center">
-                <FiClipboard size={22} />
-              </div>
-              <span className="text-sm font-semibold text-gray-900">Đề kiểm tra</span>
-            </Link>
+          <div className="dashboard-shortcuts">
+            {[
+              { to: '/homeworks', icon: FiBookOpen, title: 'Bài tập', description: 'Ôn lại, hiểu sâu hơn', tone: 'yellow' },
+              { to: '/classes', icon: FiLayers, title: 'Lớp học', description: 'Cùng thầy và các bạn', tone: 'green' },
+              { to: '/exams', icon: FiClipboard, title: 'Đề kiểm tra', description: 'Nhìn lại sự tiến bộ', tone: 'purple' },
+              { to: '/community?tab=challenges', icon: FiAward, title: 'Thử thách tuần', description: 'Thử sức, nhận quà vui', tone: 'orange' },
+            ].map(({ to, icon: Icon, title, description, tone }) => <Link to={to} className={`dashboard-shortcut tone-${tone}`} key={to}><span className="dashboard-shortcut-icon"><Icon /></span><div><b>{title}</b><small>{description}</small></div><FiArrowUpRight className="dashboard-shortcut-arrow" /></Link>)}
           </div>
         )}
 
         {/* Stats */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+        {!isAdmin && <FriendRequestNotice />}
+        {!isAdmin && <CommunityDashboard />}
+        <div className="dashboard-stats">
           {[
             { icon: <FiLayers className="text-blue-600 text-2xl" />, label: 'Lớp học đang tham gia', value: approvedCount, bg: 'bg-blue-50' },
             { icon: <FiBookOpen className="text-purple-600 text-2xl" />, label: 'Khóa học trong lớp', value: totalCourses, bg: 'bg-purple-50' },
             { icon: <FiAward className="text-yellow-600 text-2xl" />, label: 'Đang chờ duyệt', value: classEnrollments.filter(e => e.status === 'pending').length, bg: 'bg-yellow-50' },
           ].map(s => (
-            <div key={s.label} className={`card p-5 flex items-center gap-4 ${s.bg}`}>
+            <div key={s.label} className="dashboard-stat">
               {s.icon}
               <div>
-                <div className="text-2xl font-bold text-gray-900">{s.value}</div>
-                <div className="text-sm text-gray-600">{s.label}</div>
+                <div className="dashboard-stat-value">{loading ? '—' : s.value}</div>
+                <div className="dashboard-stat-label">{s.label}</div>
               </div>
             </div>
           ))}
         </div>
 
         {/* Progress Chart */}
-        <div className="bg-white rounded-xl shadow-sm p-5 mb-8">
+        <div className="dashboard-study-layout">
+        <section className="dashboard-progress community-panel">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
             <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-              <FiTrendingUp className="text-blue-600" /> Biểu đồ tiến độ điểm kiểm tra và bài tập
+              <FiTrendingUp className="text-blue-600" /> Mỗi ngày một tiến bộ
             </h2>
             {/* Filter controls */}
             <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -390,10 +393,11 @@ export default function DashboardPage() {
               <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-red-400 inline-block" /> &lt;4 Kém</span>
             </div>
           )}
-        </div>
+        </section>
 
         {/* Classes */}
-        <h2 className="text-xl font-bold text-gray-900 mb-4">Lớp học của tôi</h2>
+        <section className="dashboard-classes" id="my-classes" style={{ scrollMarginTop: '148px' }}>
+        <div className="dashboard-section-title"><div><p>KHÔNG GIAN HỌC TẬP</p><h2>Lớp học của tôi</h2></div><Link to="/classes">Khám phá lớp học <FiArrowUpRight /></Link></div>
 
         {loading ? (
           <div className="space-y-4">
@@ -414,7 +418,7 @@ export default function DashboardPage() {
               const isApproved = enrollment.status === 'approved';
 
               return (
-                <div key={enrollment._id} className="card overflow-hidden">
+                <div key={enrollment._id} className="card dashboard-class-card overflow-hidden">
                   {/* Class header */}
                   <div className="p-5 flex justify-between items-start">
                     <div>
@@ -524,7 +528,9 @@ export default function DashboardPage() {
             })}
           </div>
         )}
-      </div>
+        </section>
+        </div>
+      </main>
     </div>
   );
 }

@@ -1,6 +1,10 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { CommunityProvider } from './context/CommunityContext';
+import { ThemeProvider } from './context/ThemeContext';
+import CommunityPage from './pages/CommunityPage';
+import AdminCommunity from './pages/admin/AdminCommunity';
 
 // Public pages
 import HomePage from './pages/HomePage';
@@ -15,7 +19,7 @@ import DashboardPage from './pages/DashboardPage';
 import ClassesPage from './pages/ClassesPage';
 import ClassDetailPage from './pages/ClassDetailPage';
 import StudentHomeworkPage from './pages/StudentHomeworkPage';
-import ChangePasswordPage from './pages/ChangePasswordPage';
+import AccountSettingsPage from './pages/AccountSettingsPage';
 import PublicHomeworkPrintPage from './pages/PublicHomeworkPrintPage';
 
 // Admin pages
@@ -61,8 +65,10 @@ const GuestHomeRoute = () => {
 function App() {
   return (
     <AuthProvider>
+      <ThemeProvider>
+      <CommunityProvider>
       <BrowserRouter>
-        <Toaster position="top-right" />
+        <Toaster position="top-right" toastOptions={{ style: { background: 'var(--theme-surface)', color: 'var(--theme-text)', border: '1px solid var(--theme-border)' } }} />
         <Routes>
           <Route path="/" element={<GuestHomeRoute />} />
           <Route path="/login" element={<LoginPage />} />
@@ -72,7 +78,9 @@ function App() {
           <Route path="/courses/:id" element={<CourseDetailPage />} />
           <Route path="/oauth-success" element={<OAuthSuccess />} />
           <Route path="/dashboard" element={<PrivateRoute><DashboardPage /></PrivateRoute>} />
-          <Route path="/change-password" element={<PrivateRoute><ChangePasswordPage /></PrivateRoute>} />
+          <Route path="/community" element={<PrivateRoute><CommunityPage /></PrivateRoute>} />
+          <Route path="/account" element={<PrivateRoute><AccountSettingsPage /></PrivateRoute>} />
+          <Route path="/change-password" element={<PrivateRoute><Navigate to="/account#password" replace /></PrivateRoute>} />
           <Route path="/class/:classId" element={<PrivateRoute><ClassDetailPage /></PrivateRoute>} />
           <Route path="/lesson/:lessonId" element={<PrivateRoute><LessonDetailPage /></PrivateRoute>} />
           <Route path="/lessons/:id" element={<PrivateRoute><LessonPage /></PrivateRoute>} />
@@ -86,6 +94,7 @@ function App() {
             <Route path="lessons" element={<AdminLessons />} />
             <Route path="lessons/new" element={<AdminLessonEditor />} />
             <Route path="lessons/:id/edit" element={<AdminLessonEditor />} />
+            <Route path="lessons/:id" element={<AdminLessonEditor />} />
             <Route path="students" element={<AdminStudents />} />
             <Route path="classes" element={<AdminClasses />} />
             <Route path="teaching-sessions" element={<AdminTeachingSessions />} />
@@ -97,9 +106,12 @@ function App() {
             <Route path="tuition" element={<AdminTuition />} />
             <Route path="revenue" element={<AdminRevenue />} />
             <Route path="settings" element={<AdminSettings />} />
+            <Route path="community" element={<AdminCommunity />} />
           </Route>
         </Routes>
       </BrowserRouter>
+      </CommunityProvider>
+      </ThemeProvider>
     </AuthProvider>
   );
 }
