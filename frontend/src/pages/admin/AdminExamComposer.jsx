@@ -4,6 +4,7 @@ import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import api from '../../api/axios';
 import fallbackCurriculum from '../../utils/vnMathCurriculum';
+import { gradeNumber, gradeOptions as configuredGradeOptions } from '../../hooks/useGradeOptions';
 import { FiArrowLeft, FiArrowRight, FiCheck, FiDownload, FiPrinter, FiRefreshCw, FiSave, FiZap } from 'react-icons/fi';
 
 const DEFAULT_LEVELS = [
@@ -37,8 +38,7 @@ const round2 = (value) => Number((Number(value) || 0).toFixed(4));
 const pointText = (value) => Number(value || 0).toLocaleString('vi-VN', { maximumFractionDigits: 4 });
 
 function extractGradeFromLevel(level) {
-  const match = String(level?.name || '').match(/\d+/);
-  return match ? Number(match[0]) : null;
+  return gradeNumber(level);
 }
 
 function examPackageToHomeworkText(paper) {
@@ -250,9 +250,13 @@ export default function AdminExamComposer({ onSaved }) {
 
   const chapters = curriculum?.[form.grade] || {};
   const gradeOptions = useMemo(() => {
-    const grades = classLevels.map(extractGradeFromLevel).filter(Boolean);
-    return [...new Set(grades)].sort((a, b) => a - b);
+    return configuredGradeOptions(classLevels);
   }, [classLevels]);
+  useEffect(() => {
+    if (gradeOptions.length && !gradeOptions.some(level => level.grade === form.grade)) {
+      setForm(previous => ({ ...previous, grade: gradeOptions[0].grade })); setSelectedUnits([]); setMatrix([]); setPaper(null);
+    }
+  }, [classLevels, form.grade]);
   const totals = useMemo(() => matrixTotals(matrix, cognitiveLevels), [matrix, cognitiveLevels]);
   const targetPoints = round2(Number(form.mcPoints) + Number(form.essayPoints));
 
@@ -436,7 +440,8 @@ export default function AdminExamComposer({ onSaved }) {
             <label className="space-y-1">
               <span className="text-sm font-medium text-gray-700">Lớp</span>
               <select className="w-full rounded-lg border border-gray-300 px-3 py-2" value={form.grade} onChange={e => updateForm('grade', Number(e.target.value))}>
-                {(gradeOptions.length ? gradeOptions : [6, 7, 8, 9, 10, 11, 12]).map(grade => <option key={grade} value={grade}>Toán {grade}</option>)}
+                {!gradeOptions.length && <option value="">Chưa cấu hình khối</option>}
+                {gradeOptions.map(level => <option key={level._id} value={level.grade}>{level.name}</option>)}
               </select>
             </label>
             <label className="space-y-1">

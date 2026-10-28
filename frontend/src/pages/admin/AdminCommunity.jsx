@@ -30,6 +30,7 @@ export default function AdminCommunity() {
   return <div className="space-y-6 max-w-6xl">
     <div className="flex flex-wrap justify-between gap-3"><div><h1 className="text-2xl font-bold">Cộng đồng & thử thách</h1><p className="text-gray-500 mt-1">Quản lý nội dung, thời gian sử dụng và ghi nhận nỗ lực học sinh.</p></div><Link className="text-blue-600" to="/community">Xem cộng đồng →</Link></div>
     {error && <p className="text-red-600" role="alert">{error}</p>}
+    <section className={box}><h2 className="font-bold text-lg">Đấu trường Toán học</h2><p className="text-sm text-gray-500 mt-2">Khối lớp tự tính từ năm sinh tại Quản lý lớp học. Quản lý kho câu hỏi theo khối, thêm thủ công hoặc dùng Gemini và công bố hàng loạt.</p><Link className="inline-block text-blue-600 text-sm mt-3" to="/community?tab=arena">Mở đấu trường & quản lý kho câu hỏi →</Link></section>
     <form className={box} onSubmit={e => { e.preventDefault(); act('admin/policy', { ...settings, dailyImageLimit: Number(settings.dailyImageLimit ?? 5), bannedWords: words.split('\n').map(w => w.trim()).filter(Boolean) }, 'put'); }}>
       <h2 className="font-bold text-lg mb-3">Quy định cộng đồng</h2>
       <fieldset className="rounded-xl border border-blue-200 bg-blue-50 p-4 mb-5"><legend className="text-sm font-semibold px-2">Điều kiện truy cập mạng xã hội</legend>

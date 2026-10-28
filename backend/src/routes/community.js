@@ -71,6 +71,7 @@ router.get('/events', (req, res) => {
   const expiry = setTimeout(() => res.end(), 5 * 60000);
   res.on('close', () => { unsubscribe(); clearInterval(heartbeat); clearTimeout(expiry); });
 });
+router.use('/arena', require('./mathArena'));
 router.get('/policy', wrap(async (req, res) => {
   const p = await policy();
   res.json({ curfewEnabled: p.curfewEnabled, curfewStart: p.curfewStart, curfewEnd: p.curfewEnd, inCurfew: inCurfew(p), timezone: 'Asia/Ho_Chi_Minh', dailyImageLimitEnabled: p.dailyImageLimitEnabled, dailyImageLimit: p.dailyImageLimit, dailyImageLimitScope: p.dailyImageLimitScope });

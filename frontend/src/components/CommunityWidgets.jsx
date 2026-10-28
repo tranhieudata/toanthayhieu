@@ -35,7 +35,7 @@ export function NotificationBell() {
       {friendships.incoming.length > 0 && <Link onClick={() => setOpen(false)} className="block p-3 bg-blue-50 rounded-lg mb-2 font-medium text-sm" to="/community?tab=friends">💛 {friendships.incoming.length} lời mời kết bạn · Xem và chấp nhận →</Link>}
       {count > 0 && <Link onClick={() => setOpen(false)} className="block p-3 bg-blue-50 rounded-lg mb-2" to="/community?tab=chat">Bạn có {count} tin nhắn mới</Link>}
       {!notifications.items.length && <p className="text-sm text-gray-500 p-3">Chưa có thông báo.</p>}
-      {notifications.items.map(n => <Link key={n._id} onClick={() => setOpen(false)} to={n.kind === 'friendship' ? '/community?tab=friends' : n.post ? `/community?post=${n.post}` : '/community?tab=garden'} className={`block p-3 text-sm rounded-lg mb-1 ${n.readAt ? 'text-gray-500' : 'bg-blue-50 text-gray-900'}`}>
+      {notifications.items.map(n => <Link key={n._id} onClick={() => setOpen(false)} to={n.kind === 'arena' ? '/community?tab=arena' : n.kind === 'friendship' ? '/community?tab=friends' : n.post ? `/community?post=${n.post}` : '/community?tab=garden'} className={`block p-3 text-sm rounded-lg mb-1 ${n.readAt ? 'text-gray-500' : 'bg-blue-50 text-gray-900'}`}>
         {n.text}<small className="block text-gray-400 mt-1">{new Date(n.createdAt).toLocaleString('vi-VN')}</small>
       </Link>)}
     </div></>}

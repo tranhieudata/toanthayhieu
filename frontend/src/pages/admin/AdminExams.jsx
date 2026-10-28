@@ -583,13 +583,13 @@ export default function AdminExams() {
           </select>
         </div>
         <div>
-          <label className="text-xs text-gray-500 block mb-1">Cấp độ Lớp</label>
+          <label className="text-xs text-gray-500 block mb-1">Khối</label>
           <select
             className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             value={filterLevel}
             onChange={e => setFilterLevel(e.target.value)}
           >
-            <option value="">Tất cả cấp độ</option>
+            <option value="">Tất cả khối</option>
             {classLevels.map(l => <option key={l._id} value={l._id}>{l.name}</option>)}
           </select>
         </div>

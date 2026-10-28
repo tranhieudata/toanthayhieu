@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { FiCamera, FiImage, FiMessageCircle, FiUsers, FiGrid, FiAward, FiSun, FiPlus, FiX, FiSend, FiHeart } from 'react-icons/fi';
+import { FiCamera, FiImage, FiMessageCircle, FiUsers, FiGrid, FiAward, FiSun, FiPlus, FiX, FiSend, FiHeart, FiZap } from 'react-icons/fi';
 import { Avatar, CommunityImage } from '../components/CommunityWidgets';
 import Navbar from '../components/Navbar';
 import GardenReview from '../components/GardenReview';
 import GardenLeaderboard from '../components/GardenLeaderboard';
+import GardenArtwork from '../components/GardenArtwork';
+import MathArena from '../components/MathArena';
 import CommunityWall from '../components/CommunityWall';
 import CommunityAccessNotice from '../components/CommunityAccessNotice';
 import { FriendshipActions, FriendRequests, FriendRequestNotice } from '../components/CommunityFriends';
@@ -270,15 +272,20 @@ function Garden() {
   useEffect(() => { load(); }, [load]);
   async function act(url, data) { setBusy(true); try { const r = await api.post(`/community/${url}`, data); await load(); return r.data; } catch (e) { toast.error(errorMessage(e)); } finally { setBusy(false); } }
   if (!garden) return <div className={box}>{error || 'Đang chăm vườn…'}</div>;
-  return <div className="grid lg:grid-cols-[1fr_1fr] gap-5 items-start">
-    <section className={`${box} text-center`}>
-      <h2 className="font-bold text-xl">Khu vườn của bạn</h2><div className={`text-9xl py-10 ${garden.needsWater ? 'opacity-50' : ''}`}>{garden.growth >= 20 ? '🌳' : garden.growth >= 7 ? '🌿' : '🌱'}</div>
-      <h3 className="text-emerald-800 font-bold text-lg">{garden.needsWater ? 'Cây đang cần một chút nước' : 'Cây đang lớn lên cùng bạn'}</h3>
-      <p className="text-gray-500 text-sm mt-2">{garden.growth} ngày chăm cây · {garden.lastWatered ? `Lần cuối: ${date(garden.lastWatered)}` : 'Bắt đầu chăm cây hôm nay'}</p>
-      <div className="flex gap-3 justify-center mt-5"><span className="bg-yellow-50 text-amber-700 rounded-xl p-3 font-bold">{garden.energy} ⚡ còn lại</span><span className="bg-emerald-50 text-emerald-700 rounded-xl p-3 text-sm">{garden.studyPoints} học tập<br />{garden.communityPoints} cộng đồng</span></div>
-      <p className="text-sm text-gray-500 mt-4">Bài tập có ảnh: +10 điểm/bài. Ảnh học tập được duyệt: +15 điểm/ngày. Giúp ảnh hỏi bài được chủ bài ghi nhận: +10 điểm/ảnh. Mỗi ngày cây lớn một lần; sau 3 ngày chưa chăm cây sẽ cần nước.</p>
-      <Link className="inline-block text-blue-600 text-sm mt-4" to="/homeworks">Làm bài tập →</Link>
+  const waterLevel = garden.lastWatered ? Math.max(0, Math.min(100, Math.round((1 - (Date.now() - new Date(garden.lastWatered).getTime()) / (3 * 86400000)) * 100))) : 0;
+  const wateredToday = garden.lastWatered && new Date(garden.lastWatered).toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) === new Date().toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+  return <div className="garden-layout">
+    <section className={`${box} garden-main-card`}>
+      <header className="garden-card-heading"><span className="garden-eyebrow">HỌC MỖI NGÀY · XANH MỖI NGÀY</span><h2>Khu vườn của bạn</h2><p>Mỗi điều bạn học, một mầm xanh lớn lên.</p></header>
+      <div className="garden-scene"><span className="garden-level">✦ {garden.growth >= 20 ? 'Cây tri thức' : garden.growth >= 7 ? 'Cây đang lớn' : 'Hành trình mới'}</span><GardenArtwork growth={garden.growth} />
+        <div className="garden-water-status"><span>💧 Độ ẩm của cây</span><strong>{waterLevel}%</strong><progress max="100" value={waterLevel} aria-label="Độ ẩm của cây" /><small>{waterLevel === 0 ? 'Cùng tưới cây nhé!' : 'Ôn tập để giữ cây xanh'}</small></div>
+      </div>
+      <div className="garden-motivation" aria-live="polite"><h3>{garden.needsWater || !garden.lastWatered ? 'Cây đang cần một chút nước' : 'Cây đang lớn lên cùng bạn'}</h3><p><span>🔥 {garden.growth} ngày chăm cây</span> · {garden.lastWatered ? `Lần cuối: ${date(garden.lastWatered)}` : 'Bắt đầu chăm cây hôm nay'}</p></div>
+      <div className="garden-resources"><div><span>NĂNG LƯỢNG</span><strong>{garden.energy} <span>⚡ còn lại</span></strong><small>Dùng để đổi những món quà</small></div><div><span>NƯỚC HÔM NAY</span><strong>{wateredToday ? 1 : 0} <span>💧 lượt tưới</span></strong><small>Tự động khi hoàn thành bài</small></div></div>
       <GardenReview onComplete={load} />
+      <Link className="garden-homework-link" to="/homeworks">Làm bài tập <span aria-hidden="true">→</span></Link>
+      <div className="garden-missions"><h3>✨ Bí kíp nuôi cây</h3><p><span>Bài tập có ảnh</span><b>+10 điểm/bài</b></p><p><span>Ảnh học tập được duyệt</span><b>+15 điểm/ngày</b></p><p><span>Giúp ảnh hỏi bài được ghi nhận</span><b>+10 điểm/ảnh</b></p><small>Mỗi câu ôn tập đúng = 1 ⚡. Mỗi ngày cây lớn một lần; sau 3 ngày chưa chăm, cây sẽ cần nước.</small></div>
+      <p className="garden-point-summary">Đã tích lũy: <b>{garden.studyPoints}</b> học tập · <b>{garden.communityPoints}</b> cộng đồng</p>
     </section>
     <div className="space-y-5"><GardenLeaderboard points={garden.studyPoints + garden.communityPoints} /><section className={box}><h2 className="font-bold text-xl mb-4">Đổi năng lượng lấy niềm vui</h2><div className="space-y-3">{garden.rewards.map(r => <div className="flex items-center justify-between gap-3 p-3 border rounded-xl" key={r.id}><div><b className="text-sm">{r.label}</b><p className="text-sm text-amber-600">{r.cost} ⚡</p></div><button className={button} disabled={busy || garden.energy < r.cost || garden.inventory.includes(r.id)} onClick={async () => { const data = await act('rewards/redeem', { item: r.id }); if (data) toast.success('Đổi thành công!'); }}>{garden.inventory.includes(r.id) ? 'Đã mở' : 'Đổi'}</button></div>)}</div>
       {garden.inventory.includes('frame-green') && <button className="text-emerald-700 text-sm mt-4" disabled={busy} onClick={() => act('rewards/equip', { item: garden.equippedFrame ? '' : 'frame-green' })}>{garden.equippedFrame ? 'Tháo khung xanh' : 'Dùng khung avatar xanh'}</button>}
@@ -326,13 +333,13 @@ function CommunityContent() {
   const unreadMessages = inbox.reduce((total, conversation) => total + conversation.count, 0);
   useEffect(() => { api.get('/community/policy').then(r => setPolicy(r.data)).catch(() => {}); }, [revision]);
   const tab = params.get('tab') || (params.has('friends') ? 'friends' : 'feed');
-  const tabs = [['feed', FiGrid, 'Khoảnh khắc'], ['chat', FiMessageCircle, 'Trò chuyện'], ['garden', FiSun, 'Vườn của tôi'], ['challenges', FiAward, 'Thử thách']];
+  const tabs = [['feed', FiGrid, 'Khoảnh khắc'], ['chat', FiMessageCircle, 'Trò chuyện'], ['garden', FiSun, 'Vườn của tôi'], ['challenges', FiAward, 'Thử thách'], ['arena', FiZap, 'Đấu trường']];
   return <div className="community-locket"><Navbar /><main className={`locket-main ${tab === 'feed' ? 'is-feed' : ''}`}>
-    <div className="locket-page-heading"><div><p>BẠN BÈ Ở ĐÂY. NIỀM VUI Ở ĐÂY.</p><h1>{tab === 'friends' ? 'Kết nối những người bạn.' : tab === 'chat' ? 'Một lời nhắn, thêm gần nhau.' : tab === 'garden' ? 'Lớn lên từng chút một.' : tab === 'challenges' ? 'Cùng nhau thử sức nhé.' : 'Những điều nhỏ, thật đáng nhớ.'}</h1></div><button className="locket-friends-shortcut" aria-label={`Bạn bè${friendships.incoming.length ? `, ${friendships.incoming.length} lời mời mới` : ''}`} onClick={() => setParams({ tab: 'friends' })}><FiUsers /> Bạn bè{friendships.incoming.length > 0 && <span className="locket-invitation-count">{friendships.incoming.length}</span>}</button></div>
+    <div className="locket-page-heading"><div><p>BẠN BÈ Ở ĐÂY. NIỀM VUI Ở ĐÂY.</p><h1>{tab === 'friends' ? 'Kết nối những người bạn.' : tab === 'chat' ? 'Một lời nhắn, thêm gần nhau.' : tab === 'garden' ? 'Lớn lên từng chút một.' : tab === 'arena' ? 'Sẵn sàng bứt phá cùng Toán?' : tab === 'challenges' ? 'Cùng nhau thử sức nhé.' : 'Những điều nhỏ, thật đáng nhớ.'}</h1></div><button className="locket-friends-shortcut" aria-label={`Bạn bè${friendships.incoming.length ? `, ${friendships.incoming.length} lời mời mới` : ''}`} onClick={() => setParams({ tab: 'friends' })}><FiUsers /> Bạn bè{friendships.incoming.length > 0 && <span className="locket-invitation-count">{friendships.incoming.length}</span>}</button></div>
     {tab !== 'friends' && <FriendRequestNotice />}
     {policy?.curfewEnabled && <div className={`locket-curfew ${policy.inCurfew ? 'is-curfew' : ''}`}><span>☾</span><p>{policy.inCurfew ? 'Đến giờ nghỉ rồi. Hẹn bạn ngày mai nhé!' : 'Học vui, ngủ ngon.'}<small>Giờ nghỉ {policy.curfewStart}–{policy.curfewEnd} · Giờ Việt Nam{policy.inCurfew ? ' · Tạm dừng đăng bài, bình luận và chat' : ''}</small></p></div>}
     <nav aria-label="Mạng xã hội học tập" className="locket-navigation">{tabs.map(([key, Icon, label], i) => <button key={key} aria-label={key === 'chat' && unreadMessages > 0 ? `${label}, ${unreadMessages} tin nhắn chưa đọc` : label} aria-current={tab === key ? 'page' : undefined} className={`locket-nav-item ${tab === key ? 'is-active' : ''} ${i > 1 ? 'after-camera' : ''}`} onClick={() => setParams(key === 'feed' ? {} : { tab: key })}><span className="locket-nav-icon"><Icon />{key === 'chat' && unreadMessages > 0 && <span className="locket-unread-badge" aria-hidden="true">{unreadMessages > 99 ? '99+' : unreadMessages}</span>}</span><span>{label}</span></button>)}<button className="locket-nav-camera" aria-label="Tạo khoảnh khắc" onClick={() => setParams({ compose: 'photo' })}><FiCamera /></button></nav>
-    {tab === 'friends' ? <FriendsPage /> : tab === 'feed' ? <Feed params={params} setParams={setParams} /> : tab === 'chat' ? <Chat params={params} setParams={setParams} policy={policy} /> : tab === 'garden' ? <Garden /> : tab === 'challenges' ? <Challenges /> : <p>Tab không hợp lệ.</p>}
+    {tab === 'friends' ? <FriendsPage /> : tab === 'feed' ? <Feed params={params} setParams={setParams} /> : tab === 'chat' ? <Chat params={params} setParams={setParams} policy={policy} /> : tab === 'garden' ? <Garden /> : tab === 'challenges' ? <Challenges /> : tab === 'arena' ? <MathArena /> : <p>Tab không hợp lệ.</p>}
   </main></div>;
 }
 

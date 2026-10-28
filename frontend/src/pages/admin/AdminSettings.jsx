@@ -3,6 +3,7 @@ import api, { getUploadUrl } from '../../api/axios';
 import toast from 'react-hot-toast';
 import { FiSave, FiUpload, FiSettings, FiCreditCard, FiX, FiPlus, FiTrash2, FiLayers, FiBook, FiMenu, FiEdit2 } from 'react-icons/fi';
 import VN_MATH_CURRICULUM from '../../utils/vnMathCurriculum';
+import { gradeOptions } from '../../hooks/useGradeOptions';
 
 const TAILWIND_COLORS = [
   { label: 'Xanh lá', bg: 'bg-green-100', text: 'text-green-700' },
@@ -25,8 +26,11 @@ export default function AdminSettings() {
   const [levels, setLevels] = useState([]);
   const [loadingLevels, setLoadingLevels] = useState(false);
   const [newLevelName, setNewLevelName] = useState('');
+  const [newLevelGrade, setNewLevelGrade] = useState(6);
   const [newLevelColor, setNewLevelColor] = useState({ bg: 'bg-blue-100', text: 'text-blue-700' });
   const [editingLevel, setEditingLevel] = useState(null);
+  const [editingLevelDraft, setEditingLevelDraft] = useState(null);
+  const configuredGrades = gradeOptions(levels);
   const [selectedCurriculumGrade, setSelectedCurriculumGrade] = useState('6');
   const [newChapterName, setNewChapterName] = useState('');
   const [newTopicByChapter, setNewTopicByChapter] = useState({});
@@ -36,6 +40,9 @@ export default function AdminSettings() {
   const [editingTopicName, setEditingTopicName] = useState('');
   const [draggedCurriculumItem, setDraggedCurriculumItem] = useState(null);
   const fileRef = useRef();
+  useEffect(() => {
+    if (configuredGrades.length && !configuredGrades.some(level => String(level.grade) === selectedCurriculumGrade)) setSelectedCurriculumGrade(String(configuredGrades[0].grade));
+  }, [levels, selectedCurriculumGrade]);
 
   useEffect(() => {
     api.get('/settings').then((r) => setForm({
@@ -58,19 +65,18 @@ export default function AdminSettings() {
       const { data } = await api.get('/levels');
       setLevels(data);
     } catch (err) {
-      toast.error('Không tải được danh sách lớp');
+      toast.error('Không tải được danh sách khối');
     } finally {
       setLoadingLevels(false);
     }
   };
 
   const handleAddLevel = async () => {
-    if (!newLevelName.trim()) {
-      return toast.error('Vui lòng nhập tên lớp');
-    }
+    if (!Number.isInteger(newLevelGrade) || newLevelGrade < 1 || newLevelGrade > 12) return toast.error('Số khối phải từ 1 đến 12');
     try {
       const { data } = await api.post('/levels', {
-        name: newLevelName,
+        name: newLevelName.trim() || `Khối ${newLevelGrade}`,
+        grade: newLevelGrade,
         bgColor: newLevelColor.bg,
         textColor: newLevelColor.text,
         order: levels.length,
@@ -78,9 +84,9 @@ export default function AdminSettings() {
       setLevels([...levels, data]);
       setNewLevelName('');
       setNewLevelColor({ bg: 'bg-blue-100', text: 'text-blue-700' });
-      toast.success('Đã thêm lớp mới');
+      toast.success('Đã thêm khối mới');
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Lỗi thêm lớp');
+      toast.error(err.response?.data?.message || 'Lỗi thêm khối');
     }
   };
 
@@ -89,20 +95,20 @@ export default function AdminSettings() {
       const { data } = await api.put(`/levels/${id}`, updates);
       setLevels(levels.map(l => l._id === id ? data : l));
       setEditingLevel(null);
-      toast.success('Đã cập nhật lớp');
+      toast.success('Đã cập nhật khối');
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Lỗi cập nhật lớp');
+      toast.error(err.response?.data?.message || 'Lỗi cập nhật khối');
     }
   };
 
   const handleDeleteLevel = async (id) => {
-    if (!window.confirm('Bạn chắc chắn muốn xóa lớp này?')) return;
+    if (!window.confirm('Bạn chắc chắn muốn xóa khối này?')) return;
     try {
       await api.delete(`/levels/${id}`);
       setLevels(levels.filter(l => l._id !== id));
-      toast.success('Đã xóa lớp');
+      toast.success('Đã xóa khối');
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Lỗi xóa lớp');
+      toast.error(err.response?.data?.message || 'Lỗi xóa khối');
     }
   };
 
@@ -333,7 +339,7 @@ export default function AdminSettings() {
               : 'border-transparent text-gray-600 hover:text-gray-900'
           }`}
         >
-          <FiBook size={16} /> Lớp học
+          <FiBook size={16} /> Khối
         </button>
         <button
           onClick={() => setActiveTab('curriculum')}
@@ -539,21 +545,23 @@ export default function AdminSettings() {
         <div className="bg-white rounded-xl shadow-sm p-6 space-y-6">
           <div>
             <h2 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
-              <FiBook /> Cấu hình lớp học
+              <FiBook /> Danh mục khối
             </h2>
+            <p className="text-sm text-gray-500 mb-4">Danh mục dùng chung cho chủ đề kiểm tra, đề kiểm tra và kho câu hỏi Toán nhanh. Số khối là mã để nhận diện lớp theo năm sinh.</p>
 
             {/* Add new level */}
             <div className="p-4 border-2 border-dashed border-blue-300 rounded-lg bg-blue-50 space-y-3 mb-6">
-              <h3 className="font-medium text-blue-900 text-sm">Thêm lớp mới</h3>
+              <h3 className="font-medium text-blue-900 text-sm">Thêm khối mới</h3>
               <div className="space-y-3">
+                <div><label className="block text-xs text-gray-600 mb-1" htmlFor="new-grade-number">Số khối (1–12)</label><input id="new-grade-number" type="number" min="1" max="12" step="1" className="input-field" value={newLevelGrade} onChange={e => setNewLevelGrade(Number(e.target.value))} /></div>
                 <div>
-                  <label className="block text-xs text-gray-600 mb-1">Tên lớp (vd: Lớp 6, Lớp 7, Lớp 8)</label>
+                  <label className="block text-xs text-gray-600 mb-1">Tên hiển thị của khối</label>
                   <input
                     type="text"
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     value={newLevelName}
                     onChange={(e) => setNewLevelName(e.target.value)}
-                    placeholder="VD: Lớp 6"
+                    placeholder="VD: Khối 6"
                   />
                 </div>
 
@@ -579,7 +587,7 @@ export default function AdminSettings() {
                 <div className="flex items-center gap-2 pt-2">
                   <span className="text-xs text-gray-600">Xem trước:</span>
                   <span className={`text-xs px-3 py-1 rounded-full ${newLevelColor.bg} ${newLevelColor.text} font-medium`}>
-                    {newLevelName || 'Lớp mới'}
+                    {newLevelName || `Khối ${newLevelGrade}`}
                   </span>
                 </div>
 
@@ -587,7 +595,7 @@ export default function AdminSettings() {
                   onClick={handleAddLevel}
                   className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
                 >
-                  <FiPlus size={14} /> Thêm lớp
+                  <FiPlus size={14} /> Thêm khối
                 </button>
               </div>
             </div>
@@ -600,7 +608,7 @@ export default function AdminSettings() {
             ) : levels.length === 0 ? (
               <div className="text-center py-12 text-gray-400">
                 <FiBook size={32} className="mx-auto mb-2 text-gray-300" />
-                <p>Chưa có lớp nào. Hãy thêm lớp mới.</p>
+                <p>Chưa có khối nào. Hãy thêm khối mới.</p>
               </div>
             ) : (
               <div className="space-y-3">
@@ -609,16 +617,15 @@ export default function AdminSettings() {
                     {editingLevel === level._id ? (
                       <div className="space-y-3">
                         <div>
-                          <label className="block text-xs text-gray-600 mb-1">Tên lớp</label>
+                          <label className="block text-xs text-gray-600 mb-1">Tên khối</label>
                           <input
                             type="text"
                             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            defaultValue={level.name}
-                            onChange={(e) => {
-                              level.name = e.target.value;
-                            }}
+                            value={editingLevelDraft?.name || ''}
+                            onChange={e => setEditingLevelDraft(previous => ({ ...previous, name: e.target.value }))}
                           />
                         </div>
+                        <label className="block text-xs text-gray-600">Số khối (1–12)<input type="number" min="1" max="12" step="1" className="input-field mt-1" value={editingLevelDraft?.grade ?? ''} onChange={e => setEditingLevelDraft(previous => ({ ...previous, grade: Number(e.target.value) }))} /></label>
 
                         <div>
                           <label className="block text-xs text-gray-600 mb-2">Chọn màu</label>
@@ -627,11 +634,10 @@ export default function AdminSettings() {
                               <button
                                 key={idx}
                                 onClick={() => {
-                                  level.bgColor = color.bg;
-                                  level.textColor = color.text;
+                                  setEditingLevelDraft(previous => ({ ...previous, bgColor: color.bg, textColor: color.text }));
                                 }}
                                 className={`p-2 rounded border-2 transition-all ${
-                                  level.bgColor === color.bg
+                                  editingLevelDraft?.bgColor === color.bg
                                     ? 'border-blue-500 ring-2 ring-blue-300'
                                     : 'border-gray-200'
                                 } ${color.bg} text-center text-xs font-medium`}
@@ -646,9 +652,10 @@ export default function AdminSettings() {
                           <button
                             onClick={() =>
                               handleUpdateLevel(level._id, {
-                                name: level.name,
-                                bgColor: level.bgColor,
-                                textColor: level.textColor,
+                                name: editingLevelDraft.name,
+                                grade: editingLevelDraft.grade,
+                                bgColor: editingLevelDraft.bgColor,
+                                textColor: editingLevelDraft.textColor,
                               })
                             }
                             className="flex-1 bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded text-sm font-medium"
@@ -683,7 +690,7 @@ export default function AdminSettings() {
                         </div>
                         <div className="flex items-center gap-2">
                           <button
-                            onClick={() => setEditingLevel(level._id)}
+                            onClick={() => { setEditingLevel(level._id); setEditingLevelDraft({ ...level }); }}
                             className="px-3 py-1.5 text-blue-600 hover:bg-blue-50 rounded text-sm font-medium"
                           >
                             Sửa
@@ -716,20 +723,20 @@ export default function AdminSettings() {
               <p className="text-xs text-gray-500 mt-1">Danh mục này được dùng khi tạo đề kiểm tra bằng AI và tạo bài học bằng AI.</p>
             </div>
             <label className="block min-w-40">
-              <span className="block text-xs text-gray-600 mb-1">Chọn lớp</span>
+              <span className="block text-xs text-gray-600 mb-1">Chọn khối</span>
               <select
                 className="input-field"
                 value={selectedCurriculumGrade}
                 onChange={(e) => setSelectedCurriculumGrade(e.target.value)}
               >
-                {Object.keys(form.curriculum || VN_MATH_CURRICULUM).sort((a, b) => Number(a) - Number(b)).map((grade) => (
-                  <option key={grade} value={grade}>Lớp {grade}</option>
-                ))}
+                {!configuredGrades.length && <option value="">Chưa cấu hình khối</option>}
+                {configuredGrades.map(level => <option key={level._id} value={level.grade}>{level.name}</option>)}
               </select>
             </label>
           </div>
 
-          <div className="rounded-lg border border-dashed border-blue-300 bg-blue-50 p-4">
+          {!configuredGrades.length && <p className="text-sm text-amber-700">Thêm khối tại mục Khối trước khi cấu hình chủ đề kiểm tra.</p>}
+          {configuredGrades.length > 0 && <div className="rounded-lg border border-dashed border-blue-300 bg-blue-50 p-4">
             <label className="block text-xs text-gray-600 mb-1">Thêm chương / phụ lục mới</label>
             <div className="flex gap-2">
               <input
@@ -747,10 +754,10 @@ export default function AdminSettings() {
                 <FiPlus size={14} /> Thêm
               </button>
             </div>
-          </div>
+          </div>}
 
           <div className="space-y-4">
-            {Object.entries((form.curriculum || {})[selectedCurriculumGrade] || {}).map(([chapter, topics]) => (
+            {configuredGrades.length > 0 && Object.entries((form.curriculum || {})[selectedCurriculumGrade] || {}).map(([chapter, topics]) => (
               <div
                 key={chapter}
                 draggable={!editingChapter}

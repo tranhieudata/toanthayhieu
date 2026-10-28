@@ -224,18 +224,18 @@ const createClass = async (req, res) => {
     const cls = await Class.create(req.body);
     res.status(201).json(cls);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(err.name === 'ValidationError' || err.name === 'CastError' ? 400 : 500).json({ message: err.message });
   }
 };
 
 // PUT /api/classes/:id (admin)
 const updateClass = async (req, res) => {
   try {
-    const cls = await Class.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const cls = await Class.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
     if (!cls) return res.status(404).json({ message: 'Không tìm thấy lớp học' });
     res.json(cls);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(err.name === 'ValidationError' || err.name === 'CastError' ? 400 : 500).json({ message: err.message });
   }
 };
 

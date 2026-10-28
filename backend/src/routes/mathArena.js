@@ -1,0 +1,18 @@
+const router = require('express').Router();
+const { adminOnly } = require('../middleware/auth');
+const { student, management } = require('../controllers/mathArenaController');
+router.get('/lobby', student.lobby);
+router.post('/matches', student.create);
+router.get('/matches/:id', student.get);
+router.post('/matches/:id/accept', student.accept);
+router.post('/matches/:id/cancel', student.cancel);
+router.post('/matches/:id/start', student.start);
+router.post('/matches/:id/answer', student.answer);
+router.get('/questions', adminOnly, management.list);
+router.post('/questions', adminOnly, management.save);
+router.post('/questions/publish', adminOnly, management.publishAll);
+router.put('/questions/:id', adminOnly, management.save);
+router.delete('/questions/:id', adminOnly, management.remove);
+router.post('/generate', adminOnly, management.generate);
+router.get('/chapters', adminOnly, management.chapters);
+module.exports = router;

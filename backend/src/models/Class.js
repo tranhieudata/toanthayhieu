@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { currentYear, classGrade } = require('../utils/classGrade');
 
 const scheduleSchema = new mongoose.Schema({
   dayOfWeek: { type: Number, min: 0, max: 6 },
@@ -10,6 +11,7 @@ const scheduleSchema = new mongoose.Schema({
 const classSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
+    birthYear: { type: Number, default: null, validate: { validator: value => value == null || (Number.isInteger(value) && value >= 1900 && value <= currentYear()), message: 'Năm sinh phải là số nguyên từ 1900 đến năm hiện tại' } },
     description: { type: String, default: '' },
     courses: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Course' }],
     students: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
@@ -28,5 +30,8 @@ const classSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+classSchema.virtual('currentGrade').get(function () { return classGrade(this); });
+classSchema.set('toJSON', { virtuals: true });
+classSchema.set('toObject', { virtuals: true });
 
 module.exports = mongoose.model('Class', classSchema);

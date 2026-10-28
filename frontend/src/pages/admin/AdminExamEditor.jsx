@@ -6,6 +6,7 @@ import { FiArrowLeft, FiSave, FiPlus, FiTrash2, FiRefreshCw } from 'react-icons/
 import RichTextEditor from '../../components/RichTextEditor';
 import PdfUploader from '../../components/PdfUploader';
 import VN_MATH_CURRICULUM from '../../utils/vnMathCurriculum';
+import { gradeNumber, gradeOptions } from '../../hooks/useGradeOptions';
 
 const FALLBACK_LEVELS = [
   { key: 'NB', name: 'Nhận biết' },
@@ -126,8 +127,7 @@ function matrixFromExam(exam, levels, grade = 6) {
 }
 
 function extractGradeFromLevel(level) {
-  const match = String(level?.name || '').match(/\d+/);
-  return match ? Number(match[0]) : null;
+  return gradeNumber(level);
 }
 
 function examPackageToHomeworkText(paper) {
@@ -307,9 +307,11 @@ export default function AdminExamEditor() {
   const totals = useMemo(() => matrixTotals(form.matrix, cognitiveLevels), [form.matrix, cognitiveLevels]);
   const isAiExam = hasExamPackageQuestions(form.examPackage);
   const curriculumGradeOptions = useMemo(() => {
-    const grades = classLevels.map(extractGradeFromLevel).filter(Boolean);
-    return [...new Set(grades)].sort((a, b) => a - b);
+    return gradeOptions(classLevels);
   }, [classLevels]);
+  useEffect(() => {
+    if (!isEdit && curriculumGradeOptions.length && !curriculumGradeOptions.some(level => level.grade === curriculumGrade)) updateCurriculumGrade(curriculumGradeOptions[0].grade);
+  }, [classLevels, isEdit, curriculumGrade]);
 
   useEffect(() => {
     api.get('/courses/admin/all').then(r => setCourses(r.data || [])).catch(() => {});
@@ -732,7 +734,7 @@ export default function AdminExamEditor() {
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">Cấp độ lớp</label>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Khối</label>
               <select
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 value={form.level}
@@ -743,7 +745,7 @@ export default function AdminExamEditor() {
                   if (grade) updateCurriculumGrade(grade);
                 }}
               >
-                <option value="">-- Chọn cấp độ lớp --</option>
+                <option value="">-- Chọn khối --</option>
                 {classLevels.map(level => <option key={level._id} value={level._id}>{level.name}</option>)}
               </select>
             </div>
@@ -1046,15 +1048,14 @@ export default function AdminExamEditor() {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <label className="flex items-center gap-2 text-xs text-gray-600">
-                Lớp chương trình
+                Khối chương trình
                 <select
                   value={curriculumGrade}
                   onChange={e => updateCurriculumGrade(Number(e.target.value))}
                   className="rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs"
                 >
-                  {(curriculumGradeOptions.length ? curriculumGradeOptions : [6, 7, 8, 9, 10, 11, 12]).map(grade => (
-                    <option key={grade} value={grade}>Toán {grade}</option>
-                  ))}
+                  {!curriculumGradeOptions.length && <option value="">Chưa cấu hình khối</option>}
+                  {curriculumGradeOptions.map(level => <option key={level._id} value={level.grade}>{level.name}</option>)}
                 </select>
               </label>
               <button type="button" onClick={addMatrixRow} className="flex items-center gap-1 rounded-lg border border-blue-300 px-3 py-1.5 text-xs text-blue-700 hover:bg-blue-50">

@@ -4,7 +4,18 @@ import api from '../../api/axios';
 import toast from 'react-hot-toast';
 import { FiPlus, FiEdit2, FiTrash2, FiX, FiUsers, FiArrowLeft, FiToggleLeft, FiToggleRight, FiBook, FiChevronDown, FiChevronRight, FiSearch, FiUserPlus, FiBarChart2, FiAlertCircle, FiCalendar } from 'react-icons/fi';
 
+import { currentYear, gradeFromBirthYear } from '../../utils/classGrade';
 const days = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
+
+function ClassBirthYearField({ value, onChange }) {
+  const year = currentYear(), grade = gradeFromBirthYear(value);
+  return <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
+    <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="class-birth-year">Năm sinh của học sinh trong lớp</label>
+    <input id="class-birth-year" type="number" className="input-field" min={1900} max={year} step={1} value={value ?? ''} onChange={e => onChange(e.target.value === '' ? null : Number(e.target.value))} placeholder={`Ví dụ: ${year - 11}`} />
+    <p className="mt-2 text-sm font-semibold text-blue-700" aria-live="polite">{grade ? `Khối hiện tại: Khối ${grade} · Năm ${year}` : value ? `Năm ${year}: chưa thuộc khối 1–12` : 'Nhập năm sinh chung để tự nhận diện khối lớp.'}</p>
+    <p className="mt-1 text-xs text-gray-500">Khối = năm hiện tại − năm sinh − 5 (6 tuổi vào lớp 1). Khối tự tăng theo năm; đấu trường tự lấy câu hỏi đúng khối. Thông tin này áp dụng cho lớp, không thay đổi ngày sinh trong tài khoản học sinh.</p>
+  </div>;
+}
 
 function toLocalDatetimeInput(dateStr) {
   if (!dateStr) return '';
@@ -190,7 +201,7 @@ function StudentScoreChart({ scores, color = 'blue' }) {
 }
 
 const emptyForm = {
-  name: '', description: '', courses: [], schedules: [],
+  name: '', description: '', birthYear: null, courses: [], schedules: [],
   startDate: '', endDate: '', maxStudents: 30, isActive: true, feePerSession: 0
 };
 
@@ -253,7 +264,7 @@ export default function AdminClasses() {
   const openCreate = () => { setForm(emptyForm); setEditId(null); setModal(true); };
   const openEdit = (c) => {
     setForm({
-      name: c.name, description: c.description,
+      name: c.name, description: c.description, birthYear: c.birthYear ?? null,
       courses: c.courses.map(x => x._id || x),
       schedules: c.schedules || [],
       startDate: c.startDate ? c.startDate.substring(0, 10) : '',
@@ -267,10 +278,12 @@ export default function AdminClasses() {
   const handleSubmit = async (e) => {
     e.preventDefault(); setLoading(true);
     try {
-      if (editId) { await api.put(`/classes/${editId}`, form); toast.success('Cập nhật lớp học thành công'); }
-      else { await api.post('/classes', form); toast.success('Tạo lớp học thành công'); }
+      const response = editId ? await api.put(`/classes/${editId}`, form) : await api.post('/classes', form);
+      if ((response.data.birthYear ?? null) !== (form.birthYear ?? null)) throw new Error('Máy chủ chưa lưu được năm sinh. Cần cập nhật hoặc khởi động lại backend rồi thử lại.');
+      toast.success(editId ? 'Cập nhật lớp học thành công' : 'Tạo lớp học thành công');
       setModal(false); load();
-    } catch (err) { toast.error(err.response?.data?.message || 'Có lỗi xảy ra'); }
+      return response.data;
+    } catch (err) { toast.error(err.response?.data?.message || err.message || 'Có lỗi xảy ra'); }
     finally { setLoading(false); }
   };
 
@@ -966,11 +979,12 @@ export default function AdminClasses() {
                 <h2 className="font-bold text-lg">Chỉnh sửa lớp học</h2>
                 <button onClick={() => setModal(false)}><FiX /></button>
               </div>
-              <form onSubmit={async (e) => { await handleSubmit(e); setSelectedClass(prev => ({ ...prev, ...form, feePerSession: form.feePerSession })); }} className="p-6 space-y-4">
+              <form onSubmit={async (e) => { const saved = await handleSubmit(e); if (saved) setSelectedClass(prev => ({ ...prev, ...form, birthYear: saved.birthYear, currentGrade: saved.currentGrade })); }} className="p-6 space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Tên lớp *</label>
                   <input className="input-field" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
                 </div>
+                <ClassBirthYearField value={form.birthYear} onChange={birthYear => setForm(previous => ({ ...previous, birthYear }))} />
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Mô tả</label>
                   <textarea className="input-field" rows={2} value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} />
@@ -1135,6 +1149,7 @@ export default function AdminClasses() {
               </span>
             </div>
             <p className="text-sm text-gray-500 mb-3">{cls.description}</p>
+            <p className="text-xs text-blue-700 mb-3">{cls.birthYear ? `Năm sinh ${cls.birthYear} · ${gradeFromBirthYear(cls.birthYear) ? `Khối ${gradeFromBirthYear(cls.birthYear)}` : 'Ngoài khối 1–12'} (${currentYear()})` : 'Chưa có năm sinh để tự nhận diện khối'}</p>
             <div className="flex items-center gap-2 text-sm text-gray-600 mb-3">
               
               <FiUsers /> <span>{cls.students.length || 0}/{cls.maxStudents} học sinh</span>
@@ -1169,6 +1184,7 @@ export default function AdminClasses() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Tên lớp *</label>
                 <input className="input-field" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
               </div>
+              <ClassBirthYearField value={form.birthYear} onChange={birthYear => setForm(previous => ({ ...previous, birthYear }))} />
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Mô tả</label>
                 <textarea className="input-field" rows={2} value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} />

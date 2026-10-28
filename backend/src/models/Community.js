@@ -57,7 +57,7 @@ const Event = model('CommunityEvent', {
 const Notification = model('CommunityNotification', {
   user: ref('User', { required: true }), actor: ref('User'),
   text: String, post: ref('CommunityPost'), readAt: Date,
-  kind: { type: String, enum: ['activity', 'friendship'], default: 'activity' },
+  kind: { type: String, enum: ['activity', 'friendship', 'arena'], default: 'activity' },
 }, [[{ user: 1, createdAt: -1 }]]);
 // One atomic account document makes reward grants and spending safe on standalone MongoDB too.
 const Profile = model('CommunityProfile', {

@@ -17,7 +17,7 @@ export default function Navbar() {
   const dark = theme === 'dark';
   const tabs = user ? [
     { to: '/dashboard', label: 'Tổng quan', icon: FiHome, active: location.pathname === '/dashboard' && location.hash !== '#my-classes' },
-    { to: '/community', label: 'Mạng xã hội', icon: FiHeart, active: location.pathname.startsWith('/community') },
+    { to: '/community', label: 'Cộng đồng', icon: FiHeart, active: location.pathname.startsWith('/community') },
     ...(!isAdmin ? [{ to: '/homeworks', label: 'Bài tập', icon: FiBookOpen, active: location.pathname.startsWith('/homeworks') }] : []),
     { to: '/classes', label: 'Lớp học', icon: FiLayers, active: location.pathname === '/classes' || location.pathname.startsWith('/class/') || location.pathname.startsWith('/lesson') },
     ...(!isAdmin ? [{ to: '/dashboard#my-classes', label: 'Lớp học của tôi', icon: FiUsers, active: location.pathname === '/dashboard' && location.hash === '#my-classes' }] : []),
@@ -33,7 +33,18 @@ export default function Navbar() {
   return <header className="student-topbar" data-theme={dark ? 'dark' : 'light'}>
     <div className="student-topbar-inner">
       <div className="student-topbar-main">
-        <Link to={user ? '/dashboard' : '/'} className="student-school-brand"><span className="student-school-mark"><FiHeart /></span><span>Toán Thầy Hiếu<small>Học cùng nhau, lớn cùng nhau.</small></span></Link>
+        <Link to={user ? '/dashboard' : '/'} className="student-school-brand">
+          <span className="student-school-mark" aria-hidden="true">
+            <svg viewBox="0 0 48 48" focusable="false">
+              <g fill="#fff" fillOpacity=".3"><rect x="6" y="6" width="16" height="16" rx="5" /><rect x="26" y="6" width="16" height="16" rx="5" /><rect x="6" y="26" width="16" height="16" rx="5" /><rect x="26" y="26" width="16" height="16" rx="5" /></g>
+              <g stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M10 14h8M14 10v8M30 14h8M11 31l6 6M17 31l-6 6M30 34h8" />
+                <circle cx="34" cy="30" r="1.2" fill="currentColor" stroke="none" /><circle cx="34" cy="38" r="1.2" fill="currentColor" stroke="none" />
+              </g>
+            </svg>
+          </span>
+          <span>Toán Thầy Hiếu<small>Học cùng nhau, lớn cùng nhau.</small></span>
+        </Link>
         <div className="student-topbar-actions">
           {user && <ThemeToggle />}
           {user && friendships.incoming.length > 0 && <Link to="/community?tab=friends" aria-label={`${friendships.incoming.length} lời mời kết bạn`} className="student-invitation-link"><FiUsers /><span>{friendships.incoming.length}<span className="student-invitation-label"> lời mời</span></span></Link>}

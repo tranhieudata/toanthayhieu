@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import api from '../api/axios';
 import { useAuth } from '../context/AuthContext';
 import ReviewText from './ReviewText';
+import { WateringCan } from './GardenArtwork';
 import '../styles/garden-review.css';
 
 const message = e => e.response?.data?.message || 'Chưa tải được bài ôn tập. Vui lòng thử lại.';
@@ -66,7 +67,7 @@ export default function GardenReview({ onComplete }) {
     } catch (e) { toast.error(message(e)); } finally { setBusy(false); }
   }
   return <div className="garden-review">
-    <button ref={trigger} type="button" className="community-button mt-4" onClick={openTopics} aria-haspopup="dialog" aria-expanded={open}><FiDroplet /> Ôn tập để tưới cây</button>
+    <button ref={trigger} type="button" className="garden-water-button" onClick={openTopics} aria-haspopup="dialog" aria-expanded={open}><WateringCan /><span>Ôn tập để tưới cây<small>Thêm kiến thức, thêm mầm xanh!</small></span><FiArrowRight /></button>
     <dialog ref={dialog} className="garden-review-dialog" aria-labelledby={headingId} onCancel={event => { if (busy) event.preventDefault(); else setOpen(false); }} onClose={() => { setOpen(false); trigger.current?.focus(); }} onClick={event => { if (event.target === event.currentTarget && !busy) setOpen(false); }}>
     {open && <div className="garden-review-popup">
       <header className="garden-review-popup-header"><span className="locket-icon-tile"><FiDroplet /></span><div><h2 id={headingId}>Ôn tập để tưới cây</h2><p>{active ? 'Hoàn thành bài để nuôi cây và nhận điểm.' : 'Chọn một chủ đề và cùng tiến bộ nhé.'}</p></div><button type="button" aria-label="Đóng ôn tập" disabled={busy} onClick={() => setOpen(false)}><FiX /></button></header>
