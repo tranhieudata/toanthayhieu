@@ -1,6 +1,11 @@
 const router = require('express').Router();
 const { adminOnly } = require('../middleware/auth');
 const { student, management } = require('../controllers/mathArenaController');
+const practice = require('../controllers/arenaPracticeController');
+router.get('/practice', practice.get);
+router.get('/practice/history', practice.history);
+router.post('/practice', practice.start);
+router.post('/practice/answer', practice.answer);
 router.get('/lobby', student.lobby);
 router.post('/matches', student.create);
 router.get('/matches/:id', student.get);

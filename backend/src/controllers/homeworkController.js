@@ -921,7 +921,7 @@ const submitHomework = async (req, res) => {
 
     if (submissionImages.length) {
       // The garden endpoint reconciles a grant if a temporary database failure occurs here.
-      await waterDaily(studentId, `homework:${submission._id}`, 10).catch(err => console.error('[community] homework reward:', err.message));
+      await waterDaily(studentId, `homework:${submission._id}`, 'homework').catch(err => console.error('[community] homework reward:', err.message));
     }
     res.json(withStudentSubmissionAnswerPayload(submission));
   } catch (err) {

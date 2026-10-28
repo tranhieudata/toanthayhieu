@@ -2,6 +2,12 @@
 
 Truy cập **Mạng xã hội → Đấu trường**, đường dẫn `/community?tab=arena`. Admin cũng có lối tắt tại **Cộng đồng & thử thách**.
 
+Admin gắn chương/chủ đề khi thêm hoặc sửa câu hỏi; câu tạo bằng Gemini tự giữ chương đã chọn. Kho câu hỏi hỗ trợ lọc và công bố theo chương. Học sinh có thể chọn một hoặc nhiều chương khi tạo phòng, hoặc chọn **Tất cả các chương**. Phòng giữ lựa chọn chương và lấy ngẫu nhiên câu đã công bố đúng khối, độ khó, chương đã chọn; cần ít nhất 10 câu. Câu cũ chưa gắn chương vẫn nằm trong bộ đề tất cả các chương; admin cần gắn chương để dùng trong bộ đề theo chương và tự luyện.
+
+Tab **Tự luyện** tại `/community?tab=practice` dành cho học sinh: chọn lớp, một chương/chủ đề và độ khó, mở bộ 10 câu với phí **10 năng lượng**. Máy chủ trừ phí đồng thời với lưu bộ đề, chỉ khi có đủ năng lượng và đủ 10 câu đã công bố. Một học sinh có một lượt đang làm; tải lại trang hoặc gửi lại yêu cầu sẽ tiếp tục lượt đó, không trừ thêm phí. Trả lời từng câu để xem đáp án và giải thích; hoàn thành hiển thị số câu đúng, không cộng thưởng năng lượng. Lượt tiếp theo mất thêm 10 năng lượng.
+
+Lịch sử tự luyện hiển thị 10 lượt mỗi trang, mới nhất trước, đánh số lần luyện và ghi chủ đề, độ khó, tiến độ/kết quả, ngày giờ bắt đầu và hoàn thành theo giờ Việt Nam. Lịch sử chỉ hiển thị cho chính học sinh đó. Các lượt hoàn thành được lưu vào `ArenaPracticeHistory` trước khi mở lượt tiếp theo. Lượt đang lưu từ phiên bản cũ được tính là lần 1; các lượt đã bị ghi đè trước khi có lịch sử không thể khôi phục.
+
 ## Chuẩn bị kho câu hỏi
 
 1. Tại **Quản lý lớp học → Tạo / Chỉnh sửa lớp học**, nhập **Năm sinh của học sinh trong lớp**. Đây là năm sinh chung của khóa học sinh, không sửa ngày sinh trong từng tài khoản.

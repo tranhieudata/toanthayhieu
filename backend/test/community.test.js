@@ -324,6 +324,40 @@ test('community API integration with real MongoDB', { timeout: 60000 }, async t 
       g = (await request(b, 'GET', '/garden')).data; assert.equal(g.studyPoints, 10);
       assert.equal((await request(b, 'GET', '/garden')).data.studyPoints, 10);
     });
+    await t.test('challenge management paginates all exams and protects answer keys', async () => {
+      const before = await Challenge.countDocuments();
+      const created = await Challenge.insertMany(Array.from({ length: 53 }, (_, i) => ({
+        title: `Đề phân trang ${i}`, startsAt: new Date(Date.now() + (i + 1) * 86400000),
+        endsAt: new Date(Date.now() + (i + 2) * 86400000), durationMinutes: 15,
+        questions: [{ prompt: '1 + 1 = ?', options: ['2', '3', '4', '5'], correctIndex: 0 }],
+      })));
+      try {
+        assert.equal((await request(a, 'GET', '/admin/challenges?page=1')).status, 403);
+        assert.equal((await request(a, 'GET', `/admin/challenges/${created[0]._id}`)).status, 403);
+        const first = await request(admin, 'GET', '/admin/challenges?page=1');
+        assert.equal(first.status, 200);
+        assert.equal(first.data.total, before + 53);
+        assert.equal(first.data.items.length, 10);
+        assert.equal(first.data.items[0]._id, String(created[52]._id));
+        assert.equal(first.data.items[0].questionCount, 1);
+        assert.equal(first.data.items[0].questions, undefined);
+        const second = await request(admin, 'GET', '/admin/challenges?page=2');
+        assert.equal(second.data.items.length, 10);
+        assert.ok(second.data.items.every(item => !first.data.items.some(old => old._id === item._id)));
+        const last = await request(admin, 'GET', '/admin/challenges?page=999');
+        assert.equal(last.data.page, last.data.pages);
+        assert.ok(last.data.items.length > 0 && last.data.items.length <= 10);
+        const student = await request(a, 'GET', '/challenges?page=6');
+        assert.equal(student.data.total, before + 53);
+        assert.ok(student.data.items.some(item => item._id === String(created[0]._id)));
+        assert.ok(student.data.items.every(item => item.questions === undefined));
+        const detail = await request(admin, 'GET', `/admin/challenges/${created[0]._id}`);
+        assert.equal(detail.data.questions[0].correctIndex, 0);
+        assert.equal((await request(admin, 'GET', '/admin/challenges/not-an-id')).status, 400);
+        assert.equal((await request(admin, 'GET', `/admin/challenges/${new mongoose.Types.ObjectId()}`)).status, 404);
+        assert.equal((await request(admin, 'GET', '/admin')).data.challenges, undefined);
+      } finally { await Challenge.deleteMany({ _id: { $in: created.map(c => c._id) } }); }
+    });
     await t.test('challenge membership, private answer key, one attempt and server scoring', async () => {
       const r = await request(admin, 'POST', '/admin/challenges', { title: 'Thử thách tuần', classes: [String(cls._id)], startsAt: new Date(Date.now() - 60000), endsAt: new Date(Date.now() + 3600000), durationMinutes: 15, questions: [{ prompt: '2 + 2 = ?', options: ['1', '2', '3', '4'], correctIndex: 3 }] });
       assert.equal(r.status, 201); challenge = r.data;

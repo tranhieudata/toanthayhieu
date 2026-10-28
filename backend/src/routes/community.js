@@ -10,7 +10,8 @@ const Class = require('../models/Class');
 const HomeworkSubmission = require('../models/HomeworkSubmission');
 const { Policy, Post, Comment, Reaction, Message, Friendship, Notification, Profile, Challenge, Attempt, MonthlyAward } = require('../models/Community');
 const { containsBanned, localDay, inCurfew, REWARDS } = require('../utils/communityRules');
-const { emit, subscribe, notify, ensureProfile, grant, waterDaily } = require('../services/community');
+const { emit, subscribe, notify, ensureProfile, grant, grantAction, waterDaily } = require('../services/community');
+const { actions: energyActions, energySettings, validate: validateEnergy, rewardCatalog } = require('../services/energySettings');
 const { imageQuota, reserveImage, releaseImage } = require('../services/communityImageQuota');
 const { communityAccess } = require('../services/communityAccess');
 const { student: gardenReview } = require('../controllers/gardenReviewController');
@@ -256,7 +257,7 @@ router.post('/comments/:id/helpful', wrap(async (req, res) => {
   if (!comment) fail('Không tìm thấy trả lời', 404);
   const post = await approvedPost(String(comment.post));
   if (post.kind !== 'question' || !post.image || String(post.author) !== String(req.user._id) || String(comment.author) === String(req.user._id)) fail('Chỉ chủ ảnh hỏi bài có thể ghi nhận người giúp đỡ', 403);
-  await grant(comment.author, `help:${post._id}`, 10, true);
+  await grantAction(comment.author, `help:${post._id}`, 'help', 1, true);
   await notify(comment.author, req.user._id, `${req.user.name} ghi nhận câu trả lời hữu ích của bạn`, post._id);
   res.json({ success: true });
 }));
@@ -292,19 +293,19 @@ router.get('/garden', wrap(async (req, res) => {
   // Reconcile actual submitted homework; auto-created empty submissions never earn energy.
   const submissions = await HomeworkSubmission.find({ student: req.user._id, 'submissionImages.0': { $exists: true } }).select('_id submittedAt').lean();
   for (const s of submissions) {
-    await grant(req.user._id, `homework:${s._id}`, 10);
+    await grantAction(req.user._id, `homework:${s._id}`, 'homework');
     if (localDay(s.submittedAt) === localDay()) await grant(req.user._id, `water:${localDay()}`, 0, false, true);
   }
   const p = await ensureProfile(req.user._id);
-  const { grantKeys, waterTask, ...safe } = p.toObject();
-  res.json({ ...safe, needsWater: !p.lastWatered || Date.now() - p.lastWatered.getTime() >= 3 * 86400000, rewards: REWARDS });
+  const { grantKeys, waterTask, arenaPractice, ...safe } = p.toObject();
+  res.json({ ...safe, needsWater: !p.lastWatered || Date.now() - p.lastWatered.getTime() >= 3 * 86400000, rewards: await rewardCatalog(), energySettings: await energySettings() });
 }));
 router.get('/garden/quizzes', gardenReview.list);
 router.get('/garden/leaderboard', gardenReview.leaderboard);
 router.post('/garden/task', gardenReview.start);
 router.post('/garden/water', gardenReview.submit);
 router.post('/rewards/redeem', wrap(async (req, res) => {
-  const reward = REWARDS.find(r => r.id === req.body.item);
+  const reward = (await rewardCatalog()).find(r => r.id === req.body.item);
   if (!reward) fail('Phần thưởng không hợp lệ');
   const filter = { user: req.user._id, energy: { $gte: reward.cost } };
   const update = { $inc: { energy: -reward.cost } };
@@ -343,8 +344,14 @@ async function eligibleChallenge(req, challengeId) {
   return c;
 }
 router.get('/challenges', wrap(async (req, res) => {
-  const [classes, attempts, challenges] = await Promise.all([eligibleClasses(req.user._id), Attempt.find({ student: req.user._id }).select('-answers').lean(), Challenge.find().select('-questions').sort({ startsAt: -1 }).limit(50).lean()]);
-  res.json(challenges.map(c => ({ ...c, eligible: classes.length > 0 && (!c.classes.length || c.classes.some(cid => classes.some(cls => String(cls._id) === String(cid)))), attempt: attempts.find(a => String(a.challenge) === String(c._id)) })));
+  const paginated = req.query.page !== undefined;
+  const total = await Challenge.countDocuments(), pageSize = 10;
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  const page = Math.min(pages, Math.max(1, parseInt(req.query.page, 10) || 1));
+  const [classes, challenges] = await Promise.all([eligibleClasses(req.user._id), Challenge.find().select('-questions').sort({ startsAt: -1, _id: -1 }).skip(paginated ? (page - 1) * pageSize : 0).limit(paginated ? pageSize : 50).lean()]);
+  const attempts = await Attempt.find({ student: req.user._id, challenge: { $in: challenges.map(c => c._id) } }).select('-answers').lean();
+  const items = challenges.map(c => ({ ...c, eligible: classes.length > 0 && (!c.classes.length || c.classes.some(cid => classes.some(cls => String(cls._id) === String(cid)))), attempt: attempts.find(a => String(a.challenge) === String(c._id)) }));
+  res.json(paginated ? { items, total, page, pageSize, pages } : items);
 }));
 router.post('/challenges/:id/start', wrap(async (req, res) => {
   const c = await eligibleChallenge(req, req.params.id), now = new Date();
@@ -362,7 +369,7 @@ router.post('/challenges/:id/submit', wrap(async (req, res) => {
   const score = c.questions.reduce((sum, q, i) => sum + (q.correctIndex === req.body.answers[i] ? 1 : 0), 0);
   const attempt = await Attempt.findOneAndUpdate({ challenge: c._id, student: req.user._id, submittedAt: null, deadline: { $gt: now } }, { submittedAt: now, answers: req.body.answers, score }, { new: true });
   if (!attempt) fail('Lượt làm đã nộp hoặc hết giờ');
-  await waterDaily(req.user._id, `challenge:${c._id}`, score * 5);
+  await waterDaily(req.user._id, `challenge:${c._id}`, 'challengeCorrect', score);
   res.json(attempt);
 }));
 router.get('/monthly', wrap(async (req, res) => {
@@ -379,8 +386,33 @@ router.get('/monthly', wrap(async (req, res) => {
 }));
 
 router.get('/admin', adminOnly, wrap(async (req, res) => {
-  const [settings, pending, challenges, classes, gifts] = await Promise.all([policy(), Post.find({ status: 'pending' }).populate('author', 'name').sort({ createdAt: 1 }).limit(100), Challenge.find().sort({ startsAt: -1 }).limit(50), Class.find({ isActive: true }).select('name'), Profile.find({ 'redemptions.status': 'pending' }).populate('user', 'name').select('user redemptions')]);
-  res.json({ settings, pending, challenges, classes, gifts });
+  const [settings, pending, gifts] = await Promise.all([policy(), Post.find({ status: 'pending' }).populate('author', 'name').sort({ createdAt: 1 }).limit(100), Profile.find({ 'redemptions.status': 'pending' }).populate('user', 'name').select('user redemptions')]);
+  res.json({ settings, pending, gifts, energyActions, energySettings: await energySettings() });
+}));
+router.get('/admin/challenges', adminOnly, wrap(async (req, res) => {
+  const total = await Challenge.countDocuments();
+  const pageSize = 10, pages = Math.max(1, Math.ceil(total / pageSize));
+  const page = Math.min(pages, Math.max(1, parseInt(req.query.page, 10) || 1));
+  const [items, classes] = await Promise.all([
+    Challenge.aggregate([
+      { $sort: { startsAt: -1, _id: -1 } }, { $skip: (page - 1) * pageSize }, { $limit: pageSize },
+      { $project: { title: 1, description: 1, classes: 1, startsAt: 1, endsAt: 1, durationMinutes: 1, monthlyPrize: 1, questionCount: { $size: '$questions' } } },
+    ]),
+    Class.find({ isActive: true }).select('name').sort({ name: 1, _id: 1 }).lean(),
+  ]);
+  res.json({ items, total, page, pageSize, pages, classes });
+}));
+router.get('/admin/challenges/:id', adminOnly, wrap(async (req, res) => {
+  const challenge = await Challenge.findById(id(req.params.id)).lean();
+  if (!challenge) fail('Không tìm thấy đề thử thách', 404);
+  res.json(challenge);
+}));
+router.get('/energy', wrap(async (req, res) => res.json(await energySettings())));
+router.put('/admin/energy', adminOnly, wrap(async (req, res) => {
+  const values = validateEnergy(req.body);
+  const changes = Object.fromEntries(Object.entries(values).map(([key, value]) => [`energySettings.${key}`, value]));
+  if (Object.keys(changes).length) await Policy.findOneAndUpdate({ key: 'default' }, { $set: changes }, { upsert: true, new: true });
+  res.json(await energySettings());
 }));
 router.put('/admin/policy', adminOnly, wrap(async (req, res) => {
   const { curfewEnabled, curfewStart, curfewEnd, bannedWords } = req.body;
@@ -409,7 +441,7 @@ router.post('/admin/posts/:id/review', adminOnly, wrap(async (req, res) => {
   if (!['approved', 'rejected'].includes(req.body.status)) fail('Trạng thái không hợp lệ');
   const p = await Post.findOneAndUpdate({ _id: id(req.params.id), status: 'pending' }, { status: req.body.status }, { new: true });
   if (!p) fail('Bài đã được xử lý', 409);
-  if (p.status === 'approved' && p.image && p.kind !== 'question' && (!p.expiresAt || p.expiresAt > new Date())) await waterDaily(p.author, `photo:${localDay(p.createdAt)}`, 15);
+  if (p.status === 'approved' && p.image && p.kind !== 'question' && (!p.expiresAt || p.expiresAt > new Date())) await waterDaily(p.author, `photo:${localDay(p.createdAt)}`, 'photo');
   await notify(p.author, req.user._id, p.status === 'approved' ? 'Ảnh học tập của bạn đã được duyệt' : 'Ảnh của bạn chưa phù hợp và đã bị từ chối', p.status === 'approved' ? p._id : undefined);
   res.json({ success: true });
 }));

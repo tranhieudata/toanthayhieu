@@ -11,7 +11,7 @@ const attempt = new mongoose.Schema({
   quiz: { type: mongoose.Schema.Types.ObjectId, ref: 'GardenReviewQuiz', required: true },
   student: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   title: String, questions: [question], answers: [Number],
-  correctCount: Number, score: Number, submittedAt: Date,
+  correctCount: Number, score: Number, submittedAt: Date, energyPoints: Number,
 }, { timestamps: true });
 attempt.index({ quiz: 1, student: 1 }, { unique: true });
 module.exports = {

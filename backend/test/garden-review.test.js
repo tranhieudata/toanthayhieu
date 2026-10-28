@@ -100,6 +100,31 @@ test('lesson review, scoring, watering and class leaderboard with isolated Mongo
       assert.deepEqual(replay.data.answers, payload.answers, 'submitted answers cannot be changed');
       assert.equal((await Profile.findOne({ user: a._id })).energy, 9);
     });
+    await t.test('configured review rewards are saved with results and stay stable on replay', async () => {
+      const extraLesson = await Lesson.create({ title: 'Cấu hình thưởng', course: course._id, isPublished: true });
+      const extraQuiz = await ReviewQuiz.create({ lesson: extraLesson._id, title: 'Cấu hình thưởng', questions: questions(10), isPublished: true });
+      try {
+        assert.equal((await request(admin, 'PUT', '/community/admin/energy', { reviewCorrect: 4 })).status, 200);
+        const start = await request(a, 'POST', '/community/garden/task', { quiz: extraQuiz._id });
+        const payload = { attemptId: start.data.attemptId, answers: Array(10).fill(0) };
+        const before = (await Profile.findOne({ user: a._id })).energy;
+        const submit = await request(a, 'POST', '/community/garden/water', payload);
+        assert.equal(submit.data.energyPoints, 40);
+        assert.equal((await Profile.findOne({ user: a._id })).energy, before + 40);
+        await request(admin, 'PUT', '/community/admin/energy', { reviewCorrect: 9 });
+        const replay = await request(a, 'POST', '/community/garden/water', payload);
+        assert.equal(replay.data.energyPoints, 40);
+        assert.equal((await Profile.findOne({ user: a._id })).energy, before + 40);
+        assert.equal((await request(a, 'GET', '/community/garden/quizzes')).data.find(q => q._id === String(extraQuiz._id)).energyPoints, 40);
+        // Keep existing leaderboard fixtures unchanged after this isolated reward check.
+        await Profile.updateOne({ user: a._id }, { $inc: { energy: -40, studyPoints: -40 } });
+      } finally {
+        await request(admin, 'PUT', '/community/admin/energy', { reviewCorrect: 1 });
+        await ReviewAttempt.deleteMany({ quiz: extraQuiz._id });
+        await ReviewQuiz.deleteOne({ _id: extraQuiz._id });
+        await Lesson.deleteOne({ _id: extraLesson._id });
+      }
+    });
     await t.test('topic list places unfinished topics before completed ones with stable ordering', async () => {
       const additionalLessons = await Lesson.create(Array.from({ length: 7 }, (_, i) => ({ title: `Topic ${i}`, course: course._id, isPublished: true })));
       const added = await ReviewQuiz.create(additionalLessons.map((l, i) => ({ lesson: l._id, title: `Topic ${i}`, questions: questions(10), isPublished: true })));

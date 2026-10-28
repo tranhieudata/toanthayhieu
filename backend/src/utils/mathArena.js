@@ -6,7 +6,8 @@ const REWARD = 10;
 function validateQuestion(q) {
   if (!q || !isGrade(q.grade) || !DIFFICULTIES.includes(q.difficulty) || !['choice', 'short'].includes(q.kind) || typeof q.prompt !== 'string' || !q.prompt.trim() || q.prompt.length > 1000 || typeof q.published !== 'boolean') fail('Cần khối lớp, độ khó, nội dung và trạng thái hợp lệ');
   if (q.explanation !== undefined && (typeof q.explanation !== 'string' || q.explanation.length > 1500)) fail('Giải thích tối đa 1500 ký tự');
-  const result = { grade: q.grade, difficulty: q.difficulty, kind: q.kind, prompt: q.prompt.trim(), explanation: q.explanation?.trim() || '', published: q.published, options: [], answer: '', correctIndex: null };
+  if (q.chapter !== undefined && (typeof q.chapter !== 'string' || q.chapter.length > 300)) fail('Chương không hợp lệ');
+  const result = { chapter: q.chapter?.trim() || '', grade: q.grade, difficulty: q.difficulty, kind: q.kind, prompt: q.prompt.trim(), explanation: q.explanation?.trim() || '', published: q.published, options: [], answer: '', correctIndex: null };
   if (q.kind === 'choice') {
     if (!Array.isArray(q.options) || q.options.length !== 4 || q.options.some(o => typeof o !== 'string' || !o.trim() || o.length > 300) || new Set(q.options.map(o => o.trim())).size !== 4 || !Number.isInteger(q.correctIndex) || q.correctIndex < 0 || q.correctIndex > 3) fail('Trắc nghiệm cần 4 lựa chọn khác nhau và một đáp án đúng');
     result.options = q.options.map(o => o.trim()); result.correctIndex = q.correctIndex;

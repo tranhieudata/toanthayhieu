@@ -8,6 +8,7 @@ const model = (name, fields, indexes = []) => {
 };
 
 const Policy = model('CommunityPolicy', {
+  energySettings: { type: Schema.Types.Mixed, default: {} },
   key: { type: String, default: 'default', unique: true },
   curfewEnabled: { type: Boolean, default: true },
   curfewStart: { type: String, default: '22:00' },
@@ -66,6 +67,8 @@ const Profile = model('CommunityProfile', {
   communityPoints: { type: Number, default: 0 }, growth: { type: Number, default: 0 },
   lastWatered: Date, grantKeys: [String], inventory: [String], equippedFrame: { type: String, default: '' },
   gameMinutes: { type: Number, default: 0 }, gameUntil: Date,
+  arenaPractice: Schema.Types.Mixed,
+  arenaPracticeCount: { type: Number, default: 0 },
   waterTask: { answer: Number, expiresAt: Date },
   redemptions: [{ item: String, label: String, status: { type: String, default: 'pending' }, at: Date }],
 });
@@ -75,7 +78,7 @@ const Challenge = model('CommunityChallenge', {
   durationMinutes: { type: Number, required: true, min: 1, max: 180 },
   questions: [{ prompt: String, options: [String], correctIndex: Number }],
   monthlyPrize: { type: String, maxlength: 500 },
-});
+}, [[{ startsAt: -1, _id: -1 }]]);
 const Attempt = model('CommunityAttempt', {
   challenge: ref('CommunityChallenge', { required: true }), student: ref('User', { required: true }),
   startedAt: { type: Date, required: true }, deadline: { type: Date, required: true },

@@ -8,15 +8,16 @@ const questionFields = {
 };
 const question = new Schema({
   ...questionFields,
+  chapter: { type: String, default: "", maxlength: 300 },
   grade: { type: Number, required: true, min: 1, max: 12 },
   difficulty: { type: String, enum: ['easy', 'medium', 'hard'], required: true },
   published: { type: Boolean, default: false },
 }, { timestamps: true });
-question.index({ grade: 1, difficulty: 1, published: 1 });
+question.index({ grade: 1, difficulty: 1, published: 1, chapter: 1 });
 const match = new Schema({
   host: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   class: { type: Schema.Types.ObjectId, ref: 'Class', required: true },
-  grade: Number, difficulty: String,
+  grade: Number, difficulty: String, chapters: [String], reward: Number,
   mode: { type: String, enum: ['race', 'archery'], required: true },
   format: { type: String, enum: ['1v1', '2v2'], required: true },
   status: { type: String, enum: ['waiting', 'active', 'finished', 'cancelled'], default: 'waiting' },
@@ -39,7 +40,14 @@ const seat = new Schema({
   match: { type: Schema.Types.ObjectId, required: true }, expiresAt: Date,
 });
 seat.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+const practiceHistory = new Schema({
+  user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  number: Number, grade: Number, chapter: String, difficulty: String, cost: Number,
+  index: Number, score: Number, startedAt: Date, completedAt: Date,
+});
+practiceHistory.index({ user: 1, number: -1, _id: -1 });
 module.exports = {
+  ArenaPracticeHistory: mongoose.model('ArenaPracticeHistory', practiceHistory),
   ArenaQuestion: mongoose.model('ArenaQuestion', question),
   ArenaMatch: mongoose.model('ArenaMatch', match),
   ArenaSeat: mongoose.model('ArenaSeat', seat),

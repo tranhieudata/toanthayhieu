@@ -3,6 +3,7 @@ import { FiCheckCircle, FiDroplet, FiArrowLeft, FiArrowRight, FiLock, FiX } from
 import toast from 'react-hot-toast';
 import api from '../api/axios';
 import { useAuth } from '../context/AuthContext';
+import useEnergySettings from '../hooks/useEnergySettings';
 import ReviewText from './ReviewText';
 import { WateringCan } from './GardenArtwork';
 import '../styles/garden-review.css';
@@ -10,6 +11,7 @@ import '../styles/garden-review.css';
 const message = e => e.response?.data?.message || 'Chưa tải được bài ôn tập. Vui lòng thử lại.';
 const TOPICS_PER_PAGE = 6;
 export default function GardenReview({ onComplete }) {
+  const energy = useEnergySettings();
   const { user } = useAuth();
   const dialog = useRef(null), headingId = useId(), trigger = useRef(null);
   const [open, setOpen] = useState(false), [quizzes, setQuizzes] = useState(null), [error, setError] = useState('');
@@ -72,7 +74,7 @@ export default function GardenReview({ onComplete }) {
     {open && <div className="garden-review-popup">
       <header className="garden-review-popup-header"><span className="locket-icon-tile"><FiDroplet /></span><div><h2 id={headingId}>Ôn tập để tưới cây</h2><p>{active ? 'Hoàn thành bài để nuôi cây và nhận điểm.' : 'Chọn một chủ đề và cùng tiến bộ nhé.'}</p></div><button type="button" aria-label="Đóng ôn tập" disabled={busy} onClick={() => setOpen(false)}><FiX /></button></header>
       <section className="garden-review-body">
-      <h3>{active ? 'Ôn một chút, cây thêm xanh.' : 'Chủ đề ôn tập'}</h3><p className="garden-review-note">Mỗi câu đúng = 1 ⚡. Hoàn thành đủ 10–20 câu để tưới cây. Chủ đề đã hoàn thành sẽ được khóa, không thể làm lại.</p>
+      <h3>{active ? 'Ôn một chút, cây thêm xanh.' : 'Chủ đề ôn tập'}</h3><p className="garden-review-note">Mỗi câu đúng = {energy?.reviewCorrect ?? '…'} ⚡. Hoàn thành đủ 10–20 câu để tưới cây. Chủ đề đã hoàn thành sẽ được khóa, không thể làm lại.</p>
       {error && <p role="alert" className="text-red-500 text-sm mt-3">{error}<button className="ml-2 underline" onClick={load}>Thử lại</button></p>}
       {!active ? <div className="garden-review-list">
         {!quizzes && !error && <p>Đang tải bài ôn tập…</p>}

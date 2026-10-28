@@ -8,7 +8,7 @@ import { useCommunity } from '../context/CommunityContext';
 import { Avatar, NotificationBell } from './CommunityWidgets';
 import '../styles/student-navigation.css';
 
-export default function Navbar() {
+export default function Navbar({ homeNavigation = false }) {
   const { user, logout, isAdmin } = useAuth();
   const { friendships } = useCommunity();
   const location = useLocation(), navigate = useNavigate();
@@ -64,7 +64,7 @@ export default function Navbar() {
           </div> : <div className="student-guest-actions"><Link to="/login">Đăng nhập</Link><Link className="student-register" to="/register">Đăng ký</Link></div>}
         </div>
       </div>
-      <nav className="student-primary-tabs" aria-label="Điều hướng học sinh">{tabs.map(({ to, label, icon: Icon, active }) => <Link key={to} to={to} aria-current={active ? 'page' : undefined} className={`student-primary-tab ${active ? 'is-active' : ''}`}><Icon /><span>{label}</span></Link>)}</nav>
+      <nav className="student-primary-tabs" aria-label={homeNavigation && !user ? 'Khám phá Toán Thầy Hiếu' : 'Điều hướng học sinh'}>{homeNavigation && !user ? <><a className="student-primary-tab" href="#cach-hoc">Cách học cùng thầy</a><a className="student-primary-tab" href="#lop-hoc">Lớp học</a><a className="student-primary-tab" href="#bat-dau">Hướng dẫn bắt đầu</a></> : tabs.map(({ to, label, icon: Icon, active }) => <Link key={to} to={to} aria-current={active ? 'page' : undefined} className={`student-primary-tab ${active ? 'is-active' : ''}`}><Icon /><span>{label}</span></Link>)}</nav>
     </div>
   </header>;
 }

@@ -75,6 +75,144 @@ test('math arena integration: invitations, grade isolation, live scoring and dur
     }
     async function running(match) { await ArenaMatch.updateOne({ _id: match._id }, { $set: { startsAt: new Date(Date.now() - 2000), deadline: new Date(Date.now() + 58000) } }); }
 
+    await t.test('chapter filtering and paid practice persist progress and spend energy once', async () => {
+      const f = await fixture();
+      const [host, other] = f.users;
+      const chapters = (await request(admin, 'GET', '/chapters?grade=6')).data.chapters;
+      const chapter = chapters[0].name;
+      const createdQuestions = await ArenaQuestion.insertMany(Array.from({ length: 10 }, (_, i) => ({ ...question(6, 'medium', i), chapter })));
+      const lobby = await request(host, 'GET', '/lobby');
+      assert.equal(lobby.data.curriculum[6][0].name, chapter);
+      assert.equal(lobby.data.counts.find(c => c._id.chapter === chapter).count, 10);
+      const filtered = await request(admin, 'GET', `/questions?grade=6&chapter=${encodeURIComponent(chapter)}`);
+      assert.equal(filtered.data.total, 10);
+      const room = await create(f, '1v1', 'race', { difficulty: 'medium', chapters: [chapter] });
+      assert.equal(room.status, 201);
+      assert.deepEqual(room.data.chapters, [chapter]);
+      await request(other, 'POST', `/matches/${room.data._id}/accept`, {});
+      const started = await request(host, 'POST', `/matches/${room.data._id}/start`, {});
+      assert.equal(started.status, 200);
+      const stored = await ArenaMatch.findById(room.data._id).lean();
+      assert.equal(stored.questions.length, 10);
+      await ArenaMatch.updateOne({ _id: room.data._id }, { $set: { status: 'cancelled' } });
+      await ArenaSeat.deleteMany({ match: room.data._id });
+      const payload = { classId: String(f.cls._id), chapter, difficulty: 'medium' };
+      assert.equal((await request(admin, 'POST', '/practice', payload)).status, 403);
+      assert.equal((await request(host, 'POST', '/practice', payload)).status, 409);
+      await Profile.updateOne({ user: host._id }, { $set: { energy: 25 } });
+      const opened = await Promise.all([request(host, 'POST', '/practice', payload), request(host, 'POST', '/practice', payload)]);
+      assert.ok(opened.every(r => [200, 201].includes(r.status)));
+      const sessionId = opened[0].data.session._id;
+      assert.equal(opened[1].data.session._id, sessionId);
+      assert.equal((await Profile.findOne({ user: host._id })).energy, 15);
+      assert.equal(opened[0].data.session.question.correctIndex, undefined);
+      assert.equal(opened[0].data.session.review.length, 0);
+      assert.equal((await request(other, 'POST', '/practice/answer', { sessionId, index: 0, answer: 0 })).status, 404);
+      const duplicate = await Promise.all([request(host, 'POST', '/practice/answer', { sessionId, index: 0, answer: 0 }), request(host, 'POST', '/practice/answer', { sessionId, index: 0, answer: 0 })]);
+      assert.ok(duplicate.every(r => r.data.session.index === 1));
+      assert.equal(duplicate[0].data.session.score, 1);
+      assert.equal((await request(host, 'GET', '/practice')).data.session.index, 1);
+      for (let index = 1; index < 10; index++) {
+        assert.equal((await request(host, 'POST', '/practice/answer', { sessionId, index, answer: 0 })).status, 200);
+      }
+      const completed = (await request(host, 'GET', '/practice')).data;
+      assert.equal(completed.session.completed, true);
+      assert.equal(completed.session.score, 10);
+      assert.equal(completed.session.number, 1);
+      assert.ok(completed.session.startedAt);
+      assert.ok(completed.session.completedAt);
+      assert.equal(completed.energy, 15);
+      assert.equal((await request(host, 'POST', '/practice', payload)).status, 409);
+      await ArenaQuestion.deleteOne({ _id: createdQuestions[0]._id });
+      assert.equal((await request(host, 'POST', '/practice', { ...payload, previousId: sessionId })).status, 400);
+      assert.equal((await Profile.findOne({ user: host._id })).energy, 15);
+      await ArenaQuestion.create({ ...question(6, 'medium', 0), chapter });
+      const next = await request(host, 'POST', '/practice', { ...payload, previousId: sessionId });
+      assert.equal(next.status, 201);
+      assert.equal(next.data.session.number, 2);
+      assert.equal(next.data.energy, 5);
+      const history = await request(host, 'GET', '/practice/history');
+      assert.equal(history.data.total, 2);
+      assert.deepEqual(history.data.items.map(item => item.number), [2, 1]);
+      assert.equal(history.data.items[1].completedAt, completed.session.completedAt);
+      assert.equal(history.data.items[0].questions, undefined);
+      assert.equal((await request(host, 'POST', '/practice', { ...payload, previousId: sessionId })).data.energy, 5);
+      assert.equal((await request(host, 'GET', '/practice/history')).data.total, 2);
+      await ArenaQuestion.deleteMany({ grade: 6, difficulty: 'medium', chapter });
+      await ArenaQuestion.deleteMany({ _id: { $in: createdQuestions.map(q => q._id) } });
+    });
+    await t.test('practice history paginates attempts privately and includes the current attempt', async () => {
+      const { ArenaPracticeHistory } = require('../src/models/MathArena');
+      const f = await fixture();
+      const startedAt = new Date('2026-10-28T03:00:00Z');
+      await ArenaPracticeHistory.insertMany(Array.from({ length: 22 }, (_, i) => ({ user: f.users[0]._id, number: i + 1, grade: 6, chapter: 'Chương 1', difficulty: 'easy', index: 10, score: i % 11, startedAt, completedAt: new Date(startedAt.getTime() + 60000) })));
+      await Profile.create({ user: f.users[0]._id, arenaPractice: { _id: String(new mongoose.Types.ObjectId()), number: 23, index: 0, score: 0, startedAt } });
+      const first = (await request(f.users[0], 'GET', '/practice/history?page=1')).data;
+      const second = (await request(f.users[0], 'GET', '/practice/history?page=2')).data;
+      const last = (await request(f.users[0], 'GET', '/practice/history?page=999')).data;
+      assert.equal(first.total, 23);
+      assert.equal(first.pages, 3);
+      assert.deepEqual(first.items.map(i => i.number), [23, 22, 21, 20, 19, 18, 17, 16, 15, 14]);
+      assert.deepEqual(second.items.map(i => i.number), [13, 12, 11, 10, 9, 8, 7, 6, 5, 4]);
+      assert.deepEqual(last.items.map(i => i.number), [3, 2, 1]);
+      assert.equal(last.page, 3);
+      assert.equal(first.items[0].startedAt, startedAt.toISOString());
+      assert.equal((await request(f.users[1], 'GET', '/practice/history')).data.total, 0);
+      assert.equal((await request(admin, 'GET', '/practice/history')).status, 403);
+    });
+    await t.test('admin energy settings control grants, match rewards, practice fees and reward prices', async () => {
+      const { defaults } = require('../src/services/energySettings');
+      const { grantAction, ensureProfile } = require('../src/services/community');
+      const f = await fixture();
+      try {
+        assert.equal((await request(f.users[0], 'PUT', '/api/community/admin/energy', { homework: 99 })).status, 403);
+        for (const invalid of [{ homework: -1 }, { homework: 0.5 }, { homework: '10' }, { unknown: 3 }, { practiceCost: 100001 }]) {
+          assert.equal((await request(admin, 'PUT', '/api/community/admin/energy', invalid)).status, 400);
+        }
+        const config = { homework: 2, photo: 3, help: 4, challengeCorrect: 6, arenaWin: 37, practiceCost: 3, 'redeem:sticker-sprout': 2 };
+        const saved = await request(admin, 'PUT', '/api/community/admin/energy', config);
+        assert.equal(saved.status, 200);
+        assert.equal(saved.data.reviewCorrect, 1, 'partial updates retain default values');
+        assert.equal((await request(f.users[0], 'GET', '/api/community/energy')).data.arenaWin, 37);
+        for (const [action, units] of [['homework', 1], ['photo', 1], ['help', 1], ['challengeCorrect', 2]]) {
+          await grantAction(f.users[0]._id, `config-test:${action}`, action, units);
+          await grantAction(f.users[0]._id, `config-test:${action}`, action, units);
+        }
+        assert.equal((await Profile.findOne({ user: f.users[0]._id })).energy, 21);
+        const room = await create(f);
+        assert.equal(room.data.reward, 37);
+        await request(admin, 'PUT', '/api/community/admin/energy', { arenaWin: 8 });
+        await ArenaMatch.updateOne({ _id: room.data._id }, { $set: { status: 'finished', winner: 0, finishedAt: new Date() } });
+        assert.equal((await request(f.users[0], 'GET', `/matches/${room.data._id}`)).data.reward, 37);
+        assert.equal((await Profile.findOne({ user: f.users[0]._id })).energy, 58);
+        await request(f.users[0], 'GET', `/matches/${room.data._id}`);
+        assert.equal((await Profile.findOne({ user: f.users[0]._id })).energy, 58);
+        const garden = await request(f.users[0], 'GET', '/api/community/garden');
+        assert.equal(garden.data.rewards.find(r => r.id === 'sticker-sprout').cost, 2);
+        assert.equal((await request(f.users[0], 'POST', '/api/community/rewards/redeem', { item: 'sticker-sprout' })).status, 200);
+        assert.equal((await Profile.findOne({ user: f.users[0]._id })).energy, 56);
+        const chapter = (await request(admin, 'GET', '/chapters?grade=6')).data.chapters[0].name;
+        const bank = await ArenaQuestion.insertMany(Array.from({ length: 10 }, (_, i) => ({ ...question(6, 'medium', i), chapter })));
+        try {
+          const payload = { classId: String(f.cls._id), chapter, difficulty: 'medium' };
+          const paid = await request(f.users[0], 'POST', '/practice', payload);
+          assert.equal(paid.status, 201);
+          assert.equal(paid.data.energy, 53);
+          assert.equal(paid.data.practiceCost, 3);
+          await request(admin, 'PUT', '/api/community/admin/energy', { practiceCost: 0 });
+          const free = await request(f.users[1], 'POST', '/practice', payload);
+          assert.equal(free.status, 201); assert.equal(free.data.energy, 0);
+          assert.equal((await request(f.users[0], 'POST', '/practice', payload)).data.energy, 53);
+          assert.equal((await request(f.users[0], 'GET', '/practice/history')).data.items[0].cost, 3);
+          await request(admin, 'PUT', '/api/community/admin/energy', { homework: 0 });
+          await ensureProfile(f.users[1]._id);
+          await grantAction(f.users[1]._id, 'config-test:zero', 'homework');
+          assert.equal((await Profile.findOne({ user: f.users[1]._id })).energy, 0);
+        } finally { await ArenaQuestion.deleteMany({ _id: { $in: bank.map(q => q._id) } }); }
+      } finally {
+        await request(admin, 'PUT', '/api/community/admin/energy', defaults);
+      }
+    });
     await t.test('shared grade catalog preserves legacy IDs and controls arena question eligibility', async () => {
       const f = await fixture();
       const legacy = await Level.findOne({ name: 'Lớp 6' });

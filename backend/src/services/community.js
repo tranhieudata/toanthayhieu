@@ -1,5 +1,6 @@
 const { Profile, Notification, Event } = require('../models/Community');
 const { localDay } = require('../utils/communityRules');
+const { energySettings } = require('./energySettings');
 async function emit(user, type, data = {}) {
   await Event.create({ user, type, data });
 }
@@ -45,9 +46,13 @@ async function grant(user, key, points, community = false, water = false) {
   if (water) { inc.growth = 1; update.$max = { lastWatered: new Date() }; }
   return Profile.findOneAndUpdate({ user, grantKeys: { $ne: key } }, update, { new: true });
 }
-async function waterDaily(user, source, points = 10) {
+async function grantAction(user, key, action, units = 1, community = false) {
+  const values = await energySettings();
+  return grant(user, key, values[action] * units, community);
+}
+async function waterDaily(user, source, action = 'homework', units = 1) {
   const day = localDay();
-  await grant(user, source, points);
+  await grantAction(user, source, action, units);
   await grant(user, `water:${day}`, 0, false, true);
 }
-module.exports = { emit, subscribe, notify, ensureProfile, grant, waterDaily };
+module.exports = { emit, subscribe, notify, ensureProfile, grant, grantAction, waterDaily };

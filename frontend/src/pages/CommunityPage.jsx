@@ -4,9 +4,12 @@ import toast from 'react-hot-toast';
 import { FiCamera, FiImage, FiMessageCircle, FiUsers, FiGrid, FiAward, FiSun, FiPlus, FiX, FiSend, FiHeart, FiZap } from 'react-icons/fi';
 import { Avatar, CommunityImage } from '../components/CommunityWidgets';
 import Navbar from '../components/Navbar';
+import useEnergySettings from '../hooks/useEnergySettings';
 import GardenReview from '../components/GardenReview';
 import GardenLeaderboard from '../components/GardenLeaderboard';
 import GardenArtwork from '../components/GardenArtwork';
+import ArenaPractice from '../components/ArenaPractice';
+import ChallengeManagement from '../components/ChallengeManagement';
 import MathArena from '../components/MathArena';
 import CommunityWall from '../components/CommunityWall';
 import CommunityAccessNotice from '../components/CommunityAccessNotice';
@@ -284,7 +287,7 @@ function Garden() {
       <div className="garden-resources"><div><span>NĂNG LƯỢNG</span><strong>{garden.energy} <span>⚡ còn lại</span></strong><small>Dùng để đổi những món quà</small></div><div><span>NƯỚC HÔM NAY</span><strong>{wateredToday ? 1 : 0} <span>💧 lượt tưới</span></strong><small>Tự động khi hoàn thành bài</small></div></div>
       <GardenReview onComplete={load} />
       <Link className="garden-homework-link" to="/homeworks">Làm bài tập <span aria-hidden="true">→</span></Link>
-      <div className="garden-missions"><h3>✨ Bí kíp nuôi cây</h3><p><span>Bài tập có ảnh</span><b>+10 điểm/bài</b></p><p><span>Ảnh học tập được duyệt</span><b>+15 điểm/ngày</b></p><p><span>Giúp ảnh hỏi bài được ghi nhận</span><b>+10 điểm/ảnh</b></p><small>Mỗi câu ôn tập đúng = 1 ⚡. Mỗi ngày cây lớn một lần; sau 3 ngày chưa chăm, cây sẽ cần nước.</small></div>
+      <div className="garden-missions"><h3>✨ Bí kíp nuôi cây</h3><p><span>Bài tập có ảnh</span><b>+{garden.energySettings?.homework ?? '…'} điểm/bài</b></p><p><span>Ảnh học tập được duyệt</span><b>+{garden.energySettings?.photo ?? '…'} điểm/ngày</b></p><p><span>Giúp ảnh hỏi bài được ghi nhận</span><b>+{garden.energySettings?.help ?? '…'} điểm/ảnh</b></p><small>Mỗi câu ôn tập đúng = {garden.energySettings?.reviewCorrect ?? '…'} ⚡. Mỗi ngày cây lớn một lần; sau 3 ngày chưa chăm, cây sẽ cần nước.</small></div>
       <p className="garden-point-summary">Đã tích lũy: <b>{garden.studyPoints}</b> học tập · <b>{garden.communityPoints}</b> cộng đồng</p>
     </section>
     <div className="space-y-5"><GardenLeaderboard points={garden.studyPoints + garden.communityPoints} /><section className={box}><h2 className="font-bold text-xl mb-4">Đổi năng lượng lấy niềm vui</h2><div className="space-y-3">{garden.rewards.map(r => <div className="flex items-center justify-between gap-3 p-3 border rounded-xl" key={r.id}><div><b className="text-sm">{r.label}</b><p className="text-sm text-amber-600">{r.cost} ⚡</p></div><button className={button} disabled={busy || garden.energy < r.cost || garden.inventory.includes(r.id)} onClick={async () => { const data = await act('rewards/redeem', { item: r.id }); if (data) toast.success('Đổi thành công!'); }}>{garden.inventory.includes(r.id) ? 'Đã mở' : 'Đổi'}</button></div>)}</div>
@@ -296,16 +299,33 @@ function Garden() {
 }
 
 function Challenges() {
+  const { isAdmin } = useAuth();
+  return isAdmin ? <ChallengeManagement /> : <StudentChallenges />;
+}
+
+function StudentChallenges() {
+  const energy = useEnergySettings();
+  const [page, setPage] = useState(1), [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0 }), [loading, setLoading] = useState(false);
+  const listVersion = useRef(0);
   const [challenges, setChallenges] = useState([]), [monthly, setMonthly] = useState(null), [month, setMonth] = useState(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()).slice(0, 7));
   const [active, setActive] = useState(null), [answers, setAnswers] = useState([]), [busy, setBusy] = useState(false), [error, setError] = useState('');
   const now = useNow();
-  const load = useCallback(() => api.get('/community/challenges').then(r => setChallenges(r.data)).catch(e => setError(errorMessage(e))), []);
-  useEffect(() => { load(); }, [load]);
+  const load = useCallback(async () => {
+    const version = ++listVersion.current;
+    setLoading(true); setError('');
+    try {
+      const r = await api.get('/community/challenges', { params: { page }, timeout: 10000 });
+      if (version !== listVersion.current) return;
+      setChallenges(r.data.items); setPagination(r.data); setPage(r.data.page);
+    } catch (e) { if (version === listVersion.current) setError(errorMessage(e)); }
+    finally { if (version === listVersion.current) setLoading(false); }
+  }, [page]);
+  useEffect(() => { load(); return () => { listVersion.current++; }; }, [load]);
   useEffect(() => { api.get('/community/monthly', { params: { month } }).then(r => setMonthly(r.data)).catch(e => setError(errorMessage(e))); }, [month, challenges]);
   useEffect(() => { if (!active) return; sessionStorage.setItem(`challenge:${active.id}`, JSON.stringify(answers)); }, [active, answers]);
   const left = active ? Math.max(0, Math.ceil((new Date(active.attempt.deadline).getTime() - now) / 1000)) : 0;
   return <div className="space-y-5">
-    <section className={box}><h2 className="text-xl font-bold">Thử thách tuần</h2><p className="text-sm text-gray-500 mt-2">Chỉ học sinh đang thuộc lớp phù hợp được tham gia. Mỗi thử thách có một lượt; đồng hồ tiếp tục chạy khi rời trang. Hãy nộp trước khi hết giờ để ghi nhận kết quả. Mỗi câu đúng nhận 5 điểm năng lượng.</p></section>
+    <section className={box}><h2 className="text-xl font-bold">Thử thách tuần</h2><p className="text-sm text-gray-500 mt-2">Chỉ học sinh đang thuộc lớp phù hợp được tham gia. Mỗi thử thách có một lượt; đồng hồ tiếp tục chạy khi rời trang. Hãy nộp trước khi hết giờ để ghi nhận kết quả. Mỗi câu đúng nhận {energy?.challengeCorrect ?? '…'} điểm năng lượng.</p></section>
     {error && <p role="alert" className="text-red-600">{error}</p>}
     {active && <section className={`${box} border-blue-300`}><div className="flex justify-between"><h3 className="font-bold">{active.title}</h3><span className="font-mono text-red-600">{Math.floor(left / 60)}:{String(left % 60).padStart(2, '0')}</span></div>
       <form onSubmit={async e => { e.preventDefault(); setBusy(true); try { const r = await api.post(`/community/challenges/${active.id}/submit`, { answers }); toast.success(`Đã nộp: ${r.data.score}/${active.questions.length} câu đúng`); sessionStorage.removeItem(`challenge:${active.id}`); setActive(null); await load(); } catch (e) { toast.error(errorMessage(e)); } finally { setBusy(false); } }}>
@@ -313,14 +333,16 @@ function Challenges() {
         <button className={button} disabled={!left || busy}>{left ? 'Nộp bài' : 'Đã hết giờ'}</button>{!left && <button type="button" className="ml-4 text-blue-600" onClick={() => { setActive(null); load(); }}>Đóng lượt làm</button>}
       </form>
     </section>}
-    {!challenges.length && !error && <div className={box}>Thầy chưa mở thử thách. Hãy quay lại sau nhé.</div>}
-    <div className="grid md:grid-cols-2 gap-4">{challenges.map(c => {
+    {!loading && !challenges.length && !error && <div className={box}>Thầy chưa mở thử thách. Hãy quay lại sau nhé.</div>}
+    <div className="grid md:grid-cols-2 gap-4" aria-busy={loading}>{challenges.map(c => {
       const closed = now >= new Date(c.endsAt).getTime() || (c.attempt && new Date(c.attempt.deadline).getTime() <= now), future = now < new Date(c.startsAt).getTime();
       return <section className={box} key={c._id}><h3 className="font-bold text-lg">🏆 {c.title}</h3><p className="text-sm text-gray-600 whitespace-pre-wrap my-2">{c.description}</p><p className="text-xs text-gray-500">{date(c.startsAt)} → {date(c.endsAt)}<br />Thời lượng: {c.durationMinutes} phút · Giờ Việt Nam</p>{c.monthlyPrize && <p className="text-sm text-amber-700 my-2">🎁 Quà tháng: {c.monthlyPrize}</p>}
         <p className="text-sm my-3">{c.attempt?.submittedAt ? `Đã nộp · ${c.attempt.score} câu đúng` : !c.eligible ? 'Bạn cần tham gia lớp phù hợp' : future ? 'Sắp mở' : closed ? 'Đã kết thúc lượt làm' : 'Đang mở'}</p>
         <button className={button} disabled={busy || active || !c.eligible || future || closed || Boolean(c.attempt?.submittedAt)} onClick={async () => { setBusy(true); try { const r = await api.post(`/community/challenges/${c._id}/start`); let saved; try { saved = JSON.parse(sessionStorage.getItem(`challenge:${c._id}`)); } catch {} setAnswers(Array.isArray(saved) && saved.length === r.data.questions.length ? saved : r.data.questions.map(() => -1)); setActive({ ...r.data, id: c._id, title: c.title }); } catch (e) { toast.error(errorMessage(e)); } finally { setBusy(false); } }}>{c.attempt ? 'Tiếp tục làm' : 'Bắt đầu thử thách'}</button>
       </section>;
     })}</div>
+    {loading && <p role="status">Đang tải đề thử thách…</p>}
+    <nav className="arena-pagination" aria-label="Phân trang danh sách thử thách"><button className="arena-secondary" disabled={loading || page <= 1} onClick={() => setPage(p => p - 1)}>Trước</button><span>Trang {pagination.page} / {pagination.pages} · {pagination.total} đề</span><button className="arena-secondary" disabled={loading || page >= pagination.pages} onClick={() => setPage(p => p + 1)}>Sau</button></nav>
     <section className={box}><div className="flex justify-between flex-wrap gap-3"><h2 className="font-bold text-xl">Tổng kết & quà theo tháng</h2><input aria-label="Tháng tổng kết" type="month" className="border rounded-lg p-2" value={month} onChange={e => { if (e.target.value) setMonth(e.target.value); }} /></div><div className="overflow-x-auto mt-4"><table className="w-full text-sm text-left"><thead><tr className="border-b"><th className="p-2">Học sinh</th><th>Điểm</th><th>Số thử thách</th><th>Quà đã trao</th></tr></thead><tbody>{monthly?.rows.map((r, i) => <tr key={r._id} className="border-b"><td className="p-3">{i + 1}. {r.name}</td><td>{r.score}</td><td>{r.completed}</td><td>{r.gift || '—'}</td></tr>)}</tbody></table>{!monthly?.rows.length && <p className="text-center py-8 text-gray-400">Chưa có bài nộp trong tháng này.</p>}</div></section>
   </div>;
 }
@@ -333,13 +355,13 @@ function CommunityContent() {
   const unreadMessages = inbox.reduce((total, conversation) => total + conversation.count, 0);
   useEffect(() => { api.get('/community/policy').then(r => setPolicy(r.data)).catch(() => {}); }, [revision]);
   const tab = params.get('tab') || (params.has('friends') ? 'friends' : 'feed');
-  const tabs = [['feed', FiGrid, 'Khoảnh khắc'], ['chat', FiMessageCircle, 'Trò chuyện'], ['garden', FiSun, 'Vườn của tôi'], ['challenges', FiAward, 'Thử thách'], ['arena', FiZap, 'Đấu trường']];
+  const tabs = [['feed', FiGrid, 'Khoảnh khắc'], ['chat', FiMessageCircle, 'Trò chuyện'], ['garden', FiSun, 'Vườn của tôi'], ['challenges', FiAward, 'Thử thách'], ['arena', FiZap, 'Đấu trường'], ['practice', FiAward, 'Tự luyện']];
   return <div className="community-locket"><Navbar /><main className={`locket-main ${tab === 'feed' ? 'is-feed' : ''}`}>
-    <div className="locket-page-heading"><div><p>BẠN BÈ Ở ĐÂY. NIỀM VUI Ở ĐÂY.</p><h1>{tab === 'friends' ? 'Kết nối những người bạn.' : tab === 'chat' ? 'Một lời nhắn, thêm gần nhau.' : tab === 'garden' ? 'Lớn lên từng chút một.' : tab === 'arena' ? 'Sẵn sàng bứt phá cùng Toán?' : tab === 'challenges' ? 'Cùng nhau thử sức nhé.' : 'Những điều nhỏ, thật đáng nhớ.'}</h1></div><button className="locket-friends-shortcut" aria-label={`Bạn bè${friendships.incoming.length ? `, ${friendships.incoming.length} lời mời mới` : ''}`} onClick={() => setParams({ tab: 'friends' })}><FiUsers /> Bạn bè{friendships.incoming.length > 0 && <span className="locket-invitation-count">{friendships.incoming.length}</span>}</button></div>
+    <div className="locket-page-heading"><div><p>BẠN BÈ Ở ĐÂY. NIỀM VUI Ở ĐÂY.</p><h1>{tab === 'friends' ? 'Kết nối những người bạn.' : tab === 'chat' ? 'Một lời nhắn, thêm gần nhau.' : tab === 'garden' ? 'Lớn lên từng chút một.' : tab === 'practice' ? 'Tự luyện, vững kiến thức.' : tab === 'arena' ? 'Sẵn sàng bứt phá cùng Toán?' : tab === 'challenges' ? 'Cùng nhau thử sức nhé.' : 'Những điều nhỏ, thật đáng nhớ.'}</h1></div><button className="locket-friends-shortcut" aria-label={`Bạn bè${friendships.incoming.length ? `, ${friendships.incoming.length} lời mời mới` : ''}`} onClick={() => setParams({ tab: 'friends' })}><FiUsers /> Bạn bè{friendships.incoming.length > 0 && <span className="locket-invitation-count">{friendships.incoming.length}</span>}</button></div>
     {tab !== 'friends' && <FriendRequestNotice />}
     {policy?.curfewEnabled && <div className={`locket-curfew ${policy.inCurfew ? 'is-curfew' : ''}`}><span>☾</span><p>{policy.inCurfew ? 'Đến giờ nghỉ rồi. Hẹn bạn ngày mai nhé!' : 'Học vui, ngủ ngon.'}<small>Giờ nghỉ {policy.curfewStart}–{policy.curfewEnd} · Giờ Việt Nam{policy.inCurfew ? ' · Tạm dừng đăng bài, bình luận và chat' : ''}</small></p></div>}
     <nav aria-label="Mạng xã hội học tập" className="locket-navigation">{tabs.map(([key, Icon, label], i) => <button key={key} aria-label={key === 'chat' && unreadMessages > 0 ? `${label}, ${unreadMessages} tin nhắn chưa đọc` : label} aria-current={tab === key ? 'page' : undefined} className={`locket-nav-item ${tab === key ? 'is-active' : ''} ${i > 1 ? 'after-camera' : ''}`} onClick={() => setParams(key === 'feed' ? {} : { tab: key })}><span className="locket-nav-icon"><Icon />{key === 'chat' && unreadMessages > 0 && <span className="locket-unread-badge" aria-hidden="true">{unreadMessages > 99 ? '99+' : unreadMessages}</span>}</span><span>{label}</span></button>)}<button className="locket-nav-camera" aria-label="Tạo khoảnh khắc" onClick={() => setParams({ compose: 'photo' })}><FiCamera /></button></nav>
-    {tab === 'friends' ? <FriendsPage /> : tab === 'feed' ? <Feed params={params} setParams={setParams} /> : tab === 'chat' ? <Chat params={params} setParams={setParams} policy={policy} /> : tab === 'garden' ? <Garden /> : tab === 'challenges' ? <Challenges /> : tab === 'arena' ? <MathArena /> : <p>Tab không hợp lệ.</p>}
+    {tab === 'friends' ? <FriendsPage /> : tab === 'feed' ? <Feed params={params} setParams={setParams} /> : tab === 'chat' ? <Chat params={params} setParams={setParams} policy={policy} /> : tab === 'garden' ? <Garden /> : tab === 'challenges' ? <Challenges /> : tab === 'practice' ? <ArenaPractice /> : tab === 'arena' ? <MathArena /> : <p>Tab không hợp lệ.</p>}
   </main></div>;
 }
 

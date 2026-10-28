@@ -6,6 +6,12 @@
 - Admin: **Cộng đồng & thử thách**, đường dẫn `/admin/community`.
 - Dữ liệu lưu MongoDB; không cần thêm biến môi trường hoặc thư viện. Các collection và index Mongoose được tạo khi chạy backend.
 
+## Cấu hình năng lượng
+
+Tại `/admin/community`, mục **Điểm thưởng & chi phí năng lượng** cho phép admin đặt riêng mức thưởng nộp bài, ảnh học tập được duyệt, giúp bạn, mỗi câu ôn tập đúng, mỗi câu thử thách đúng, thắng đấu trường; đồng thời đặt phí tự luyện 10 câu và giá từng quà đổi. Giá trị là số nguyên từ 0 đến 100.000; 0 nghĩa là không thưởng hoặc miễn phí. Các mức số ở phần hướng dẫn bên dưới là mặc định ban đầu.
+
+Máy chủ lưu cấu hình trong `CommunityPolicy.energySettings` và áp dụng khi xử lý hành động. Không tính lại điểm đã nhận; khóa nhận thưởng một lần vẫn giữ khi mức thưởng bằng 0. Mức thưởng đấu trường được chốt khi tạo phòng, điểm ôn tập được chốt khi nộp bài và giữ nguyên khi gửi lại yêu cầu. Phí tự luyện được ghi nhận cùng lượt luyện. Tài khoản học sinh chỉ đọc cấu hình, không được sửa; API cập nhật là `PUT /api/community/admin/energy`.
+
 ## Bảng tin, chat và kiểm duyệt
 
 Bài viết và Tin có chữ được kiểm tra từ khóa tại backend trước khi lưu. Tin hết hiển thị sau 24 giờ kể từ khi đăng. Ba tương tác tích cực là Cổ vũ, Thả tim, Hữu ích; mỗi người có một tương tác trên mỗi bài và có thể đổi loại. Bấm tên/avatar để mở tường của bạn.
@@ -45,6 +51,8 @@ Cây lớn tối đa một lần/ngày khi nộp bài tập, ảnh tích cực �
 Điểm dùng mở sticker trong bình luận, mở và trang bị khung avatar, mua 5 phút game ghép hình hoặc yêu cầu quà nhỏ. Game trừ 1 phút khi bắt đầu một lượt; tải lại trong cùng lượt không trừ thêm. Quà vật lý được admin xác nhận đã trao. Các khoản cộng và chi dùng cập nhật nguyên tử để tránh nhận lặp hoặc chi quá số dư khi gửi nhiều yêu cầu đồng thời.
 
 ## Thử thách và quà tháng
+
+Admin quản lý thử thách tại **Thử thách** (`/community?tab=challenges`), gồm tạo đề, xem đề/đáp án, tổng kết tháng và ghi nhận trao quà. `/admin/community` giữ lối tắt sang trang này; phần cấu hình năng lượng vẫn ở admin. Danh sách đề phân trang 10 đề/trang tại máy chủ, hiển thị tổng số đề và giờ mở/đóng theo giờ Việt Nam, sắp xếp giờ mở mới nhất trước. API danh sách chỉ tải thông tin tóm tắt và số câu; nội dung đầy đủ chỉ tải khi admin mở xem đề. Danh sách thử thách của học sinh cũng có phân trang 10 đề/trang để truy cập được các đề ngoài 50 đề đầu.
 
 Admin tạo thử thách với câu hỏi trắc nghiệm 4 lựa chọn, đáp án, giờ mở/đóng, thời lượng và lớp được tham gia. Bỏ trống lớp để mở cho học sinh thuộc bất kỳ lớp đang hoạt động. Thành viên kiểm tra bằng `Class.students`, đồng thời kiểm tra ngày bắt đầu/kết thúc lớp.
 

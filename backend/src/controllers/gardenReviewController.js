@@ -5,6 +5,7 @@ const Class = require('../models/Class');
 const User = require('../models/User');
 const { Profile } = require('../models/Community');
 const { grant } = require('../services/community');
+const { energySettings } = require('../services/energySettings');
 const { localDay } = require('../utils/communityRules');
 const lessonAI = require('./lessonController');
 const wrap = fn => (req, res) => {
@@ -76,22 +77,22 @@ async function requireQuiz(user, value) {
 }
 function publicAttempt(attempt) {
   if (!attempt.submittedAt) return { attemptId: attempt._id, title: attempt.title, questions: attempt.questions.map(q => ({ prompt: q.prompt, options: q.options })), completed: false };
-  return { attemptId: attempt._id, title: attempt.title, completed: true, correctCount: attempt.correctCount, totalQuestions: attempt.questions.length, score: attempt.score, energyPoints: attempt.correctCount, questions: attempt.questions, answers: attempt.answers };
+  return { attemptId: attempt._id, title: attempt.title, completed: true, correctCount: attempt.correctCount, totalQuestions: attempt.questions.length, score: attempt.score, energyPoints: attempt.energyPoints ?? attempt.correctCount, questions: attempt.questions, answers: attempt.answers };
 }
 async function award(attempt) {
   // Completion is durable before the grant. Replays recover interrupted grants
   // without granting twice, even on MongoDB installations without transactions.
-  await grant(attempt.student, `garden-review:${attempt.quiz}`, attempt.correctCount);
+  await grant(attempt.student, `garden-review:${attempt.quiz}`, attempt.energyPoints ?? attempt.correctCount);
   if (localDay(attempt.submittedAt) === localDay()) await grant(attempt.student, `water:${localDay()}`, 0, false, true);
 }
 const student = {
   list: wrap(async (req, res) => {
     const lessons = await accessibleLessons(req.user);
     const quizzes = await ReviewQuiz.find({ lesson: { $in: lessons.map(l => l._id) }, isPublished: true }).select('title lesson questions.prompt').sort({ title: 1, _id: 1 }).lean();
-    const attempts = await ReviewAttempt.find({ student: req.user._id, quiz: { $in: quizzes.map(q => q._id) } }).select('quiz submittedAt score correctCount').lean();
+    const attempts = await ReviewAttempt.find({ student: req.user._id, quiz: { $in: quizzes.map(q => q._id) } }).select('quiz submittedAt score correctCount energyPoints').lean();
     res.json(quizzes.map(q => {
       const attempt = attempts.find(a => String(a.quiz) === String(q._id));
-      return { _id: q._id, title: q.title, lessonTitle: lessons.find(l => String(l._id) === String(q.lesson))?.title, count: q.questions.length, completed: Boolean(attempt?.submittedAt), started: Boolean(attempt), score: attempt?.score, energyPoints: attempt?.correctCount };
+      return { _id: q._id, title: q.title, lessonTitle: lessons.find(l => String(l._id) === String(q.lesson))?.title, count: q.questions.length, completed: Boolean(attempt?.submittedAt), started: Boolean(attempt), score: attempt?.score, energyPoints: attempt?.energyPoints ?? attempt?.correctCount };
     }).sort((a, b) => Number(a.completed) - Number(b.completed)));
   }),
   start: wrap(async (req, res) => {
@@ -115,7 +116,8 @@ const student = {
     if (!Array.isArray(answers) || answers.length !== attempt.questions.length || answers.some(a => !Number.isInteger(a) || a < 0 || a > 3)) fail('Hãy trả lời đầy đủ các câu hỏi');
     const correctCount = attempt.questions.reduce((n, q, i) => n + (q.correctIndex === answers[i] ? 1 : 0), 0);
     const score = Math.round(correctCount / attempt.questions.length * 100) / 10;
-    const saved = await ReviewAttempt.findOneAndUpdate({ _id: attempt._id, submittedAt: null }, { $set: { answers, correctCount, score, submittedAt: new Date() } }, { new: true });
+    const energyPoints = correctCount * (await energySettings()).reviewCorrect;
+    const saved = await ReviewAttempt.findOneAndUpdate({ _id: attempt._id, submittedAt: null }, { $set: { answers, correctCount, score, energyPoints, submittedAt: new Date() } }, { new: true });
     const completed = saved || await ReviewAttempt.findById(attempt._id);
     await award(completed);
     res.json(publicAttempt(completed));
