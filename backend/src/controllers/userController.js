@@ -3,6 +3,9 @@ const User = require('../models/User');
 const Enrollment = require('../models/Enrollment');
 const TuitionRecord = require('../models/TuitionRecord');
 const ClassEnrollment = require('../models/ClassEnrollment');
+const mongoose = require('mongoose');
+const { Profile } = require('../models/Community');
+const { ensureProfile } = require('../services/community');
 
 const getVietnamTodayRange = () => {
   const now = new Date();
@@ -32,9 +35,37 @@ const getUsers = async (req, res) => {
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(Number(limit));
-    res.json({ users, total, page: Number(page), pages: Math.ceil(total / limit) });
+    const profiles = await Profile.find({ user: { $in: users.map(user => user._id) } }).select('user energy').lean();
+    const energyByUser = new Map(profiles.map(profile => [String(profile.user), profile.energy]));
+    res.json({ users: users.map(user => ({ ...user.toObject(), energy: energyByUser.get(String(user._id)) ?? 0 })), total, page: Number(page), pages: Math.ceil(total / limit) });
   } catch (err) {
     res.status(500).json({ message: err.message });
+  }
+};
+
+// Admin balance changes use the balance shown in the dialog as a compare-and-swap.
+// Concurrent rewards or spending must be reviewed instead of being overwritten.
+const studentEnergy = async (req, res) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ message: 'Mã học sinh không hợp lệ' });
+    const student = await User.findOne({ _id: req.params.id, role: 'student' }).select('_id');
+    if (!student) return res.status(404).json({ message: 'Không tìm thấy học sinh' });
+    if (req.method === 'GET') {
+      const profile = await Profile.findOne({ user: student._id }).select('energy').lean();
+      return res.json({ userId: student._id, energy: profile?.energy ?? 0 });
+    }
+    const { energy, expectedEnergy } = req.body;
+    if (![energy, expectedEnergy].every(value => Number.isSafeInteger(value) && value >= 0)) {
+      return res.status(400).json({ message: 'Năng lượng phải là số nguyên không âm hợp lệ' });
+    }
+    await ensureProfile(student._id);
+    const updated = await Profile.findOneAndUpdate({ user: student._id, energy: expectedEnergy }, { $set: { energy } }, { new: true }).select('energy').lean();
+    if (updated) return res.json({ userId: student._id, energy: updated.energy });
+    const latest = await Profile.findOne({ user: student._id }).select('energy').lean();
+    if (latest?.energy === energy) return res.json({ userId: student._id, energy });
+    return res.status(409).json({ message: 'Số dư năng lượng vừa thay đổi. Hãy kiểm tra số dư mới trước khi lưu lại.', energy: latest?.energy ?? 0 });
+  } catch (err) {
+    res.status(500).json({ message: 'Chưa cập nhật được năng lượng. Vui lòng thử lại.' });
   }
 };
 
@@ -244,5 +275,5 @@ const resetStudentPassword = async (req, res) => {
   }
 };
 
-module.exports = { getUsers, getUserById, updateUser, updateStudentProfile, resetStudentPassword, deleteUser, getMyEnrollments, getAdminStats, createStudent };
+module.exports = { getUsers, getUserById, updateUser, updateStudentProfile, resetStudentPassword, deleteUser, getMyEnrollments, getAdminStats, createStudent, studentEnergy };
 

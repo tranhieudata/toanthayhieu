@@ -9,7 +9,8 @@
     "test:community": "node --test test/community.test.js",
     "test:profile": "node --test test/profile.test.js",
     "test:garden": "node --test test/garden-review.test.js",
-    "test:arena": "node --test test/math-arena.test.js"
+    "test:arena": "node --test test/math-arena.test.js",
+    "test:student-energy": "node --test test/student-energy.test.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

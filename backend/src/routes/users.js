@@ -1,12 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const { protect, adminOnly } = require('../middleware/auth');
-const { getUsers, getUserById, updateStudentProfile, resetStudentPassword, deleteUser, getMyEnrollments, getAdminStats, createStudent } = require('../controllers/userController');
+const { getUsers, getUserById, updateStudentProfile, resetStudentPassword, deleteUser, getMyEnrollments, getAdminStats, createStudent, studentEnergy } = require('../controllers/userController');
 
 router.get('/me/enrollments', protect, getMyEnrollments);
 router.get('/admin/stats', protect, adminOnly, getAdminStats);
 router.get('/', protect, adminOnly, getUsers);
 router.post('/', protect, adminOnly, createStudent);
+router.get('/:id/energy', protect, adminOnly, studentEnergy);
+router.put('/:id/energy', protect, adminOnly, studentEnergy);
 router.get('/:id', protect, adminOnly, getUserById);
 router.put('/:id', protect, adminOnly, updateStudentProfile);
 router.post('/:id/reset-password', protect, adminOnly, resetStudentPassword);

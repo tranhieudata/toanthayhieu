@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import api from '../../api/axios';
 import toast from 'react-hot-toast';
+import StudentEnergyEditor from '../../components/StudentEnergyEditor';
 import { FiSearch, FiTrash2, FiPlus, FiX, FiCopy, FiUser, FiEdit2, FiRefreshCw } from 'react-icons/fi';
 
 const DEFAULT_PASSWORD = 'toanthayhieu@123';
@@ -49,12 +50,13 @@ export default function AdminStudents() {
   const [editForm, setEditForm] = useState({ name: '', email: '' });
   const [savingEdit, setSavingEdit] = useState(false);
   const [resetInfo, setResetInfo] = useState(null);
+  const [energyStudent, setEnergyStudent] = useState(null);
 
   const load = (s = search, p = page) => {
     setLoading(true);
     const params = new URLSearchParams({ role: 'student', page: p, limit: 20 });
     if (s) params.set('search', s);
-    api.get(`/users?${params}`).then(res => { setUsers(res.data.users); setTotal(res.data.total); }).finally(() => setLoading(false));
+    api.get(`/users?${params}`).then(res => { setUsers(res.data.users); setTotal(res.data.total); }).catch(() => toast.error('Chưa tải được danh sách học sinh')).finally(() => setLoading(false));
   };
 
   useEffect(() => { load(); }, [page]);
@@ -164,18 +166,18 @@ export default function AdminStudents() {
         />
       </div>
 
-      <div className="card overflow-hidden">
+      <div className="card overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b">
             <tr>
-              {['Học sinh', 'Email', 'Ngày tham gia', 'Login gần nhất', 'Số lần', 'Trạng thái', 'Thao tác'].map(h => (
+              {['Học sinh', 'Email', 'Ngày tham gia', 'Login gần nhất', 'Số lần', 'Năng lượng', 'Trạng thái', 'Thao tác'].map(h => (
                 <th key={h} className="text-left px-4 py-3 font-medium text-gray-600">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y">
             {loading ? (
-              <tr><td colSpan={7} className="text-center py-8 text-gray-400">Đang tải...</td></tr>
+              <tr><td colSpan={8} className="text-center py-8 text-gray-400">Đang tải...</td></tr>
             ) : users.map(u => (
               <tr key={u._id} className="hover:bg-gray-50">
                 <td className="px-4 py-3">
@@ -192,6 +194,7 @@ export default function AdminStudents() {
                 <td className="px-4 py-3 text-gray-600">{new Date(u.createdAt).toLocaleDateString('vi-VN')}</td>
                 <td className="px-4 py-3 text-gray-600">{formatLastLogin(u.lastLoginAt)}</td>
                 <td className="px-4 py-3 text-gray-600">{u.loginCount || 0}</td>
+                <td className="px-4 py-3"><div className="flex items-center gap-2 whitespace-nowrap"><span className="font-semibold text-amber-700">{(u.energy ?? 0).toLocaleString('vi-VN')} ⚡</span><button type="button" className="rounded p-2 text-blue-600 hover:bg-blue-50" aria-label={`Điều chỉnh năng lượng của ${u.name}`} title="Điều chỉnh năng lượng" onClick={() => setEnergyStudent(u)}><FiEdit2 /></button></div></td>
                 <td className="px-4 py-3">
                   <button onClick={() => handleToggleActive(u)} className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer ${u.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
                     {u.isActive ? 'Hoạt động' : 'Bị khóa'}
@@ -223,6 +226,8 @@ export default function AdminStudents() {
           <button onClick={() => setPage(p => p + 1)} disabled={page * 20 >= total} className="btn-secondary px-3 py-1 text-sm">Sau</button>
         </div>
       )}
+
+      {energyStudent && <StudentEnergyEditor key={energyStudent._id} student={energyStudent} onClose={() => setEnergyStudent(null)} onSaved={({ userId, energy }) => setUsers(previous => previous.map(user => user._id === userId ? { ...user, energy } : user))} />}
 
       {editingUser && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setEditingUser(null)}>

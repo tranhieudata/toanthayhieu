@@ -8,6 +8,8 @@
 
 ## Cấu hình năng lượng
 
+Trang `/admin/students` có cột **Năng lượng** và nút chỉnh số dư cho từng học sinh. Hộp điều chỉnh tải số dư mới nhất, cho nhập số nguyên không âm (kể cả 0), hiển thị số tăng/giảm trước khi lưu. Nếu học sinh vừa nhận thưởng, sử dụng năng lượng hoặc admin khác vừa chỉnh số dư, hệ thống yêu cầu kiểm tra số dư mới thay vì ghi đè. Chỉ số dư sử dụng thay đổi; điểm học tập, điểm cộng đồng, thứ hạng và các phần thưởng đã mở giữ nguyên. API đọc/cập nhật là `GET/PUT /api/users/:id/energy`, chỉ admin được truy cập.
+
 Tại `/admin/community`, mục **Điểm thưởng & chi phí năng lượng** cho phép admin đặt riêng mức thưởng nộp bài, ảnh học tập được duyệt, giúp bạn, mỗi câu ôn tập đúng, mỗi câu thử thách đúng, thắng đấu trường; đồng thời đặt phí tự luyện 10 câu và giá từng quà đổi. Giá trị là số nguyên từ 0 đến 100.000; 0 nghĩa là không thưởng hoặc miễn phí. Các mức số ở phần hướng dẫn bên dưới là mặc định ban đầu.
 
 Máy chủ lưu cấu hình trong `CommunityPolicy.energySettings` và áp dụng khi xử lý hành động. Không tính lại điểm đã nhận; khóa nhận thưởng một lần vẫn giữ khi mức thưởng bằng 0. Mức thưởng đấu trường được chốt khi tạo phòng, điểm ôn tập được chốt khi nộp bài và giữ nguyên khi gửi lại yêu cầu. Phí tự luyện được ghi nhận cùng lượt luyện. Tài khoản học sinh chỉ đọc cấu hình, không được sửa; API cập nhật là `PUT /api/community/admin/energy`.
