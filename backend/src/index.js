@@ -18,7 +18,7 @@ const uploadsDir = path.join(__dirname, '../uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
 // Connect to MongoDB
-connectDB();
+connectDB().then(() => require('./services/storyCleanup').startStoryCleanup());
 
 // Middleware
 const corsOptions = {

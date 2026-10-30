@@ -371,7 +371,7 @@ export default function StudentHomeworkPage() {
           const { data } = await api.get(`/homeworks/${hw._id}/my-submission`);
           subs[hw._id] = data;
         } catch (err) {
-          // No submission yet (404 is normal)
+          // Keep loading other homework if this request fails.
           subs[hw._id] = null;
         }
       }

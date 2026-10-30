@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import api, { getUploadUrl } from '../api/axios';
 import { useCommunity } from '../context/CommunityContext';
 import CommunityAccessNotice from './CommunityAccessNotice';
+import StoryViewer from './StoryViewer';
 export function CommunityImage({ post, className = '' }) {
   const [url, setUrl] = useState('');
   useEffect(() => {
@@ -44,6 +45,7 @@ export function NotificationBell() {
 export function CommunityDashboard() {
   const { access } = useCommunity();
   const [stories, setStories] = useState([]), [garden, setGarden] = useState(null), [error, setError] = useState(false);
+  const [viewingStory, setViewingStory] = useState(null);
   useEffect(() => {
     if (!access?.allowed) { setStories([]); setGarden(null); return; }
     let active = true;
@@ -58,11 +60,12 @@ export function CommunityDashboard() {
       <p className="text-sm text-[#a5a59a] mt-1">Một khoảnh khắc học tập, một lời cổ vũ. Tin hiển thị trong 24 giờ.</p>
       <div className="flex gap-3 overflow-x-auto mt-4 pb-2">
         <Link to="/community?compose=story" className="shrink-0 w-24 rounded-2xl bg-[#2a291f] border border-dashed border-[#6c6140] p-3 text-center"><span className="block text-3xl text-[#ffda45]">＋</span><span className="text-xs font-medium">Tạo Tin</span></Link>
-        {stories.slice(0, 6).map(s => <Link to={`/community?post=${s._id}`} key={s._id} className="shrink-0 w-24 p-2 rounded-2xl bg-[#292923] text-center border border-[#74662f]"><div className="flex justify-center mb-2"><Avatar person={s.author} frame={s.frame} /></div><span className="text-xs line-clamp-2">{s.author?.name}</span></Link>)}
+        {stories.slice(0, 6).map(s => <button type="button" onClick={() => setViewingStory(s._id)} key={s._id} className="shrink-0 w-24 p-2 rounded-2xl bg-[#292923] text-center border border-[#74662f]"><div className="flex justify-center mb-2">{s.image ? <CommunityImage post={s._id} className="w-16 h-20 rounded-xl object-cover overflow-hidden" /> : <Avatar person={s.author} frame={s.frame} />}</div><span className="text-xs line-clamp-2">{s.author?.name}</span></button>)}
         {!stories.length && !error && <p className="text-sm text-gray-400 self-center">Chia sẻ Tin học tập đầu tiên hôm nay!</p>}
         {error && <p className="text-sm text-red-500">Chưa tải được dữ liệu cộng đồng.</p>}
       </div>
     </div>
+    {viewingStory && <StoryViewer key={viewingStory} storyId={viewingStory} onClose={() => setViewingStory(null)} onDeleted={() => setStories(current => current.filter(s => s._id !== viewingStory))} />}
     <Link to="/community?tab=garden" className="rounded-xl border border-emerald-200 bg-emerald-50 p-5">
       <div className="flex items-center gap-3"><span className="text-5xl">{garden?.growth >= 20 ? '🌳' : garden?.growth >= 7 ? '🌿' : '🌱'}</span><div><h2 className="font-bold text-emerald-900">Mầm cây của bạn</h2><p className="text-sm text-emerald-700">{garden ? `${garden.energy} ⚡ · ${garden.growth} ngày chăm cây` : 'Cùng học, cùng lớn lên'}</p></div></div>
       <p className="mt-4 text-sm text-emerald-800">{garden?.needsWater ? 'Cây cần nước! Hoàn thành nhiệm vụ ôn tập nhé.' : 'Hoàn thành bài tập để nuôi cây mỗi ngày.'}</p>

@@ -14,6 +14,8 @@ const { emit, subscribe, notify, ensureProfile, grant, grantAction, waterDaily }
 const { actions: energyActions, energySettings, validate: validateEnergy, rewardCatalog } = require('../services/energySettings');
 const { imageQuota, reserveImage, releaseImage } = require('../services/communityImageQuota');
 const { communityAccess } = require('../services/communityAccess');
+const { deleteStory } = require('../services/storyCleanup');
+const { ensureStoryPublishing } = require('../services/storyPublishing');
 const { student: gardenReview } = require('../controllers/gardenReviewController');
 const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const fail = (message, status = 400) => { const err = new Error(message); err.status = status; throw err; };
@@ -60,6 +62,7 @@ router.use(wrap(async (req, res, next) => {
   res.set('Cache-Control', 'private, no-store');
   const access = await communityAccess(req.user);
   if (!access.allowed) return res.status(403).json({ code: 'HOMEWORK_REQUIRED', message: 'Hoàn thành tất cả bài tập để vào mạng xã hội.', ...access });
+  await ensureStoryPublishing();
   next();
 }));
 router.get('/events', (req, res) => {
@@ -162,9 +165,9 @@ router.delete('/friends/:peer', wrap(async (req, res) => {
 const imageDir = path.resolve(__dirname, '../../community-uploads');
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 }, fileFilter: (req, file, cb) => cb(null, ['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) });
 router.post('/posts', upload.single('image'), wrap(async (req, res) => {
-  const text = await checkContent(req, req.body.text);
   const kind = req.body.kind || 'study';
   if (!['study', 'question', 'story'].includes(kind)) fail('Loại bài đăng không hợp lệ');
+  const text = await checkContent(req, kind === 'story' && req.file && (req.body.text == null || (typeof req.body.text === 'string' && !req.body.text.trim())) ? 'Tin 24 giờ' : req.body.text);
   let image = '', reservation;
   if (req.file) {
     const bytes = req.file.buffer;
@@ -179,7 +182,7 @@ router.post('/posts', upload.single('image'), wrap(async (req, res) => {
   let post;
   try {
     if (image) await fs.writeFile(path.join(imageDir, image), req.file.buffer);
-    post = await Post.create({ author: req.user._id, text, kind, image, ...(reservation ? { imageDay: reservation.day } : {}), status: image ? 'pending' : 'approved', ...(kind === 'story' ? { expiresAt: new Date(Date.now() + 86400000) } : {}) });
+    post = await Post.create({ author: req.user._id, text, kind, image, ...(reservation ? { imageDay: reservation.day } : {}), status: image && kind !== 'story' ? 'pending' : 'approved', ...(kind === 'story' ? { expiresAt: new Date(Date.now() + 86400000) } : {}) });
   } catch (err) {
     if (image) await fs.unlink(path.join(imageDir, image)).catch(() => {});
     await releaseImage(reservation);
@@ -190,8 +193,9 @@ router.post('/posts', upload.single('image'), wrap(async (req, res) => {
 router.get('/posts/:id/image', wrap(async (req, res) => {
   const post = await Post.findById(id(req.params.id));
   if (!post || !post.image) fail('Không tìm thấy ảnh', 404);
+  if (post.expiresAt && post.expiresAt <= new Date()) fail('Tin đã hết hạn', 404);
   const owner = String(post.author) === String(req.user._id) || req.user.role === 'admin';
-  if (!owner && (post.status !== 'approved' || (post.expiresAt && post.expiresAt <= new Date()))) fail('Ảnh chưa được duyệt hoặc đã hết hạn', 403);
+  if (!owner && post.status !== 'approved') fail('Ảnh chưa được duyệt', 403);
   res.set('Cache-Control', 'private, no-store');
   res.sendFile(path.join(imageDir, path.basename(post.image)));
 }));
@@ -219,7 +223,7 @@ router.get('/stories', wrap(async (req, res) => {
   res.json(await decorated(await Post.find({ ...visible(), kind: 'story' }).populate('author', 'name avatar').sort({ createdAt: -1 }).limit(30).lean(), req.user._id));
 }));
 router.get('/my-posts', wrap(async (req, res) => {
-  res.json(await Post.find({ author: req.user._id, status: { $in: ['pending', 'rejected'] } }).select('text kind image status createdAt').sort({ createdAt: -1 }).limit(50));
+  res.json(await Post.find({ author: req.user._id, status: { $in: ['pending', 'rejected'] }, $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }] }).select('text kind image status createdAt').sort({ createdAt: -1 }).limit(50));
 }));
 router.get('/posts/:id', wrap(async (req, res) => {
   const post = await Post.findOne({ ...visible(), _id: id(req.params.id) }).populate('author', 'name avatar').lean();
@@ -227,8 +231,10 @@ router.get('/posts/:id', wrap(async (req, res) => {
   res.json((await decorated([post], req.user._id))[0]);
 }));
 router.delete('/posts/:id', wrap(async (req, res) => {
-  const result = await Post.findOneAndUpdate({ _id: id(req.params.id), ...(req.user.role === 'admin' ? {} : { author: req.user._id }) }, { status: 'rejected' });
+  const result = await Post.findOne({ _id: id(req.params.id), ...(req.user.role === 'admin' ? {} : { author: req.user._id }) });
   if (!result) fail('Không có quyền xóa bài', 403);
+  if (result.kind === 'story') await deleteStory(result);
+  else await Post.updateOne({ _id: result._id }, { status: 'rejected' });
   res.json({ success: true });
 }));
 async function approvedPost(value) {

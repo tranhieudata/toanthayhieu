@@ -1,0 +1,11 @@
+.locket-story-viewer { width: min(760px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow-y: auto; margin: auto; padding: 14px; border: 1px solid var(--theme-border, #333); border-radius: 22px; background: var(--theme-surface, #181818); color: var(--theme-text, #fff); }
+.locket-story-viewer::backdrop { background: #000c; backdrop-filter: blur(6px); }
+.locket-story-viewer-header { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.locket-story-viewer-author { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+.locket-story-viewer-author h2 { font-size: var(--font-size-body); font-weight: 700; overflow-wrap: anywhere; }
+.locket-story-viewer-author small { font-size: var(--font-size-caption); color: var(--theme-muted, #aaa); }
+.locket-story-delete { display: inline-flex; align-items: center; gap: 5px; color: #f87171; font-size: var(--font-size-ui); flex-shrink: 0; padding: 8px; }
+.locket-story-close { display: grid; place-items: center; width: 36px; height: 36px; flex-shrink: 0; border-radius: 50%; background: var(--theme-bg, #292929); font-size: 22px; }
+.locket-story-full-image { display: block; width: 100%; height: auto; max-height: calc(100dvh - 130px); object-fit: contain; border-radius: 14px; }
+.locket-story-viewer-message { padding: 32px 12px; text-align: center; white-space: pre-wrap; }
+.locket-story-viewer button:focus-visible { outline: 2px solid var(--theme-accent, #ffda45); outline-offset: 2px; }

@@ -27,7 +27,7 @@ const Post = model('CommunityPost', {
   kind: { type: String, enum: ['study', 'question', 'story'], default: 'study' },
   status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'approved' },
   expiresAt: Date,
-}, [[{ status: 1, createdAt: -1 }], [{ author: 1, createdAt: -1 }]]);
+}, [[{ status: 1, createdAt: -1 }], [{ author: 1, createdAt: -1 }], [{ kind: 1, expiresAt: 1 }]]);
 const ImageUsage = model('CommunityImageUsage', {
   user: ref('User', { required: true }), day: { type: String, required: true },
   count: { type: Number, default: 0, min: 0 },

@@ -21,6 +21,14 @@ test('Vietnamese moderation and curfew boundaries', () => {
   assert.equal(localDay(new Date('2026-10-01T18:00:00Z')), '2026-10-02');
 });
 
+test('story cleanup schedules the next Vietnam midnight independently of VPS timezone', () => {
+  const { untilNextCleanup } = require('../src/services/storyCleanup');
+  assert.equal(untilNextCleanup(new Date('2026-10-29T16:59:59.000Z')), 1000);
+  assert.equal(untilNextCleanup(new Date('2026-10-29T17:00:00.000Z')), 86400000);
+  assert.equal(untilNextCleanup(new Date('2026-10-29T05:00:00.000Z')), 43200000);
+  assert.equal(untilNextCleanup(new Date('2026-12-31T16:59:59.999Z')), 1);
+});
+
 // Requires local MongoDB. Every run uses an isolated database; never loads project .env.
 test('community API integration with real MongoDB', { timeout: 60000 }, async t => {
   process.env.JWT_SECRET = 'community-test-only-not-a-production-secret';
@@ -43,6 +51,16 @@ test('community API integration with real MongoDB', { timeout: 60000 }, async t 
     ]);
     const cls = await Class.create({ name: 'Lớp kiểm thử', students: [a._id, b._id] });
     await Policy.create({ curfewEnabled: false, bannedWords: ['địt', 'đụ', 'lồn', 'vcl', 'từ cấm'] });
+    const legacyStoryImage = `legacy-story-${process.pid}-${Date.now()}.png`;
+    imagePaths.push(legacyStoryImage);
+    await fs.mkdir(path.resolve(__dirname, '../community-uploads'), { recursive: true });
+    await fs.writeFile(path.resolve(__dirname, '../community-uploads', legacyStoryImage), Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+    const [legacyStory, rejectedStory, expiredPendingStory, pendingStudy] = await Post.create([
+      { author: a._id, text: 'Tin cũ chờ duyệt', kind: 'story', status: 'pending', image: legacyStoryImage, expiresAt: new Date(Date.now() + 86400000) },
+      { author: a._id, text: 'Tin đã gỡ', kind: 'story', status: 'rejected', expiresAt: new Date(Date.now() + 86400000) },
+      { author: a._id, text: 'Tin cũ hết hạn', kind: 'story', status: 'pending', expiresAt: new Date(0) },
+      { author: a._id, text: 'Bài chờ duyệt', kind: 'study', status: 'pending' },
+    ]);
     const app = express(); app.use(express.json()); app.use('/api/community', require('../src/routes/community'));
     server = await new Promise(resolve => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
     const base = `http://127.0.0.1:${server.address().port}/api/community`;
@@ -75,6 +93,18 @@ test('community API integration with real MongoDB', { timeout: 60000 }, async t 
       assert.equal((await request(a, 'GET', '/admin')).status, 403);
       assert.equal((await request(a, 'GET', '/posts/not-an-id')).status, 400);
       assert.equal((await request(a, 'POST', '/admin/challenges', {})).status, 403);
+    });
+    await t.test('old pending stories become viewable after upgrading while removed and expired stories stay hidden', async () => {
+      assert.equal((await Post.findById(legacyStory._id)).status, 'approved');
+      const list = (await request(b, 'GET', '/stories')).data;
+      assert.equal(list.some(s => s._id === String(legacyStory._id)), true);
+      assert.equal((await request(b, 'GET', `/posts/${legacyStory._id}`)).status, 200);
+      assert.equal((await request(b, 'GET', `/posts/${legacyStory._id}/image`)).status, 200);
+      assert.equal((await request(a, 'GET', '/my-posts')).data.some(s => s._id === String(legacyStory._id)), false);
+      assert.equal((await Post.findById(rejectedStory._id)).status, 'rejected');
+      assert.equal((await Post.findById(expiredPendingStory._id)).status, 'pending');
+      assert.equal((await Post.findById(pendingStudy._id)).status, 'pending');
+      for (const p of [rejectedStory, expiredPendingStory]) assert.equal(list.some(s => s._id === String(p._id)), false);
     });
     await t.test('personal wall exposes garden achievements without private account data', async () => {
       assert.equal((await request(null, 'GET', `/people/${outsider._id}/wall`)).status, 401);
@@ -285,12 +315,76 @@ test('community API integration with real MongoDB', { timeout: 60000 }, async t 
       assert.equal((await request(admin, 'POST', `/admin/posts/${photo._id}/review`, { status: 'approved' })).status, 409);
       assert.equal((await Profile.findOne({ user: a._id })).energy, 15);
     });
+    await t.test('photo stories publish immediately without text and only the owner or admin can delete them', async () => {
+      const form = new FormData();
+      form.append('kind', 'story'); form.append('hasImage', 'true');
+      form.append('image', new Blob([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])], { type: 'image/png' }), 'story.png');
+      const result = await request(a, 'POST', '/posts', form);
+      assert.equal(result.status, 201);
+      imagePaths.push(result.data.image);
+      assert.equal(result.data.kind, 'story');
+      assert.equal(result.data.text, 'Tin 24 giờ');
+      assert.equal(result.data.status, 'approved');
+      assert.ok(Math.abs(new Date(result.data.expiresAt) - new Date(result.data.createdAt) - 86400000) < 2000);
+      assert.equal((await request(a, 'GET', '/my-posts')).data.some(p => p._id === result.data._id && p.image), false);
+      assert.equal((await request(a, 'GET', `/posts/${result.data._id}/image`)).status, 200);
+      assert.equal((await request(b, 'GET', `/posts/${result.data._id}/image`)).status, 200);
+      assert.equal((await request(b, 'GET', `/posts/${result.data._id}`)).data.kind, 'story');
+      assert.equal((await request(b, 'GET', '/stories')).data.some(p => p._id === result.data._id), true);
+      assert.equal((await request(b, 'DELETE', `/posts/${result.data._id}`)).status, 403);
+      assert.equal((await request(b, 'GET', `/posts/${result.data._id}/image`)).status, 200);
+      await Comment.create({ post: result.data._id, author: b._id, text: 'Cố lên' });
+      assert.equal((await request(a, 'DELETE', `/posts/${result.data._id}`)).status, 200);
+      assert.equal(await Post.findById(result.data._id), null);
+      assert.equal(await Comment.countDocuments({ post: result.data._id }), 0);
+      for (const viewer of [a, b, admin]) assert.equal((await request(viewer, 'GET', `/posts/${result.data._id}/image`)).status, 404);
+      await assert.rejects(fs.access(path.resolve(__dirname, '../community-uploads', result.data.image)), { code: 'ENOENT' });
+      assert.equal((await request(b, 'GET', '/stories')).data.some(p => p._id === result.data._id), false);
+      const adminRemoved = await Post.create({ author: a._id, kind: 'story', text: 'Tin để gỡ', expiresAt: new Date(Date.now() + 86400000) });
+      assert.equal((await request(admin, 'DELETE', `/posts/${adminRemoved._id}`)).status, 200);
+      assert.equal(await Post.findById(adminRemoved._id), null);
+      assert.equal((await request(a, 'POST', '/posts', { kind: 'story', text: '' })).status, 400);
+    });
     await t.test('stories expire and removed images become inaccessible', async () => {
       const story = await Post.create({ author: a._id, text: 'Tin cũ', kind: 'story', expiresAt: new Date(Date.now() - 1000) });
       assert.equal((await request(b, 'GET', '/stories')).data.some(s => s._id === String(story._id)), false);
       assert.equal((await request(b, 'GET', `/posts/${story._id}`)).status, 404);
       await request(a, 'DELETE', `/posts/${photo._id}`);
       assert.equal((await request(b, 'GET', `/posts/${photo._id}/image`)).status, 403);
+    });
+    await t.test('story cleanup removes expired files and related data, preserving active stories and regular posts', async () => {
+      const { cleanupExpiredStories } = require('../src/services/storyCleanup');
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() - 1);
+      const created = await request(a, 'POST', '/posts', { text: 'Tin mới', kind: 'story' });
+      assert.equal(created.status, 201);
+      assert.ok(Math.abs(new Date(created.data.expiresAt) - new Date(created.data.createdAt) - 86400000) < 2000);
+      const filenames = ['expired', 'pending', 'rejected', 'active', 'regular'].map(label => `cleanup-${process.pid}-${Date.now()}-${label}.png`);
+      await fs.mkdir(path.resolve(__dirname, '../community-uploads'), { recursive: true });
+      for (const filename of filenames) {
+        imagePaths.push(filename);
+        await fs.writeFile(path.resolve(__dirname, '../community-uploads', filename), Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+      }
+      const [expired, pending, rejected, active, regular] = await Post.create([
+        { author: a._id, text: 'Tin hết hạn', kind: 'story', image: filenames[0], expiresAt },
+        { author: a._id, text: 'Tin chờ duyệt', kind: 'story', image: filenames[1], status: 'pending', expiresAt },
+        { author: a._id, text: 'Tin bị từ chối', kind: 'story', image: filenames[2], status: 'rejected', expiresAt },
+        { author: a._id, text: 'Tin còn hạn', kind: 'story', image: filenames[3], expiresAt: new Date(now.getTime() + 60000) },
+        { author: a._id, text: 'Chia sẻ', kind: 'study', image: filenames[4] },
+      ]);
+      await Comment.create({ post: expired._id, author: b._id, text: 'Cố lên' });
+      await models.Reaction.create({ post: expired._id, user: b._id, kind: 'heart' });
+      await Notification.create({ post: expired._id, user: a._id, text: 'Tin cũ' });
+      for (const viewer of [a, b, admin]) assert.equal((await request(viewer, 'GET', `/posts/${expired._id}/image`)).status, 404);
+      const stories = (await request(b, 'GET', '/stories')).data;
+      assert.equal(stories.find(s => s._id === String(active._id)).image, true);
+      await cleanupExpiredStories(now);
+      await cleanupExpiredStories(now);
+      for (const p of [expired, pending, rejected]) assert.equal(await Post.findById(p._id), null);
+      for (const filename of filenames.slice(0, 3)) await assert.rejects(fs.access(path.resolve(__dirname, '../community-uploads', filename)), { code: 'ENOENT' });
+      for (const p of [active, regular]) assert.ok(await Post.findById(p._id));
+      for (const filename of filenames.slice(3)) await fs.access(path.resolve(__dirname, '../community-uploads', filename));
+      for (const model of [Comment, models.Reaction, Notification]) assert.equal(await model.countDocuments({ post: expired._id }), 0);
     });
     await t.test('helpful answer reward is owner-authorized and idempotent', async () => {
       const question = await Post.create({ author: a._id, text: 'Giúp mình bài này', image: 'test-only.png', kind: 'question' });

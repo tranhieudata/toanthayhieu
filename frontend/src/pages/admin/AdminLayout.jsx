@@ -31,9 +31,10 @@ export default function AdminLayout() {
 
   const isActive = (to, exact) => exact ? location.pathname === to : location.pathname.startsWith(to) && to !== '/admin';
   const isAdminExact = location.pathname === '/admin';
+  const isContentManager = location.pathname === '/admin/content';
 
   return (
-    <div className="flex h-screen bg-gray-100 overflow-hidden">
+    <div className="admin-layout flex h-screen bg-gray-100 overflow-hidden">
       {/* Sidebar */}
       <aside className={`admin-sidebar fixed inset-y-0 left-0 z-40 w-64 bg-gray-900 text-white transform transition-transform duration-300 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 lg:static lg:block`}>
         <div className="p-6 border-b border-gray-700">
@@ -78,8 +79,8 @@ export default function AdminLayout() {
       {sidebarOpen && <div className="fixed inset-0 z-30 bg-black/50 lg:hidden" onClick={() => setSidebarOpen(false)} />}
 
       {/* Main */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="bg-white shadow-sm px-6 py-4 flex items-center gap-4">
+      <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+        <header className={`bg-white shadow-sm flex items-center gap-4 ${isContentManager ? 'px-4 py-2' : 'px-6 py-4'}`}>
           <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-gray-500">
             <FiMenu className="text-xl" />
           </button>
@@ -90,7 +91,7 @@ export default function AdminLayout() {
             <NotificationBell />
           </div>
         </header>
-        <main className="flex-1 overflow-y-auto p-6">
+        <main className={isContentManager ? 'flex-1 min-h-0 flex flex-col overflow-hidden' : 'flex-1 overflow-y-auto p-6'}>
           <FriendRequestNotice />
           <Outlet />
         </main>

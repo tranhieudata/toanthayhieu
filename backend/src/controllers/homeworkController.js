@@ -864,7 +864,10 @@ const getStudentSubmission = async (req, res) => {
       .populate('gradedBy', 'name');
 
     if (!submission) {
-      return res.status(404).json({ message: 'Không tìm thấy bài làm' });
+      if (!await Homework.exists({ _id: homeworkId })) {
+        return res.status(404).json({ message: 'Không tìm thấy bài tập' });
+      }
+      return res.json(null);
     }
 
     res.json(withStudentSubmissionAnswerPayload(submission));

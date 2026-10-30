@@ -12,6 +12,8 @@ import ArenaPractice from '../components/ArenaPractice';
 import ChallengeManagement from '../components/ChallengeManagement';
 import MathArena from '../components/MathArena';
 import CommunityWall from '../components/CommunityWall';
+import StoryUpload from '../components/StoryUpload';
+import StoryViewer from '../components/StoryViewer';
 import CommunityAccessNotice from '../components/CommunityAccessNotice';
 import { FriendshipActions, FriendRequests, FriendRequestNotice } from '../components/CommunityFriends';
 import { useAuth } from '../context/AuthContext';
@@ -45,7 +47,7 @@ function PostCard({ post, reload, visit, stickers = [] }) {
       }}>Gỡ bài</button>}
     </div>
     {post.image ? <div className="locket-photo"><CommunityImage post={post._id} className="locket-photo-image" /><span className="locket-photo-tag">{post.kind === 'question' ? '💡 Cùng giải bài' : post.kind === 'story' ? '✨ Tin hôm nay' : '💛 Một chút chăm chỉ'}</span></div> : <div className="locket-text-moment"><FiHeart aria-hidden="true" /><p>{post.text}</p></div>}
-    {post.image && <p className="locket-caption">{post.text}</p>}
+    {post.image && post.kind !== 'story' && <p className="locket-caption">{post.text}</p>}
     <div className="locket-reactions">
       {[['cheer', '🙌', 'Cổ vũ'], ['heart', '💛', 'Thả tim'], ['helpful', '💡', 'Hữu ích']].map(([kind, emoji, label]) => <button key={kind} disabled={busy} onClick={() => act(`/community/posts/${post._id}/reactions`, { kind })} className={`locket-reaction ${post.myReaction === kind ? 'is-active' : ''}`}>
         {emoji} {label} · {post.reactions?.[kind] || 0}
@@ -72,7 +74,9 @@ function Feed({ params, setParams }) {
   const { revision } = useCommunity();
   const [posts, setPosts] = useState([]), [stories, setStories] = useState([]), [own, setOwn] = useState([]);
   const [students, setStudents] = useState([]), [search, setSearch] = useState('');
-  const [text, setText] = useState(''), [image, setImage] = useState(null), [kind, setKind] = useState(params.get('compose') === 'story' ? 'story' : 'study');
+  const [text, setText] = useState(''), [image, setImage] = useState(null), [kind, setKind] = useState('');
+  const publishDialog = useRef();
+  const [viewingStory, setViewingStory] = useState(null);
   const [busy, setBusy] = useState(false), [loading, setLoading] = useState(true), [error, setError] = useState(''), [more, setMore] = useState(false);
   const [garden, setGarden] = useState(null);
   const [preview, setPreview] = useState('');
@@ -94,15 +98,15 @@ function Feed({ params, setParams }) {
         api.get('/community/stories'), api.get('/community/my-posts'),
       ]);
       if (request !== feedRequest.current) return;
-      setPosts(focused ? [p.data] : p.data); setMore(!focused && p.data.length === 20); setStories(s.data); setOwn(o.data);
+      if (focused && p.data.kind === 'story') { setViewingStory(focused); setParams({}); return; }
+      setPosts(focused ? [p.data] : p.data); setMore(!focused && p.data.length === 20); setStories(s.data); setOwn(o.data.filter(post => !(post.kind === 'story' && post.status === 'pending')));
     } catch (e) { if (request === feedRequest.current) setError(errorMessage(e)); }
     finally { if (request === feedRequest.current) setLoading(false); }
-  }, [author, focused]);
+  }, [author, focused, setParams]);
   useEffect(() => { setLoading(true); reload(); }, [reload]);
   useEffect(() => { loadQuota(); }, [revision, loadQuota]);
   useEffect(() => { api.get('/community/garden').then(r => setGarden(r.data)).catch(() => {}); }, [revision]);
   useEffect(() => { const timer = setTimeout(() => { api.get('/community/people', { params: { q: search } }).then(r => setStudents(r.data)).catch(() => {}); }, 250); return () => clearTimeout(timer); }, [search]);
-  useEffect(() => { if (params.get('compose') === 'story') setKind('story'); }, [params]);
   useEffect(() => {
     if (params.get('compose')) composer.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     if (params.get('friends')) document.getElementById('community-friends')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -118,6 +122,24 @@ function Feed({ params, setParams }) {
     if (selected && (!['image/jpeg', 'image/png', 'image/webp'].includes(selected.type) || selected.size > 5 * 1024 * 1024)) { toast.error('Chọn ảnh JPEG, PNG hoặc WebP tối đa 5 MB'); e.target.value = ''; return; }
     setImage(selected || null); e.target.value = '';
   };
+  async function publish() {
+    if (busy || !kind) return;
+    if (kind === 'story' && !image) { toast.error('Chọn ảnh để đăng tin 24 giờ.'); return; }
+    if (kind !== 'story' && !text.trim()) { toast.error('Nhập nội dung để chia sẻ hoặc hỏi bài.'); return; }
+    if (image && imageLimitReached) { toast.error('Bạn đã hết lượt đăng ảnh hôm nay. Có thể bỏ ảnh để chia sẻ bằng chữ.'); return; }
+    setBusy(true);
+    try {
+      const data = new FormData(); data.append('text', kind === 'story' ? 'Tin 24 giờ' : text); data.append('kind', kind);
+      if (image) { data.append('image', image); data.append('hasImage', 'true'); }
+      const r = await api.post('/community/posts', data);
+      if (r.data.imageQuota) setQuota(r.data.imageQuota);
+      toast.success(r.data.status === 'pending' ? 'Ảnh đã gửi, chờ thầy duyệt trước khi hiển thị.' : 'Đã chia sẻ!');
+      publishDialog.current?.close(); setKind(''); setText(''); setImage(null);
+      if (file.current) file.current.value = '';
+      await reload();
+    } catch (e) { if (e.response?.data?.imageQuota) setQuota(e.response.data.imageQuota); toast.error(errorMessage(e)); }
+    finally { setBusy(false); loadQuota(); }
+  }
   const stickers = garden?.rewards?.filter(r => r.type === 'sticker' && garden.inventory.includes(r.id)) || [];
   return <div className="locket-feed-layout">
     <div className="locket-feed-column">
@@ -126,43 +148,46 @@ function Feed({ params, setParams }) {
       <section className="locket-stories" aria-label="Tin học tập trong 24 giờ">
         <div className="locket-section-heading"><h2>Một ngày của chúng mình</h2><span>24 giờ</span></div>
         <div className="locket-story-list">
-          <button className="locket-story" onClick={() => { setKind('story'); setParams({ compose: 'story' }); }}><span className="locket-story-add"><FiPlus /></span><span>Tin của bạn</span></button>
-          {stories.map(s => <button className="locket-story" key={s._id} onClick={() => setParams({ post: s._id })}><span className="locket-story-ring"><Avatar person={s.author} frame={s.frame} /></span><span>{s.author?.name}</span></button>)}
+          <StoryUpload imageLimitReached={imageLimitReached} onPosted={async () => { await Promise.all([reload(), loadQuota()]); }} />
+          {stories.map(s => <button className="locket-story" key={s._id} onClick={() => setViewingStory(s._id)}><span className="locket-story-ring">{s.image ? <CommunityImage post={s._id} className="locket-story-thumbnail" /> : <Avatar person={s.author} frame={s.frame} />}</span><span>{s.author?._id === user._id ? 'Tin của bạn' : s.author?.name}</span></button>)}
           {!stories.length && <p className="locket-story-empty">Một khoảnh khắc nhỏ.<br />Một ngày học vui hơn.</p>}
         </div>
       </section>
       <form ref={composer} className="locket-composer" onSubmit={async e => {
         e.preventDefault();
-        if (image && imageLimitReached) { toast.error('Bạn đã hết lượt đăng ảnh hôm nay. Có thể bỏ ảnh để chia sẻ bằng chữ.'); return; }
-        setBusy(true);
-        try {
-          const data = new FormData(); data.append('text', text); data.append('kind', kind);
-          if (image) { data.append('image', image); data.append('hasImage', 'true'); }
-          const r = await api.post('/community/posts', data);
-          if (r.data.imageQuota) setQuota(r.data.imageQuota);
-          toast.success(r.data.status === 'pending' ? 'Ảnh đã gửi, chờ thầy duyệt trước khi hiển thị.' : 'Đã chia sẻ!');
-          setText(''); setImage(null); if (file.current) file.current.value = ''; await reload();
-        } catch (e) { if (e.response?.data?.imageQuota) setQuota(e.response.data.imageQuota); toast.error(errorMessage(e)); } finally { setBusy(false); loadQuota(); }
+        setKind(''); publishDialog.current?.showModal();
       }}>
-        <div className="locket-composer-top"><span><span className="locket-live-dot" /> Khoảnh khắc học tập</span><select aria-label="Loại bài đăng" value={kind} onChange={e => setKind(e.target.value)}><option value="study">Chia sẻ</option><option value="question">Hỏi bài</option><option value="story">Tin 24 giờ</option></select></div>
+        <div className="locket-composer-top"><span><span className="locket-live-dot" /> Khoảnh khắc học tập</span></div>
         <div className={`locket-photo-quota ${imageLimitReached ? 'is-exhausted' : ''}`} role="status">{quota ? <><span>Hôm nay đã đăng <b>{quota.used}{quota.enabled ? `/${quota.limit}` : ''} ảnh</b></span><span>{quota.enabled ? `Còn ${quota.remaining} ảnh · Làm mới lúc 00:00` : 'Không giới hạn'}</span></> : <span>{quotaError || 'Đang tải số lượt đăng ảnh…'}</span>}{quotaError && <button type="button" onClick={loadQuota}>Tải lại lượt</button>}</div>
         <div className={`locket-camera-stage ${preview ? 'has-photo' : ''}`}>
           {preview ? <><img src={preview} alt="Xem trước ảnh sắp đăng" /><button type="button" className="locket-remove-photo" aria-label="Bỏ ảnh đã chọn" onClick={() => setImage(null)}><FiX /></button></> : <button type="button" className="locket-camera-invitation" disabled={imageLimitReached} onClick={() => camera.current?.click()}><span className="locket-camera-heart"><FiHeart /></span><h2>Học một chút.<br />Chia sẻ một chút.</h2><p>{imageLimitReached ? 'Đã hết lượt ảnh hôm nay. Bạn vẫn có thể viết lời nhắn bên dưới.' : 'Gửi một góc học tập đến bạn bè'}</p><span className="locket-camera-hint"><FiCamera /> {imageLimitReached ? 'Lượt mới bắt đầu lúc 00:00 giờ Việt Nam' : 'Chạm để thêm ảnh'}</span></button>}
           <div className="locket-viewfinder" aria-hidden="true"><i /><i /><i /><i /></div>
         </div>
         <label className="sr-only" htmlFor="moment-caption">Lời nhắn cho khoảnh khắc</label>
-        <textarea id="moment-caption" className="locket-caption-input" rows={2} maxLength={3000} value={text} onChange={e => setText(e.target.value)} placeholder="Thêm một lời nhắn cho bạn bè…" required />
+        <textarea id="moment-caption" className="locket-caption-input" rows={2} maxLength={3000} value={text} onChange={e => setText(e.target.value)} placeholder="Thêm một lời nhắn cho bạn bè…" />
         <input ref={file} type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" aria-label="Chọn ảnh từ thư viện" onChange={chooseImage} />
         <input ref={camera} type="file" accept="image/jpeg,image/png,image/webp" capture="environment" className="sr-only" aria-label="Chụp ảnh học tập" onChange={chooseImage} />
         <div className="locket-camera-controls">
           <button type="button" className="locket-round-control" disabled={imageLimitReached} onClick={() => file.current?.click()} aria-label="Mở thư viện ảnh"><FiImage /><span>Thư viện</span></button>
           <button type="button" className="locket-shutter" disabled={imageLimitReached} onClick={() => camera.current?.click()} aria-label="Chụp hoặc chọn ảnh"><span><FiCamera /></span></button>
-          <button type="submit" className="locket-round-control locket-send-control" disabled={busy || !text.trim() || Boolean(image && imageLimitReached)}><FiSend /><span>{busy ? 'Đang gửi…' : 'Chia sẻ'}</span></button>
+          <button type="submit" className="locket-round-control locket-send-control" disabled={busy || (!text.trim() && !image) || Boolean(image && imageLimitReached)}><FiSend /><span>{busy ? 'Đang gửi…' : 'Chia sẻ'}</span></button>
         </div>
-        <p className="locket-composer-note">Chỉ những điều tích cực 💛 · Ảnh được thầy duyệt trước khi hiển thị</p>
+        <p className="locket-composer-note">Chỉ những điều tích cực 💛 · Tin đăng ngay, ảnh chia sẻ và hỏi bài chờ thầy duyệt</p>
       </form>
+      <dialog ref={publishDialog} className="locket-publish-dialog" aria-labelledby="publish-title" onCancel={e => { if (busy) e.preventDefault(); }}>
+        <form onSubmit={e => { e.preventDefault(); publish(); }}>
+          <h2 id="publish-title">Bạn muốn đăng dưới dạng nào?</h2>
+          <p>Chọn một loại bài đăng để tiếp tục.</p>
+          <fieldset disabled={busy}>
+            <legend className="sr-only">Loại bài đăng</legend>
+            {[['study', 'Chia sẻ', 'Lưu lại khoảnh khắc học tập của bạn.'], ['question', 'Hỏi bài', 'Nhờ bạn bè cùng giải đáp.'], ['story', 'Tin 24 giờ', 'Hiển thị trong 1 ngày, sau đó tự xóa tin và ảnh.']].map(([value, label, description]) => <label key={value} className={`locket-publish-option ${kind === value ? 'is-selected' : ''}`}><input type="radio" name="post-kind" value={value} checked={kind === value} onChange={() => setKind(value)} required /><span><b>{label}</b><small>{description}</small></span></label>)}
+          </fieldset>
+          <div className="locket-publish-actions"><button type="button" className="community-button" disabled={busy} onClick={() => publishDialog.current?.close()}>Quay lại</button><button type="submit" className="community-button" disabled={busy || !kind}>{busy ? 'Đang đăng…' : 'Đăng bài'}</button></div>
+        </form>
+      </dialog>
       {own.length > 0 && <details className={box}><summary className="cursor-pointer font-semibold">Bài của tôi đang chờ duyệt / bị từ chối ({own.length})</summary><div className="space-y-3 mt-3">{own.map(p => <div className="border rounded-lg p-3" key={p._id}><span className="text-xs text-amber-700">{p.status === 'pending' ? 'Chờ duyệt' : 'Đã từ chối'}</span><p className="text-sm whitespace-pre-wrap">{p.text}</p>{p.image && <CommunityImage post={p._id} className="max-h-40 mt-2" />}</div>)}</div></details>}
       </>}
+      {viewingStory && <StoryViewer key={viewingStory} storyId={viewingStory} onClose={() => setViewingStory(null)} onDeleted={reload} />}
       <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="font-bold text-lg">{focused ? 'Bài đăng' : author ? 'Bài đăng trên tường' : 'Bảng tin cộng đồng'}</h2><button className="text-sm text-blue-600" onClick={() => { if (focused || author) setParams({}); else reload(); }}>Xem bảng tin chung</button></div>
       {error && <div role="alert" className="bg-red-50 p-4 rounded-xl text-red-700">{error} <button className="underline" onClick={reload}>Thử lại</button></div>}
       {loading ? <div className={`${box} animate-pulse`}>Đang tải bảng tin…</div> : !posts.length && !error ? <div className={`${box} text-gray-500 text-center py-12`}>Chưa có bài đăng. Hãy chia sẻ điều bạn vừa học nhé.</div> : posts.map(p => <PostCard key={p._id} post={p} reload={reload} visit={visit} stickers={stickers} />)}
@@ -360,7 +385,7 @@ function CommunityContent() {
     <div className="locket-page-heading"><div><p>BẠN BÈ Ở ĐÂY. NIỀM VUI Ở ĐÂY.</p><h1>{tab === 'friends' ? 'Kết nối những người bạn.' : tab === 'chat' ? 'Một lời nhắn, thêm gần nhau.' : tab === 'garden' ? 'Lớn lên từng chút một.' : tab === 'practice' ? 'Tự luyện, vững kiến thức.' : tab === 'arena' ? 'Sẵn sàng bứt phá cùng Toán?' : tab === 'challenges' ? 'Cùng nhau thử sức nhé.' : 'Những điều nhỏ, thật đáng nhớ.'}</h1></div><button className="locket-friends-shortcut" aria-label={`Bạn bè${friendships.incoming.length ? `, ${friendships.incoming.length} lời mời mới` : ''}`} onClick={() => setParams({ tab: 'friends' })}><FiUsers /> Bạn bè{friendships.incoming.length > 0 && <span className="locket-invitation-count">{friendships.incoming.length}</span>}</button></div>
     {tab !== 'friends' && <FriendRequestNotice />}
     {policy?.curfewEnabled && <div className={`locket-curfew ${policy.inCurfew ? 'is-curfew' : ''}`}><span>☾</span><p>{policy.inCurfew ? 'Đến giờ nghỉ rồi. Hẹn bạn ngày mai nhé!' : 'Học vui, ngủ ngon.'}<small>Giờ nghỉ {policy.curfewStart}–{policy.curfewEnd} · Giờ Việt Nam{policy.inCurfew ? ' · Tạm dừng đăng bài, bình luận và chat' : ''}</small></p></div>}
-    <nav aria-label="Mạng xã hội học tập" className="locket-navigation">{tabs.map(([key, Icon, label], i) => <button key={key} aria-label={key === 'chat' && unreadMessages > 0 ? `${label}, ${unreadMessages} tin nhắn chưa đọc` : label} aria-current={tab === key ? 'page' : undefined} className={`locket-nav-item ${tab === key ? 'is-active' : ''} ${i > 1 ? 'after-camera' : ''}`} onClick={() => setParams(key === 'feed' ? {} : { tab: key })}><span className="locket-nav-icon"><Icon />{key === 'chat' && unreadMessages > 0 && <span className="locket-unread-badge" aria-hidden="true">{unreadMessages > 99 ? '99+' : unreadMessages}</span>}</span><span>{label}</span></button>)}<button className="locket-nav-camera" aria-label="Tạo khoảnh khắc" onClick={() => setParams({ compose: 'photo' })}><FiCamera /></button></nav>
+    <nav aria-label="Mạng xã hội học tập" className="locket-navigation">{tabs.map(([key, Icon, label]) => <button key={key} aria-label={key === 'chat' && unreadMessages > 0 ? `${label}, ${unreadMessages} tin nhắn chưa đọc` : label} aria-current={tab === key ? 'page' : undefined} className={`locket-nav-item ${tab === key ? 'is-active' : ''}`} onClick={() => setParams(key === 'feed' ? {} : { tab: key })}><span className="locket-nav-icon"><Icon />{key === 'chat' && unreadMessages > 0 && <span className="locket-unread-badge" aria-hidden="true">{unreadMessages > 99 ? '99+' : unreadMessages}</span>}</span><span>{label}</span></button>)}</nav>
     {tab === 'friends' ? <FriendsPage /> : tab === 'feed' ? <Feed params={params} setParams={setParams} /> : tab === 'chat' ? <Chat params={params} setParams={setParams} policy={policy} /> : tab === 'garden' ? <Garden /> : tab === 'challenges' ? <Challenges /> : tab === 'practice' ? <ArenaPractice /> : tab === 'arena' ? <MathArena /> : <p>Tab không hợp lệ.</p>}
   </main></div>;
 }

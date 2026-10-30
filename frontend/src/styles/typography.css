@@ -1,0 +1,41 @@
+/* Keep the root at 16px: rem-based spacing and authored lesson content stay stable. */
+:root {
+  --font-size-caption: .75rem;
+  --font-size-small: .8125rem;
+  --font-size-ui: .875rem;
+  --font-size-body: .9375rem;
+}
+
+@media screen {
+  body { font-size: 1rem; line-height: 1.6; }
+
+  /* Dense admin tables and forms use a smaller scale than student reading pages. */
+  .admin-layout { font-size: var(--font-size-ui); line-height: 1.5; }
+  .admin-layout .text-xs { font-size: var(--font-size-caption); line-height: 1.5; }
+  .admin-layout .text-sm { font-size: var(--font-size-small); line-height: 1.5; }
+  .admin-layout .text-base { font-size: var(--font-size-ui); line-height: 1.6; }
+  .admin-layout .text-lg { font-size: 1rem; line-height: 1.5; }
+  .admin-layout .text-xl { font-size: 1.125rem; line-height: 1.4; }
+  .admin-layout .text-2xl { font-size: 1.375rem; line-height: 1.35; }
+  .admin-layout .text-3xl { font-size: 1.625rem; line-height: 1.3; }
+  .admin-layout .text-4xl { font-size: 1.875rem; line-height: 1.25; }
+  .admin-layout :is(.input-field, .btn-primary, .btn-secondary, .btn-danger) { font-size: var(--font-size-ui); }
+
+  :is(.student-dashboard, .study-page, .community-locket) { font-size: var(--font-size-body); line-height: 1.6; }
+  :is(.student-dashboard, .study-page, .community-locket) .text-xs { font-size: var(--font-size-small); line-height: 1.5; }
+  :is(.student-dashboard, .study-page, .community-locket) .text-sm { font-size: var(--font-size-body); line-height: 1.6; }
+  :is(.student-dashboard, .study-page, .community-locket) :is(input, textarea, select) { font-size: 1rem; line-height: 1.5; }
+
+  .dashboard-shortcut > div { min-width: 0; }
+  .dashboard-shortcut :is(b, small) { overflow-wrap: anywhere; }
+  .student-school-brand { min-width: 0; }
+  .student-school-brand > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .student-topbar-actions { flex-shrink: 0; }
+  .locket-navigation { flex-wrap: wrap; }
+}
+
+@media screen and (max-width: 640px) {
+  /* Six navigation items still share one row on narrow phones. */
+  .locket-nav-item { font-size: clamp(.625rem, 2.75vw, .75rem); }
+  .locket-nav-item > span:last-child { width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}

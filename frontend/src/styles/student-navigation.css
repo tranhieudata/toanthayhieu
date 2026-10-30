@@ -14,28 +14,28 @@
 .student-school-brand { display: inline-flex; align-items: center; gap: 12px; font-size: 20px; font-weight: 800; letter-spacing: -.65px; white-space: nowrap; }
 .student-school-mark { display: grid; place-items: center; flex-shrink: 0; width: 44px; height: 44px; border: 1px solid #e9be43; border-radius: 14px; background: linear-gradient(145deg, #ffe780, #ffd24a 65%, #f6c43b); color: #30382e; box-shadow: inset 0 1px 0 #fff9, 0 2px 5px #926f1612; }
 .student-school-mark svg { display: block; width: 100%; height: 100%; fill: none; }
-.student-school-brand small { display: block; margin-top: 2px; font-size: 10px; font-weight: 400; color: var(--nav-muted); letter-spacing: .2px; }
+.student-school-brand small { display: block; margin-top: 2px; font-size: var(--font-size-caption); font-weight: 400; color: var(--nav-muted); letter-spacing: .2px; }
 .student-topbar-actions { display: flex; align-items: center; gap: 16px; }
 .student-primary-tabs { display: flex; align-items: center; gap: 9px; overflow-x: auto; scrollbar-width: thin; padding: 2px 0 13px; }
-.student-primary-tab { display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center; gap: 8px; padding: 10px 18px; border-radius: 30px; font-size: 12px; font-weight: 650; color: var(--nav-muted); white-space: nowrap; transition: background .15s, color .15s; }
+.student-primary-tab { display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center; gap: 8px; padding: 10px 18px; border-radius: 30px; font-size: var(--font-size-ui); font-weight: 650; color: var(--nav-muted); white-space: nowrap; transition: background .15s, color .15s; }
 .student-primary-tab svg { width: 16px; height: 16px; }
 .student-primary-tab:hover { background: var(--nav-surface); color: var(--nav-text); }
 .student-primary-tab.is-active { background: var(--nav-active-bg); color: var(--nav-active-text); }
-.student-invitation-link { display: flex; align-items: center; gap: 7px; padding: 8px 12px; font-size: 11px; font-weight: 650; border-radius: 20px; background: var(--nav-surface); color: var(--nav-accent); }
+.student-invitation-link { display: flex; align-items: center; gap: 7px; padding: 8px 12px; font-size: var(--font-size-small); font-weight: 650; border-radius: 20px; background: var(--nav-surface); color: var(--nav-accent); }
 .student-account-menu { position: relative; }
 .student-account-trigger { display: flex; align-items: center; gap: 10px; padding: 4px; border-radius: 30px; }
 .student-account-trigger > span:first-child { width: 34px; height: 34px; }
-.student-account-name { font-size: 12px; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.student-account-name { font-size: var(--font-size-ui); max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .student-account-chevron { width: 13px; height: 13px; color: var(--nav-muted); }
 .student-menu-backdrop { position: fixed; inset: 0; z-index: 40; cursor: default; }
 .student-account-dropdown { position: absolute; right: 0; top: calc(100% + 15px); width: min(270px, 90vw); border: 1px solid var(--nav-border); border-radius: 20px; background: var(--nav-bg); padding: 8px; box-shadow: 0 20px 60px #0003; z-index: 50; }
 .student-menu-identity { padding: 12px; border-bottom: 1px solid var(--nav-border); margin-bottom: 5px; }
-.student-menu-identity b { display: block; font-size: 13px; }
-.student-menu-identity small { display: block; color: var(--nav-muted); font-size: 11px; margin-top: 4px; overflow-wrap: anywhere; }
-.student-account-dropdown > a, .student-account-dropdown > button { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 11px 12px; font-size: 12px; border-radius: 12px; }
+.student-menu-identity b { display: block; font-size: var(--font-size-ui); }
+.student-menu-identity small { display: block; color: var(--nav-muted); font-size: var(--font-size-small); margin-top: 4px; overflow-wrap: anywhere; }
+.student-account-dropdown > a, .student-account-dropdown > button { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 11px 12px; font-size: var(--font-size-ui); border-radius: 12px; }
 .student-account-dropdown > a:hover, .student-account-dropdown > button:hover { background: var(--nav-surface); }
 .student-account-dropdown .student-logout { color: #ec7666; border-top: 1px solid var(--nav-border); margin-top: 5px; }
-.student-guest-actions { display: flex; gap: 14px; font-size: 12px; align-items: center; }
+.student-guest-actions { display: flex; gap: 14px; font-size: var(--font-size-ui); align-items: center; }
 .student-register { border-radius: 22px; background: #2563eb; color: white; padding: 9px 16px; }
 .student-topbar :focus-visible { outline: 2px solid var(--nav-accent); outline-offset: 3px; }
 .student-topbar[data-theme='dark'] .bg-white { background: #20201b; }
@@ -48,15 +48,15 @@
   .student-topbar-inner { padding: 0 16px; }
   .student-topbar-main { min-height: 67px; gap: 10px; }
   .student-school-brand { gap: 9px; font-size: 17px; }
-  .student-school-brand small { font-size: 8px; }
+  .student-school-brand small { font-size: var(--font-size-caption); }
   .student-school-mark { width: 36px; height: 36px; border-radius: 12px; }
   .student-topbar-actions { gap: 7px; }
   .student-account-name, .student-account-chevron, .student-invitation-label { display: none; }
   .student-invitation-link { padding: 6px 8px; gap: 4px; }
   .student-primary-tabs { gap: 5px; padding-bottom: 11px; margin: 0 -16px; padding-left: 16px; padding-right: 16px; scrollbar-width: none; }
   .student-primary-tabs::-webkit-scrollbar { display: none; }
-  .student-primary-tab { font-size: 11px; padding: 10px 12px; gap: 6px; }
+  .student-primary-tab { font-size: var(--font-size-small); padding: 10px 12px; gap: 6px; }
   .student-primary-tab svg { width: 14px; height: 14px; }
 }
-@media (max-width: 360px) { .student-school-brand { font-size: 15px; } .student-school-brand small { display: none; } .student-invitation-link > svg { display: none; } }
+@media (max-width: 360px) { .student-school-brand { font-size: var(--font-size-body); } .student-school-brand small { display: none; } .student-invitation-link > svg { display: none; } }
 @media (prefers-reduced-motion: reduce) { .student-primary-tab { transition: none; } }

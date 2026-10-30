@@ -433,14 +433,14 @@ export default function AdminContentManager() {
   };
 
   return (
-    <div className="w-full h-screen bg-gray-50 flex flex-col">
+    <div className="w-full flex-1 min-h-0 bg-gray-50 flex flex-col">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 p-6">
-        <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Quản lý nội dung</h1>
-            <p className="text-gray-600 mt-1">
-              {selectedCourse ? selectedCourse.title : 'Danh sách khóa học'}
+      <div className="bg-white border-b border-gray-200 px-4 py-3 shrink-0">
+        <div className="flex flex-wrap justify-between items-center gap-3">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
+            <h1 className="text-lg font-bold text-gray-900">Quản lý nội dung</h1>
+            <p className="text-gray-500 text-sm break-words min-w-0">
+              {selectedCourse ? `${selectedCourse.title} · ${lessons.length} bài học` : `${courses.length} khóa học`}
             </p>
           </div>
           {!selectedCourse && (
@@ -451,14 +451,16 @@ export default function AdminContentManager() {
               <FiPlus size={18} /> Thêm khóa học
             </button>
           )}
-          
+          {selectedCourse && <button type="button" onClick={() => {
+            setSelectedCourse(null); setSelectedLesson(null); setLessons([]); setExercises([]); setSearchLesson(''); setLessonPage(1);
+          }} className="btn-secondary flex items-center gap-2 text-sm py-2"><FiArrowLeft size={16} /> Khóa học</button>}
         </div>
       </div>
 
       {/* Content - List view */}
       {!selectedCourse && (
-        <div className="flex-1 overflow-y-auto p-6">
-          <div className="max-w-7xl mx-auto">
+        <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4">
+          <div className="w-full">
             {courses.length === 0 ? (
               <div className="card p-12 text-center text-gray-500">
                 <FiBook size={48} className="mx-auto mb-4 text-gray-300" />
@@ -466,21 +468,21 @@ export default function AdminContentManager() {
                 <p className="text-sm mt-2">Hãy tạo khóa học đầu tiên của bạn</p>
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {paginatedCourses.map(course => (
                   <div
                     key={course._id}
-                    className="card p-6 hover:shadow-md transition-shadow cursor-pointer"
+                    className="card p-4 hover:shadow-md transition-shadow cursor-pointer"
                     onClick={() => {
                       setSelectedCourse(course);
                       setLessonPage(1);
                     }}
                   >
-                    <div className="flex justify-between items-start mb-4">
-                      <div className="flex-1">
-                        <h3 className="text-xl font-bold text-gray-900">{course.title}</h3>
-                        <p className="text-gray-600 text-sm mt-1">{course.description}</p>
-                        <div className="flex gap-4 mt-3 text-xs text-gray-500">
+                    <div className="flex flex-col sm:flex-row justify-between items-start gap-3">
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-base font-bold text-gray-900 break-words">{course.title}</h3>
+                        <p className="text-gray-600 text-sm mt-1 line-clamp-2">{course.description}</p>
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-gray-500">
                           {course.level && (
                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full font-medium ${course.level.bgColor} ${course.level.textColor}`}>{course.level.name}</span>
                           )}
@@ -488,7 +490,7 @@ export default function AdminContentManager() {
                           <span>{course.isPublished ? '✅ Đã công khai' : '🔒 Nháp'}</span>
                         </div>
                       </div>
-                      <div className="flex gap-2" onClick={e => e.stopPropagation()}>
+                      <div className="flex gap-1 shrink-0" onClick={e => e.stopPropagation()}>
                         <button
                           onClick={() => {
                             setSelectedCourse(course);
@@ -558,36 +560,16 @@ export default function AdminContentManager() {
 
       {/* Content - Course detail with lessons */}
       {selectedCourse && (
-        <div className="flex-1 overflow-hidden flex flex-col">
+        <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
           {/* Header when course selected */}
-          <div className="bg-white border-b border-gray-200 p-6">
-            <div className="max-w-6xl mx-auto">
-              <div className="flex justify-between items-center mb-4">
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900">Danh sách Bài Học</h2>
-                  <p className="text-gray-600 mt-1">{selectedCourse.title}</p>
-                </div>
-                <button
-                  onClick={() => {
-                    setSelectedCourse(null);
-                    setSelectedLesson(null);
-                    setLessons([]);
-                    setExercises([]);
-                    setSearchLesson('');
-                    setLessonPage(1);
-                  }}
-                  className="btn-secondary flex items-center gap-2"
-                >
-                  <FiArrowLeft size={18} /> Quay lại
-                </button>
-              </div>
-
+          <div className="bg-white border-b border-gray-200 px-3 py-3 sm:px-4 shrink-0">
+            <div className="w-full">
               {/* Search and actions */}
-              <div className="flex flex-wrap gap-3">
+              <div className="flex flex-wrap gap-2">
                 <input
                   type="text"
                   placeholder="Tìm kiếm bài học..."
-                  className="input-field flex-1"
+                  className="input-field flex-1 min-w-[180px]"
                   value={searchLesson}
                   onChange={e => {
                     setSearchLesson(e.target.value);
@@ -605,7 +587,7 @@ export default function AdminContentManager() {
                   {curriculumGrades.map(grade => <option key={grade} value={grade}>Lớp {grade}</option>)}
                 </select>
                 <select
-                  className="input-field w-64"
+                  className="input-field w-full sm:w-56"
                   value={autoLessonTopic}
                   onChange={e => setAutoLessonTopic(e.target.value)}
                 >
@@ -638,8 +620,8 @@ export default function AdminContentManager() {
           </div>
 
           {/* Lessons list */}
-          <div className="flex-1 overflow-y-auto p-6">
-            <div className="max-w-6xl mx-auto">
+          <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4">
+            <div className="w-full">
               {visibleLessons.length === 0 ? (
                 <div className="card p-12 text-center text-gray-500">
                   <FiFileText size={48} className="mx-auto mb-4 text-gray-300" />
