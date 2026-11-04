@@ -12,14 +12,18 @@ const { telegramApi, localTime, weekStart, addDateDays, websiteLink } = require(
 const { send, actionButton, linkButton, eventButtons, enqueue } = require('./telegramMessages');
 const { eventsForDate, syncEventTasks, pendingSubmissions, tuitionSummary, idOf } = require('./telegramData');
 const { dailyText, weeklyText } = require('./telegramScheduler');
+const { summaryDate, showTeachingSummaries, handleSummaryAction, handleSummaryText } = require('./telegramTeachingSummary');
+const { processGroupUpdate } = require('./telegramGroups');
+const { replyChatId, conversationChatId, updateContext, contextRouting } = require('./telegramContext');
 
-const HELP = '📚 Trợ lý Toán Thầy Hiếu\n/homnay — Lịch và việc hôm nay\n/tuan — Kế hoạch tuần này\n/chuacham — Bài làm cần chấm\n/vieccanlam — Công việc chưa xong\n/hocphi — Khoản học phí chưa thanh toán\n/nopbai — Gửi ảnh bài làm lên web\n/xong — Chọn nơi lưu ảnh đã gửi\n/huy — Hủy thao tác nhập\n\nTrả lời tin nhắc buổi dạy để lưu nhận xét. Chọn “Chấm bằng AI” rồi xác nhận để chấm; kết quả chỉ gửi riêng cho thầy.';
+const HELP = '📚 Trợ lý Toán Thầy Hiếu\n/homnay — Lịch và việc hôm nay\n/tomtat — Chọn buổi và tạo tóm tắt\n/luubuoi — Nhập tóm tắt và lưu buổi dạy\n/tuan — Kế hoạch tuần này\n/chuacham — Bài làm cần chấm\n/vieccanlam — Công việc chưa xong\n/hocphi — Khoản học phí chưa thanh toán\n/nopbai — Gửi ảnh bài làm lên web\n/xong — Chọn nơi lưu ảnh đã gửi\n/huy — Hủy thao tác nhập\n\n/tomtat và /luubuoi nhận ngày DD/MM/YYYY, ví dụ /tomtat 04/11/2026. Tóm tắt là bản nháp; thầy xem/sửa rồi bấm Lưu buổi dạy.\nTrả lời tin nhắc buổi dạy để lưu nhận xét. Chấm AI cần xác nhận; kết quả gửi ngay tại chat hoặc nhóm nơi thầy yêu cầu.';
 
 function isAuthorized(config, update) {
   const message = update.callback_query?.message || update.message;
   const from = update.callback_query?.from || update.message?.from;
-  return message?.chat?.type === 'private' && String(message.chat.id) === String(config.chatId)
-    && String(from?.id) === String(config.telegramUserId);
+  const privateChat = message?.chat?.type === 'private' && String(message.chat.id) === String(config.chatId);
+  const linkedGroup = ['group', 'supergroup'].includes(message?.chat?.type) && Boolean(config.groupChatId) && String(message.chat.id) === String(config.groupChatId);
+  return (privateChat || linkedGroup) && String(from?.id) === String(config.telegramUserId);
 }
 
 async function invokeController(controller, req) {
@@ -92,7 +96,7 @@ async function executeAiJob(config, payload) {
 }
 
 async function startConversation(config, type, payload = {}, files = []) {
-  return TelegramConversation.findOneAndUpdate({ chatId: config.chatId }, { $set: { type, step: type === 'upload' ? 'class' : 'note', payload, files, expiresAt: new Date(Date.now() + 30 * 60000) } }, { upsert: true, new: true });
+  return TelegramConversation.findOneAndUpdate({ chatId: conversationChatId(config) }, { $set: { type, step: type === 'upload' ? 'class' : 'note', payload, files, expiresAt: new Date(Date.now() + 30 * 60000) } }, { upsert: true, new: true });
 }
 
 async function uploadMenu(config, state, page = 0) {
@@ -123,13 +127,14 @@ async function uploadMenu(config, state, page = 0) {
 
 async function handleAction(config, action, admin) {
   const payload = action.payload || {};
+  if (action.type.startsWith('summary')) return handleSummaryAction(config, action, admin, invokeController);
   if (action.type === 'pendingPage') return showPending(config, payload.offset);
   if (action.type === 'prepared') {
     await TelegramTask.updateOne({ key: `prepared:${payload.event.key}` }, { $set: { doneAt: new Date(), preparedAt: new Date() }, $setOnInsert: { slotKey: payload.event.key, text: 'Chuẩn bị buổi dạy', className: payload.event.className, date: payload.event.date } }, { upsert: true });
     return send(config, `✅ Đã chuẩn bị: ${payload.event.className} · ${payload.event.startTime}`);
   }
   if (action.type === 'snooze') {
-    await enqueue(`snooze:${action._id}`, { type: payload.type, event: payload.event, text: `⏰ Nhắc lại\n${payload.event.className} · ${payload.event.startTime}\n${payload.event.topic}\n${payload.event.note || ''}` }, new Date(Date.now() + 15 * 60000));
+    await enqueue(`snooze:${action._id}`, { type: payload.type, event: payload.event, text: `⏰ Nhắc lại\n${payload.event.className} · ${payload.event.startTime}\n${payload.event.topic}\n${payload.event.note || ''}` }, new Date(Date.now() + 15 * 60000), 'message', contextRouting(config));
     return send(config, 'Đã hẹn nhắc lại sau 15 phút.');
   }
   if (action.type === 'sessionStatus') {
@@ -152,8 +157,8 @@ async function handleAction(config, action, admin) {
     const item = await submissionById(payload.kind, payload.submissionId);
     if (action.type === 'report') return showReport(config, payload.kind, item);
     if (item.status === 'graded') return send(config, 'Bài đã được chấm. Mở web nếu cần chấm lại.', await submissionButtons(config, payload.kind, item));
-    if (action.type === 'askAi') return send(config, `Xác nhận chấm bằng AI cho ${item.student.name}, bài “${(payload.kind === 'exam' ? item.exam : item.homework).title}”? Kết quả sẽ lưu vào web và gửi riêng cho thầy.`, [[await actionButton(config, 'Xác nhận chấm AI', 'confirmAi', payload, 10)]]);
-    await enqueue(`ai:${action._id}`, payload, new Date(), 'ai');
+    if (action.type === 'askAi') return send(config, `Xác nhận chấm bằng AI cho ${item.student.name}, bài “${(payload.kind === 'exam' ? item.exam : item.homework).title}”? Kết quả sẽ lưu vào web và gửi tại cuộc trò chuyện này.`, [[await actionButton(config, 'Xác nhận chấm AI', 'confirmAi', payload, 10)]]);
+    await enqueue(`ai:${action._id}`, payload, new Date(), 'ai', contextRouting(config));
     return send(config, 'Đã nhận yêu cầu chấm AI. Bot sẽ gửi phiếu khi chấm xong.');
   }
   if (action.type.startsWith('upload')) return handleUploadAction(config, action, admin);
@@ -161,7 +166,7 @@ async function handleAction(config, action, admin) {
 
 async function handleUploadAction(config, action, admin) {
   const payload = action.payload;
-  const state = await TelegramConversation.findOne({ _id: payload.conversationId, chatId: config.chatId, type: 'upload', expiresAt: { $gt: new Date() } });
+  const state = await TelegramConversation.findOne({ _id: payload.conversationId, chatId: conversationChatId(config), type: 'upload', expiresAt: { $gt: new Date() } });
   if (!state) throw new Error('Phiên gửi ảnh đã hết hạn. Gửi ảnh hoặc gõ /nopbai để bắt đầu lại.');
   if (action.type === 'uploadPage') return uploadMenu(config, state, payload.page);
   if (action.type === 'uploadSave') {
@@ -192,10 +197,16 @@ async function handleUploadAction(config, action, admin) {
 
 async function handleMessage(config, message, admin) {
   const text = String(message.text || '').trim();
+  const addressedTo = text.match(/^\/\w+@(\w+)/)?.[1];
+  if (addressedTo && addressedTo.toLowerCase() !== config.botUsername?.toLowerCase()) return;
   const command = text.split(/[\s@]/)[0].toLowerCase();
-  if (command === '/huy') { await TelegramConversation.deleteOne({ chatId: config.chatId }); return send(config, 'Đã hủy thao tác nhập.'); }
+  if (command === '/huy') { await TelegramConversation.deleteOne({ chatId: conversationChatId(config) }); return send(config, 'Đã hủy thao tác nhập.'); }
   const photo = message.photo?.at(-1)?.file_id || (message.document?.mime_type?.startsWith('image/') ? message.document.file_id : null);
-  let state = await TelegramConversation.findOne({ chatId: config.chatId, expiresAt: { $gt: new Date() } });
+  let state = await TelegramConversation.findOne({ chatId: conversationChatId(config), expiresAt: { $gt: new Date() } });
+  if (command === '/tomtat' || command === '/luubuoi') {
+    return showTeachingSummaries(config, summaryDate(text.split(/\s+/)[1]), command === '/luubuoi');
+  }
+  if (state?.type === 'summary' && text && !text.startsWith('/')) return handleSummaryText(config, state, text);
   if (photo || command === '/nopbai') {
     if (!state || state.type !== 'upload' || command === '/nopbai') state = await startConversation(config, 'upload');
     if (photo) {
@@ -223,19 +234,21 @@ async function handleMessage(config, message, admin) {
     let sessionId = state?.type === 'note' ? state.payload?.sessionId : null;
     if (!sessionId && message.reply_to_message?.message_id) {
       const { TelegramDelivery } = require('../models/Telegram');
-      const delivery = await TelegramDelivery.findOne({ messageId: message.reply_to_message.message_id, chatId: config.chatId, botUsername: config.botUsername, state: 'sent' });
+      const delivery = await TelegramDelivery.findOne({ messageId: message.reply_to_message.message_id, chatId: replyChatId(config), targetThreadId: config.replyThreadId || null, botUsername: config.botUsername, state: 'sent' });
       sessionId = delivery?.payload?.event?.sessionId;
     }
     if (sessionId) {
       await invokeController(require('../controllers/teachingSessionController').updateTeachingSession, { params: { id: sessionId }, body: { teacherNote: text.slice(0, 10000) }, user: admin });
-      await TelegramConversation.deleteOne({ chatId: config.chatId, type: 'note' });
+      await TelegramConversation.deleteOne({ chatId: conversationChatId(config), type: 'note' });
       return send(config, '✅ Đã lưu nhận xét vào đúng buổi dạy trên web.');
     }
   }
+  if (replyChatId(config) === String(config.groupChatId) && !text.startsWith('/')) return;
   return send(config, HELP);
 }
 
 async function processUpdate(config, update) {
+  if (await processGroupUpdate(config, update)) return;
   const message = update.message;
   const pairingCode = message?.text?.match(/^\/start(?:@\w+)?\s+([a-f0-9]{36})$/)?.[1];
   if (pairingCode && message.chat.type === 'private' && String(message.chat.id) === String(message.from.id)) {
@@ -245,6 +258,7 @@ async function processUpdate(config, update) {
     return;
   }
   if (!isAuthorized(config, update)) return;
+  config = updateContext(config, update);
   const admin = await User.findById(config.admin).select('role isActive');
   if (admin?.role !== 'admin' || admin.isActive === false) return;
   if (update.callback_query) {
@@ -252,10 +266,11 @@ async function processUpdate(config, update) {
     if (!config.enabled) return send(config, 'Bot đang tắt. Bật lại trong Cài đặt → Telegram.');
     const id = update.callback_query.data?.match(/^a:([a-f0-9]{24})$/)?.[1];
     if (!id) return;
-    const action = await TelegramAction.findOneAndUpdate({ _id: id, chatId: config.chatId, consumedAt: null, expiresAt: { $gt: new Date() } }, { $set: { consumedAt: new Date() } }, { new: true });
+    const groupContext = replyChatId(config) === String(config.groupChatId);
+    const action = await TelegramAction.findOneAndUpdate({ _id: id, chatId: replyChatId(config), threadId: config.replyThreadId || null, ...(groupContext ? { userId: String(config.telegramUserId), groupConnectionId: config.groupConnectionId || config.groupChatId } : { $or: [{ userId: null }, { userId: String(config.telegramUserId) }] }), consumedAt: null, expiresAt: { $gt: new Date() } }, { $set: { consumedAt: new Date() } }, { new: true });
     if (!action) return send(config, 'Nút này đã dùng hoặc hết hạn. Gõ /homnay, /chuacham hoặc /vieccanlam để lấy thao tác mới.');
     await handleAction(config, action, admin);
-    await telegramApi(config, 'editMessageReplyMarkup', { chat_id: config.chatId, message_id: update.callback_query.message.message_id, reply_markup: { inline_keyboard: [] } }).catch(() => {});
+    await telegramApi(config, 'editMessageReplyMarkup', { chat_id: replyChatId(config), message_id: update.callback_query.message.message_id, reply_markup: { inline_keyboard: [] } }).catch(() => {});
   } else if (message) {
     if (!config.enabled) return send(config, 'Bot đang tắt. Bật lại trong Cài đặt → Telegram.');
     await handleMessage(config, message, admin);

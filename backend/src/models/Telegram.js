@@ -8,6 +8,23 @@ const configSchema = new Schema({
   botUsername: String,
   chatId: String,
   telegramUserId: String,
+  botId: String,
+  privateNotificationsEnabled: { type: Boolean, default: true },
+  groupEnabled: { type: Boolean, default: false },
+  groupChatId: String,
+  groupTitle: String,
+  groupThreadId: Number,
+  groupConnectionId: String,
+  groupPairingHash: { type: String, select: false },
+  groupPairingExpiresAt: Date,
+  groupConnectedAt: Date,
+  groupLastError: { type: String, default: '' },
+  groupNotifications: {
+    morning: { type: Boolean, default: true }, preparation: { type: Boolean, default: true },
+    journal: { type: Boolean, default: true }, weekly: { type: Boolean, default: true },
+    grading: { type: Boolean, default: false }, evening: { type: Boolean, default: true },
+    tuition: { type: Boolean, default: false },
+  },
   admin: { type: Schema.Types.ObjectId, ref: 'User' },
   websiteUrl: { type: String, default: '' },
   morningTime: { type: String, default: '07:00' },
@@ -46,6 +63,12 @@ const deliverySchema = new Schema({
   messageId: Number,
   chatId: String,
   botUsername: String,
+  target: { type: String, enum: ['private', 'group'], default: 'private' },
+  targetChatId: String,
+  targetThreadId: Number,
+  interactive: { type: Boolean, default: false },
+  requestedBy: String,
+  groupConnectionId: String,
   lastError: String,
   sentAt: Date,
 }, { timestamps: true });
@@ -53,6 +76,7 @@ deliverySchema.index({ chatId: 1, botUsername: 1, messageId: 1 });
 
 const actionSchema = new Schema({
   type: String, payload: Schema.Types.Mixed, chatId: String,
+  userId: String, threadId: Number, groupConnectionId: String,
   consumedAt: Date, expiresAt: { type: Date, required: true, expires: 0 },
 }, { timestamps: true });
 

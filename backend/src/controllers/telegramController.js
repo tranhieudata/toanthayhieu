@@ -1,8 +1,9 @@
 const crypto = require('crypto');
 const { TelegramConfig, TelegramDelivery, TelegramTask, TelegramAction, TelegramConversation } = require('../models/Telegram');
-const { encryptToken, telegramApi } = require('../services/telegramApi');
+const { encryptToken, decryptToken, telegramApi } = require('../services/telegramApi');
+const { beginGroupPairing } = require('../services/telegramGroups');
 
-const fields = ['enabled', 'websiteUrl', 'morningTime', 'eveningTime', 'weeklyTime', 'quietStart', 'quietEnd', 'beforeMinutes', 'afterMinutes', 'tuitionDay'];
+const fields = ['enabled', 'privateNotificationsEnabled', 'groupEnabled', 'websiteUrl', 'morningTime', 'eveningTime', 'weeklyTime', 'quietStart', 'quietEnd', 'beforeMinutes', 'afterMinutes', 'tuitionDay'];
 const notificationNames = ['morning', 'preparation', 'journal', 'weekly', 'grading', 'evening', 'tuition'];
 
 function publicConfig(config) {
@@ -12,6 +13,10 @@ function publicConfig(config) {
     hasToken: Boolean(config.encryptedToken || config.botUsername), connected: Boolean(config.chatId && config.telegramUserId),
     connectedAt: config.connectedAt, lastPollAt: config.lastPollAt, lastError: config.lastError || '',
     pairingExpiresAt: config.pairingExpiresAt,
+    groupConnected: Boolean(config.groupChatId), groupTitle: config.groupTitle || '',
+    groupChatId: config.groupChatId || '', groupThreadId: config.groupThreadId || null,
+    groupConnectedAt: config.groupConnectedAt, groupPairingExpiresAt: config.groupPairingExpiresAt,
+    groupNotifications: config.groupNotifications, groupLastError: config.groupLastError || '',
   };
 }
 
@@ -30,7 +35,7 @@ function validateConfig(body) {
       if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.pathname !== '/' || url.search || url.hash) throw new Error('Địa chỉ web phải là tên miền gốc, ví dụ https://toanthayhieu.vn');
       update[field] = url.origin;
       continue;
-    } else if (field === 'enabled' && typeof value !== 'boolean') throw new Error('Trạng thái Telegram không hợp lệ');
+    } else if (['enabled', 'privateNotificationsEnabled', 'groupEnabled'].includes(field) && typeof value !== 'boolean') throw new Error('Trạng thái Telegram không hợp lệ');
     update[field] = value;
   }
   for (const name of notificationNames) {
@@ -38,12 +43,16 @@ function validateConfig(body) {
       if (typeof body.notifications[name] !== 'boolean') throw new Error('Cài đặt thông báo không hợp lệ');
       update[`notifications.${name}`] = body.notifications[name];
     }
+    if (body.groupNotifications && name in body.groupNotifications) {
+      if (typeof body.groupNotifications[name] !== 'boolean') throw new Error('Cài đặt thông báo nhóm không hợp lệ');
+      update[`groupNotifications.${name}`] = body.groupNotifications[name];
+    }
   }
   return update;
 }
 
 async function getConfig() {
-  return TelegramConfig.findOneAndUpdate({ key: 'default' }, { $setOnInsert: { websiteUrl: process.env.CLIENT_URL || 'http://localhost:5173' } }, { upsert: true, new: true }).select('+encryptedToken +pairingHash');
+  return TelegramConfig.findOneAndUpdate({ key: 'default' }, { $setOnInsert: { websiteUrl: process.env.CLIENT_URL || 'http://localhost:5173' } }, { upsert: true, new: true }).select('+encryptedToken +pairingHash +groupPairingHash');
 }
 
 const getSettings = async (req, res) => {
@@ -55,24 +64,31 @@ const saveSettings = async (req, res) => {
   try {
     const config = await getConfig();
     const update = validateConfig(req.body);
-    if (req.body.token?.trim()) {
-      const token = req.body.token.trim();
+    const token = typeof req.body.token === 'string' ? req.body.token.trim() : '';
+    let tokenChanged = Boolean(token);
+    if (token && config.encryptedToken) {
+      try { tokenChanged = token !== decryptToken(config.encryptedToken); } catch { /* Allow replacing a token after rotating the encryption key. */ }
+    }
+    if (tokenChanged) {
       if (!/^\d+:[A-Za-z0-9_-]{20,}$/.test(token)) throw new Error('Token Telegram không hợp lệ');
       const bot = await telegramApi({ token }, 'getMe');
       if (!bot.is_bot) throw new Error('Token phải thuộc Telegram Bot');
       update.encryptedToken = encryptToken(token);
       update.botUsername = bot.username;
+      update.botId = String(bot.id);
       update.chatId = null;
       update.telegramUserId = null;
       update.enabled = false;
       update.pairingHash = null;
       update.updateOffset = 0;
       update.lastError = '';
+      Object.assign(update, { groupEnabled: false, groupChatId: null, groupTitle: '', groupThreadId: null, groupConnectionId: null, groupPairingHash: null, groupPairingExpiresAt: null, groupLastError: '' });
     }
     if (update.enabled) {
       if (!config.encryptedToken || !config.chatId || !config.telegramUserId) throw new Error('Kết nối tài khoản Telegram trước khi bật thông báo');
       if (!config.enabled) update.enabledAt = new Date();
     }
+    if (update.groupEnabled && !config.groupChatId) throw new Error('Liên kết nhóm Telegram trước khi bật gửi vào nhóm');
     const saved = await TelegramConfig.findOneAndUpdate({ key: 'default' }, { $set: update }, { new: true, runValidators: true }).select('+encryptedToken');
     if (update.encryptedToken) {
       await TelegramDelivery.updateMany({ state: { $in: ['pending', 'sending'] } }, { $set: { state: 'canceled' } });
@@ -98,7 +114,7 @@ const pairAccount = async (req, res) => {
 
 const disconnect = async (req, res) => {
   try {
-    await TelegramConfig.updateOne({ key: 'default' }, { $set: { enabled: false, chatId: null, telegramUserId: null, pairingHash: null, pairingExpiresAt: null } });
+    await TelegramConfig.updateOne({ key: 'default' }, { $set: { enabled: false, chatId: null, telegramUserId: null, pairingHash: null, pairingExpiresAt: null, groupEnabled: false, groupChatId: null, groupTitle: '', groupThreadId: null, groupConnectionId: null, groupPairingHash: null, groupPairingExpiresAt: null } });
     await TelegramDelivery.updateMany({ state: { $in: ['pending', 'sending'] } }, { $set: { state: 'canceled' } });
     await TelegramAction.deleteMany({});
     await TelegramConversation.deleteMany({});
@@ -115,10 +131,38 @@ const testMessage = async (req, res) => {
   } catch (err) { res.status(400).json({ message: err.message }); }
 };
 
+const pairGroup = async (req, res) => {
+  try { res.json(await beginGroupPairing(await getConfig())); }
+  catch (err) { res.status(400).json({ message: err.message }); }
+};
+
+const disconnectGroup = async (req, res) => {
+  try {
+    const previous = await TelegramConfig.findOne({ key: 'default' });
+    await TelegramConfig.updateOne({ key: 'default' }, { $set: { groupEnabled: false, groupChatId: null, groupTitle: '', groupThreadId: null, groupConnectionId: null, groupPairingHash: null, groupPairingExpiresAt: null, groupLastError: '' } });
+    await TelegramDelivery.updateMany({ target: 'group', state: { $in: ['pending', 'sending'] } }, { $set: { state: 'canceled' } });
+    if (previous?.groupChatId) {
+      await TelegramAction.deleteMany({ chatId: previous.groupChatId });
+      await TelegramConversation.deleteMany({ chatId: { $regex: `^${previous.groupChatId}:` } });
+    }
+    res.json({ message: 'Đã ngắt kết nối nhóm' });
+  } catch { res.status(500).json({ message: 'Không ngắt được kết nối nhóm' }); }
+};
+
+const testGroup = async (req, res) => {
+  try {
+    const config = await getConfig();
+    if (!config.groupChatId) throw new Error('Chưa kết nối nhóm Telegram');
+    await telegramApi(config, 'sendMessage', { chat_id: config.groupChatId, ...(config.groupThreadId ? { message_thread_id: config.groupThreadId } : {}), text: '✅ Nhóm đã kết nối thông báo tự động từ Toán Thầy Hiếu. Nội dung và lịch gửi được cấu hình trên website.' });
+    await TelegramConfig.updateOne({ key: 'default' }, { $set: { groupLastError: '' } });
+    res.json({ message: 'Đã gửi tin nhắn thử vào nhóm' });
+  } catch (err) { res.status(400).json({ message: err.message }); }
+};
+
 const getActivity = async (req, res) => {
   try {
     const [deliveries, tasks] = await Promise.all([
-      TelegramDelivery.find().sort({ createdAt: -1 }).limit(30).select('kind state lastError sentAt createdAt attempts payload.text').lean(),
+      TelegramDelivery.find().sort({ createdAt: -1 }).limit(30).select('kind state target targetChatId lastError sentAt createdAt attempts payload.text').lean(),
       TelegramTask.find({ doneAt: null, archivedAt: null }).sort({ dueAt: 1 }).limit(50).lean(),
     ]);
     res.json({ deliveries, tasks });
@@ -133,4 +177,4 @@ const completeTask = async (req, res) => {
   } catch { res.status(400).json({ message: 'Không cập nhật được công việc' }); }
 };
 
-module.exports = { getSettings, saveSettings, pairAccount, disconnect, testMessage, getActivity, completeTask, publicConfig, validateConfig, getConfig };
+module.exports = { getSettings, saveSettings, pairAccount, disconnect, testMessage, pairGroup, disconnectGroup, testGroup, getActivity, completeTask, publicConfig, validateConfig, getConfig };

@@ -11,7 +11,7 @@
     "test:garden": "node --test test/garden-review.test.js",
     "test:arena": "node --test test/math-arena.test.js",
     "test:student-energy": "node --test test/student-energy.test.js",
-    "test:telegram": "node --test test/telegram.test.js test/telegram-integration.test.js"
+    "test:telegram": "node --test test/telegram.test.js test/telegram-integration.test.js test/teaching-summary-text.test.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

@@ -8,6 +8,7 @@ const crypto = require('crypto');
 const { sessionDayRange } = require('../services/teachingSessionDates');
 const WeeklyTeachingPlan = require('../models/WeeklyTeachingPlan');
 const { resolveWeeklyPlanLessons } = require('../services/weeklyPlanLessons');
+const { plainSummaryText, hasMathSyntax, plainTopic } = require('../services/teachingSummaryText');
 
 const GEMINI_MODELS = [
   'gemini-3.5-flash',
@@ -79,22 +80,22 @@ function lessonSummaryFallback(lessonText, lessonTitle) {
   const sentences = cleanText
     .split(/(?<=[.!?。])\s+|\n+/)
     .map((item) => item.trim())
-    .filter((item) => item.length >= 18 && !/^câu\s+\d+/i.test(item))
+    .filter((item) => item.length >= 18 && !/^câu\s+\d+/i.test(item) && !hasMathSyntax(item))
     .slice(0, 3);
 
   if (sentences.length) return sentences.join(' ');
-  return cleanText.slice(0, 280);
+  return `Ôn lại kiến thức trọng tâm và luyện tập các dạng bài thuộc chủ đề ${lessonTitle}.`;
 }
 
 function buildParentSummaryFallback({ lesson, cls, homeworkLinks }) {
   const links = (homeworkLinks || []).filter((item) => item?.url);
   const className = cls?.name || 'lớp';
-  const lessonTitle = lesson?.title || 'bài học hôm nay';
+  const lessonTitle = plainTopic(lesson?.title);
   const lessonLine = lessonSummaryFallback(lesson?.content, lessonTitle);
   const homeworkLines = links.length
     ? [
         'Bài tập để phụ huynh cho con làm/in:',
-        ...links.map((item, index) => `${index + 1}. ${item.title || 'Bài tập'}: ${item.url}`),
+        ...links.map((item, index) => `${index + 1}. ${plainTopic(item.title, 'Bài tập')}: ${item.url}`),
       ].join('\n')
     : 'Hiện chưa có link bài tập để gửi phụ huynh.';
 
@@ -465,7 +466,7 @@ const updateTeachingSession = async (req, res) => {
       });
     }
 
-    const session = await TeachingSession.findOneAndUpdate({ _id: req.params.id, ...(req.expectedStatus ? { status: req.expectedStatus } : {}) }, data, { new: true, runValidators: true })
+    const session = await TeachingSession.findOneAndUpdate({ _id: req.params.id, ...(req.expectedStatus ? { status: req.expectedStatus } : {}), ...(req.expectedUpdatedAt ? { updatedAt: new Date(req.expectedUpdatedAt) } : {}) }, data, { new: true, runValidators: true })
       .populate('class', 'name')
       .populate('plannedLesson', 'title order course')
       .populate('actualLesson', 'title order course')
@@ -523,6 +524,8 @@ ${links || 'Chưa có link bài tập'}
 Yêu cầu:
 - Viết bằng tiếng Việt, thân thiện, rõ ràng cho phụ huynh.
 - Tóm tắt 2-4 dòng ý chính hôm nay học gì, cần nhớ gì.
+- Chỉ dùng văn bản thường. Không có công thức toán, biểu thức, phép tính, ký hiệu toán học, LaTeX, dấu đô-la hoặc mã HTML/Markdown.
+- Diễn đạt kiến thức hoàn toàn bằng lời dễ hiểu cho phụ huynh, ví dụ "ôn định lý Vi-et và vận dụng để giải bài tập"; không chép công thức, không đưa ví dụ bằng phép tính.
 - Nếu có link bài tập, chèn nguyên văn link vào cuối với nhãn "Thầy đã in đầy đủ bài cho các con. Nội dung BTVN :".
 - Không viết dài, không dùng markdown bảng, không bịa nội dung ngoài dữ liệu đã cho.
 - Không nhắc đến AI/Gemini.`;
@@ -531,13 +534,18 @@ Yêu cầu:
     let source = 'gemini';
     try {
       summary = await generateGeminiContent(prompt);
+      summary = plainSummaryText(summary);
+      if (!summary || hasMathSyntax(summary)) {
+        summary = buildParentSummaryFallback({ lesson, cls, homeworkLinks });
+        source = 'fallback';
+      }
     } catch (error) {
       console.warn(`[Teaching summary Gemini] fallback used: ${error.message}`);
       summary = buildParentSummaryFallback({ lesson, cls, homeworkLinks });
       source = 'fallback';
     }
 
-    res.json({ summary, source });
+    res.json({ summary: plainSummaryText(summary), source });
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
