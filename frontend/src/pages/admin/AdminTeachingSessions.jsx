@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import api, { getUploadUrl } from '../../api/axios';
 import toast from 'react-hot-toast';
 import {
@@ -82,15 +83,9 @@ function sortSessionsByTeachingDate(items = []) {
   });
 }
 
-function upsertSessionByLesson(items = [], nextSession) {
+function upsertSession(items = [], nextSession) {
   if (!nextSession?._id) return sortSessionsByTeachingDate(items);
-  const nextClassId = nextSession.class?._id || nextSession.class;
-  const nextLessonId = nextSession.actualLesson?._id || nextSession.actualLesson || nextSession.plannedLesson?._id || nextSession.plannedLesson;
-  const filtered = items.filter((session) => {
-    const classId = session.class?._id || session.class;
-    const lessonId = session.actualLesson?._id || session.actualLesson || session.plannedLesson?._id || session.plannedLesson;
-    return String(classId) !== String(nextClassId) || String(lessonId) !== String(nextLessonId);
-  });
+  const filtered = items.filter(session => String(session._id) !== String(nextSession._id));
   return sortSessionsByTeachingDate([nextSession, ...filtered]);
 }
 
@@ -162,11 +157,18 @@ function examMaxScore(exam) {
 }
 
 export default function AdminTeachingSessions() {
+  const [searchParams] = useSearchParams();
+  const initialClassId = searchParams.get('classId') || '';
+  const initialDate = searchParams.get('date') || '';
+  const [sessionStartTime, setSessionStartTime] = useState(searchParams.get('startTime') || '');
+  const routeKey = searchParams.toString();
+  const fromSchedule = searchParams.get('fromSchedule') === '1';
+  const [loadedClassId, setLoadedClassId] = useState('');
   const [classes, setClasses] = useState([]);
-  const [selectedClassId, setSelectedClassId] = useState('');
+  const [selectedClassId, setSelectedClassId] = useState(initialClassId);
   const [classLessons, setClassLessons] = useState([]);
-  const [selectedLessonId, setSelectedLessonId] = useState('');
-  const [sessionDate, setSessionDate] = useState(todayInputValue());
+  const [selectedLessonId, setSelectedLessonId] = useState(searchParams.get('lessonId') || '');
+  const [sessionDate, setSessionDate] = useState(/^\d{4}-\d{2}-\d{2}$/.test(initialDate) && Number.isFinite(new Date(initialDate).getTime()) ? initialDate : todayInputValue());
   const [planner, setPlanner] = useState(null);
   const [sessions, setSessions] = useState([]);
   const [currentSession, setCurrentSession] = useState(null);
@@ -182,95 +184,108 @@ export default function AdminTeachingSessions() {
   const attachHomeworkFromExam = () => {};
 
   const selectedLesson = useMemo(() => {
-    return planner?.lesson || classLessons.find((lesson) => lesson._id === selectedLessonId) || null;
+    return classLessons.find((lesson) => lesson._id === selectedLessonId) || (planner?.lesson?._id === selectedLessonId ? planner.lesson : null);
   }, [planner?.lesson, classLessons, selectedLessonId]);
 
-  const recentLessonRows = useMemo(() => {
-    const latestSessionByLesson = new Map();
-    sortSessionsByTeachingDate(sessions).forEach((session) => {
-      const lessonId = getSessionLessonId(session);
-      if (lessonId && !latestSessionByLesson.has(String(lessonId))) {
-        latestSessionByLesson.set(String(lessonId), session);
-      }
+  const journalDays = useMemo(() => {
+    const groups = new Map();
+    sortSessionsByTeachingDate(sessions).forEach(session => {
+      const date = toDateInputValue(session.date);
+      if (!groups.has(date)) groups.set(date, []);
+      groups.get(date).push(session);
     });
-
-    return [...classLessons]
-      .sort((a, b) => {
-        const orderA = Number(a.order) || 0;
-        const orderB = Number(b.order) || 0;
-        if (orderA !== orderB) return orderA - orderB;
-        return String(a.title || '').localeCompare(String(b.title || ''), 'vi');
-      })
-      .map((lesson) => ({
-        lesson,
-        session: latestSessionByLesson.get(String(lesson._id)) || null,
-      }));
-  }, [classLessons, sessions]);
+    return [...groups].map(([date, items]) => ({ date, items }));
+  }, [sessions]);
 
   useEffect(() => {
-    api.get('/classes')
-      .then((res) => {
-        const items = res.data || [];
-        setClasses(items);
-        const todayClass = items.find(classHasScheduleToday);
-        if (todayClass?._id || items[0]?._id) setSelectedClassId(todayClass?._id || items[0]._id);
-      })
-      .catch(() => toast.error('Không tải được danh sách lớp'));
-  }, []);
+    ++plannerRequestRef.current;
+    setLoadedClassId('');
+    setSelectedClassId(initialClassId);
+    setSelectedLessonId(searchParams.get('lessonId') || '');
+    setSessionDate(initialDate || todayInputValue());
+    setSessionStartTime(searchParams.get('startTime') || '');
+  }, [routeKey]);
 
   useEffect(() => {
-    const loadLessonsForClass = async () => {
-      setClassLessons([]);
-      setSelectedLessonId('');
-      setPlanner(null);
-      setCurrentSession(null);
-      setSessions([]);
-      setForm({ status: 'planned', summary: '', teacherNote: '' });
-      if (!selectedClassId) return;
+    let active = true;
+    api.get('/classes').then(({ data }) => {
+      if (!active) return;
+      const items = data || [];
+      setClasses(items);
+      if (initialClassId) {
+        if (!items.some(item => item._id === initialClassId)) toast.error('Không tìm thấy lớp trong lịch đã chọn');
+      } else {
+        setSelectedClassId(current => current || items.find(classHasScheduleToday)?._id || items[0]?._id || '');
+      }
+    }).catch(() => { if (active) toast.error('Không tải được danh sách lớp'); });
+    return () => { active = false; };
+  }, [routeKey]);
 
+  useEffect(() => {
+    let active = true;
+    ++plannerRequestRef.current;
+    setLoadedClassId('');
+    setClassLessons([]);
+    setPlanner(null);
+    setCurrentSession(null);
+    setSessions([]);
+    setForm({ status: 'planned', summary: '', teacherNote: '' });
+    if (!selectedClassId) return undefined;
+    const load = async () => {
       try {
         const { data: detail } = await api.get(`/classes/${selectedClassId}`);
-        const courses = detail.courses || [];
-        const results = await Promise.all(
-          courses.map((course) => api.get('/lessons', { params: { course: course._id || course } }))
-        );
+        if (!active) return;
+        const [results, sessionResponse] = await Promise.all([
+          Promise.all((detail.courses || []).map(course => api.get('/lessons', { params: { course: course._id || course } }))),
+          api.get('/teaching-sessions', { params: { classId: selectedClassId } }),
+        ]);
+        if (!active) return;
         const byId = new Map();
-        results.flatMap((res) => res.data || []).forEach((lesson) => {
-          if (lesson?._id) byId.set(lesson._id, lesson);
-        });
-        setClassLessons(Array.from(byId.values()));
-        const { data: classSessions } = await api.get('/teaching-sessions', { params: { classId: selectedClassId } });
-        const sortedSessions = sortSessionsByTeachingDate(classSessions || []);
+        results.flatMap(res => res.data || []).forEach(lesson => { if (lesson?._id) byId.set(lesson._id, lesson); });
+        setClassLessons([...byId.values()]);
+        const sortedSessions = sortSessionsByTeachingDate(sessionResponse.data || []);
         setSessions(sortedSessions);
-        const latestSessionDate = sortedSessions[0]?.date;
-        const nextDate = latestSessionDate
-          ? nextScheduledDateForClass(detail, latestSessionDate)
-          : nextScheduledDateForClass(detail, new Date(), true);
-        if (nextDate) setSessionDate(toDateInputValue(nextDate));
-      } catch {
-        toast.error('Không tải được bài học của lớp');
+        if (!(initialDate && selectedClassId === initialClassId)) {
+          const upcomingPlan = [...sortedSessions].reverse().find(session => session.status === 'planned' && toDateInputValue(session.date) >= todayInputValue());
+          if (upcomingPlan) {
+            setSessionDate(toDateInputValue(upcomingPlan.date));
+            setSelectedLessonId(getSessionLessonId(upcomingPlan));
+            setSessionStartTime(upcomingPlan.startTime || '');
+          } else {
+            const nextDate = nextScheduledDateForClass(detail, sortedSessions[0]?.date || new Date(), !sortedSessions.length);
+            if (nextDate) setSessionDate(toDateInputValue(nextDate));
+          }
+        }
+        setLoadedClassId(selectedClassId);
+      } catch (error) {
+        if (active) toast.error(error.response?.data?.message || 'Không tải được bài học của lớp');
       }
     };
+    load();
+    return () => { active = false; ++plannerRequestRef.current; };
+  }, [selectedClassId, routeKey]);
 
-    loadLessonsForClass();
-  }, [selectedClassId]);
-
-  const loadSessions = async () => {
+  const loadSessions = async (expectedRequestId = plannerRequestRef.current) => {
     if (!selectedClassId) return;
     try {
       const { data } = await api.get('/teaching-sessions', { params: { classId: selectedClassId } });
-      setSessions(sortSessionsByTeachingDate(data || []));
+      if (expectedRequestId === plannerRequestRef.current) setSessions(sortSessionsByTeachingDate(data || []));
     } catch {
-      setSessions([]);
+      if (expectedRequestId === plannerRequestRef.current) setSessions([]);
     }
   };
 
   const loadPlanner = async () => {
-    if (!selectedClassId) return;
+    if (!selectedClassId || loadedClassId !== selectedClassId) return;
     const requestId = ++plannerRequestRef.current;
     setLoadingPlanner(true);
+    setPlanner(null);
+    setCurrentSession(null);
+    setForm({ status: 'planned', summary: '', teacherNote: '' });
     try {
       const params = { classId: selectedClassId, date: sessionDate };
+      if (fromSchedule && selectedClassId === initialClassId && sessionDate === initialDate) params.fromSchedule = '1';
+      if (sessionStartTime) params.startTime = sessionStartTime;
       if (selectedLessonId) params.lessonId = selectedLessonId;
       const { data } = await api.get('/teaching-sessions/planner', { params });
       const classHomeworks = (data.homeworks || []).filter((homework) => {
@@ -288,16 +303,15 @@ export default function AdminTeachingSessions() {
       }));
       if (requestId !== plannerRequestRef.current) return;
       setPlanner({ ...data, homeworks });
-      if (!selectedLessonId && data.suggestedLesson?._id) {
-        setSelectedLessonId(data.suggestedLesson._id);
-      }
+      const resolvedLessonId = data.lesson?._id || '';
+      if (resolvedLessonId !== selectedLessonId) setSelectedLessonId(resolvedLessonId);
       setCurrentSession(data.currentSession || null);
       setForm({
         status: data.currentSession?.status || 'planned',
         summary: data.currentSession?.summary || '',
         teacherNote: data.currentSession?.teacherNote || '',
       });
-      await loadSessions();
+      await loadSessions(requestId);
     } catch (err) {
       if (requestId !== plannerRequestRef.current) return;
       toast.error(err.response?.data?.message || 'Không tải được kế hoạch buổi dạy');
@@ -309,7 +323,8 @@ export default function AdminTeachingSessions() {
   useEffect(() => {
     loadPlanner();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedClassId, selectedLessonId, sessionDate]);
+    return () => { ++plannerRequestRef.current; };
+  }, [loadedClassId, selectedClassId, selectedLessonId, sessionDate, sessionStartTime, routeKey]);
 
   const generateSummaryWithGemini = async () => {
     const lessonId = selectedLessonId || planner?.lesson?._id || planner?.suggestedLesson?._id;
@@ -354,6 +369,7 @@ export default function AdminTeachingSessions() {
   };
 
   const saveSession = async () => {
+    if (loadingPlanner || loadedClassId !== selectedClassId) return;
     if (!selectedClassId) return toast.error('Chọn lớp trước');
     if (!selectedLessonId) return toast.error('Chọn bài học trước');
 
@@ -362,6 +378,8 @@ export default function AdminTeachingSessions() {
       const payload = {
         class: selectedClassId,
         date: sessionDate,
+        startTime: currentSession?.startTime || sessionStartTime,
+        endTime: currentSession?.endTime || '',
         plannedLesson: selectedLessonId,
         actualLesson: selectedLessonId,
         status: form.status,
@@ -374,7 +392,7 @@ export default function AdminTeachingSessions() {
         ? await api.put(`/teaching-sessions/${currentSession._id}`, payload)
         : await api.post('/teaching-sessions', payload);
       setCurrentSession(data || null);
-      setSessions((prev) => upsertSessionByLesson(prev, data));
+      setSessions((prev) => upsertSession(prev, data));
       toast.success('Đã lưu buổi dạy');
       await loadSessions();
     } catch (err) {
@@ -403,13 +421,13 @@ export default function AdminTeachingSessions() {
       <div className="grid gap-4 rounded-lg border border-gray-200 bg-white p-4 shadow-sm lg:grid-cols-3">
         <div>
           <label className="mb-1 block text-xs font-medium text-gray-500">Lớp dạy</label>
-          <select className="input-field" value={selectedClassId} onChange={(event) => setSelectedClassId(event.target.value)}>
+          <select className="input-field" value={selectedClassId} onChange={(event) => { ++plannerRequestRef.current; setSelectedClassId(event.target.value); setSelectedLessonId(''); setSessionStartTime(''); setLoadedClassId(''); }}>
             {classes.map((cls) => <option key={cls._id} value={cls._id}>{cls.name}</option>)}
           </select>
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-gray-500">Ngày dạy</label>
-          <input type="date" className="input-field" value={sessionDate} onChange={(event) => setSessionDate(event.target.value)} />
+          <input type="date" className="input-field" value={sessionDate} onChange={(event) => { setSessionDate(event.target.value); setSessionStartTime(''); }} />
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-gray-500">Bài học hôm nay</label>
@@ -423,6 +441,7 @@ export default function AdminTeachingSessions() {
             }}
           >
             <option value="">Để hệ thống gợi ý</option>
+            {selectedLessonId && !classLessons.some(lesson => lesson._id === selectedLessonId) && <option value={selectedLessonId}>{planner?.lesson?.title || 'Đang tải bài học đã chọn...'}</option>}
             {classLessons.map((lesson) => (
               <option key={lesson._id} value={lesson._id}>
                 {lesson.order ? `${lesson.order}. ` : ''}{lesson.title}
@@ -431,6 +450,8 @@ export default function AdminTeachingSessions() {
           </select>
         </div>
       </div>
+
+      {(currentSession?.planningNote || planner?.calendarEntry?.note) && <div className="rounded-lg border border-blue-100 bg-blue-50 p-4 text-sm text-blue-900"><p className="font-semibold">Chuẩn bị theo kế hoạch tuần</p><p className="mt-1 whitespace-pre-wrap">{currentSession?.planningNote || planner.calendarEntry.note}</p></div>}
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-6">
@@ -486,6 +507,10 @@ export default function AdminTeachingSessions() {
                 placeholder="Ví dụ: Hôm nay con học hằng đẳng thức đáng nhớ, cần nắm 3 công thức chính và luyện thêm dạng rút gọn biểu thức."
               />
             </div>
+
+            <label className="mt-4 block text-sm text-gray-600">Nhận xét của giáo viên
+              <textarea rows={3} className="input-field mt-1" value={form.teacherNote} onChange={event => setForm(prev => ({ ...prev, teacherNote: event.target.value }))} placeholder="Nhận xét được lưu trên web hoặc gửi qua Telegram..." />
+            </label>
 
             <div className="mt-5 flex flex-col gap-2 sm:flex-row">
               <a href={selectedLessonId ? `/admin/lessons/${selectedLessonId}/edit` : '/admin/content'} className="btn-secondary flex items-center justify-center gap-2">
@@ -624,57 +649,37 @@ export default function AdminTeachingSessions() {
 
           <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
             <h3 className="mb-3 flex items-center gap-2 font-semibold text-gray-900">
-              <FiCalendar className="text-blue-600" /> Nhật ký gần đây
+              <FiCalendar className="text-blue-600" /> Nhật ký theo ngày
             </h3>
-            {recentLessonRows.length ? (
-              <div className="max-h-[560px] space-y-2 overflow-y-auto pr-1">
-                {recentLessonRows.map(({ lesson, session: savedSession }) => {
-                  const session = savedSession || { actualLesson: lesson, plannedLesson: lesson, status: 'unsaved', date: null };
-                  const isSaved = Boolean(savedSession?._id);
-                  const isSelected = String(lesson._id) === String(selectedLessonId);
-                  return (
-                  <button
-                    key={lesson._id}
-                    type="button"
-                    onClick={() => setSelectedLessonId(lesson._id)}
-                    className={`w-full rounded-lg border p-3 text-left text-sm transition hover:border-blue-200 hover:bg-blue-50/50 ${isSelected ? 'border-blue-200 bg-blue-50/70' : 'border-gray-100 bg-white'}`}
-                  >
-                    <div className="flex items-start gap-2">
-                      <span className={`mt-0.5 shrink-0 ${isSaved ? 'text-emerald-600' : 'text-gray-300'}`}>
-                        {isSaved ? <FiCheckSquare /> : <FiSquare />}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-start justify-between gap-2">
-                          <p className="font-medium text-gray-900">
-                            {lesson.order ? `${lesson.order}. ` : ''}{lesson.title}
-                          </p>
-                          {isSaved ? (
-                            <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] ${statusClass[session.status] || statusClass.planned}`}>
-                              {statusOptions.find((item) => item.value === session.status)?.label || session.status}
-                            </span>
-                          ) : (
-                            <span className="shrink-0 rounded-full border border-gray-100 bg-gray-50 px-2 py-0.5 text-[11px] text-gray-400">
-                              Chưa lưu
-                            </span>
-                          )}
-                        </div>
-                        {isSaved && <p className="mt-1 text-xs text-gray-500">{formatDate(session.date)}</p>}
-                        {session.summary && <p className="mt-2 line-clamp-2 text-gray-600">{session.summary}</p>}
+            {journalDays.length ? (
+              <div className="max-h-[480px] space-y-4 overflow-y-auto pr-1">
+                {journalDays.map(group => <div key={group.date}>
+                  <h4 className="sticky top-0 mb-2 rounded bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-600">{formatDate(group.date)}</h4>
+                  <div className="space-y-2">{group.items.map(session => {
+                    const lesson = session.actualLesson || session.plannedLesson;
+                    const lessonId = getSessionLessonId(session);
+                    const isSelected = currentSession?._id === session._id;
+                    return <button key={session._id} type="button" onClick={() => {
+                      setSessionDate(toDateInputValue(session.date));
+                      setSessionStartTime(session.startTime || '');
+                      setSelectedLessonId(lessonId || '');
+                    }} className={`w-full rounded-lg border p-3 text-left text-sm transition hover:border-blue-200 hover:bg-blue-50/50 ${isSelected ? 'border-blue-200 bg-blue-50/70' : 'border-gray-100 bg-white'}`}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div><p className="font-medium text-gray-900">{lesson?.title || session.summary || 'Buổi dạy'}</p>{session.startTime && <p className="mt-1 text-xs text-gray-500">{session.startTime}–{session.endTime}</p>}</div>
+                        <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] ${statusClass[session.status] || statusClass.planned}`}>{statusOptions.find(item => item.value === session.status)?.label || session.status}</span>
                       </div>
-                    </div>
-                  </button>
-                  );
-                })}
+                      {session.summary && <p className="mt-2 line-clamp-2 text-gray-600">{session.summary}</p>}
+                    </button>;
+                  })}</div>
+                </div>)}
               </div>
-            ) : (
-              <p className="text-sm text-gray-400">Chưa có nhật ký buổi dạy.</p>
-            )}
+            ) : <p className="text-sm text-gray-400">Chưa có nhật ký buổi dạy. Các buổi đã lưu sẽ hiện theo ngày mới nhất trước.</p>}
           </section>
         </aside>
       </div>
 
       <div className="flex justify-end border-t border-gray-200 pt-5">
-        <button type="button" onClick={saveSession} disabled={saving} className="btn-primary flex items-center justify-center gap-2">
+        <button type="button" onClick={saveSession} disabled={saving || loadingPlanner || loadedClassId !== selectedClassId} className="btn-primary flex items-center justify-center gap-2">
           <FiSave /> {saving ? 'Đang lưu...' : 'Lưu buổi dạy'}
         </button>
       </div>

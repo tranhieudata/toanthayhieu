@@ -17,6 +17,7 @@ const navItems = [
   { to: '/admin/classes', icon: <FiCalendar />, label: 'Lớp học' },
   { to: '/admin/enrollments', icon: <FiCheckSquare />, label: 'Đơn xét duyệt' },
   { to: '/admin/exams', icon: <FiClipboard />, label: 'Tạo Đề' },
+  { to: '/admin/exam-grading', icon: <FiCheckSquare />, label: 'Chấm đề kiểm tra' },
   { to: '/admin/homeworks', icon: <FiBookOpen />, label: 'Bài tập' },
   { to: '/admin/tuition', icon: <FiDollarSign />, label: 'Tính học phí' },
   { to: '/admin/revenue', icon: <FiTrendingUp />, label: 'Sổ doanh thu' },

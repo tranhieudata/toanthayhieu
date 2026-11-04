@@ -8,9 +8,66 @@ const SiteSettings = require('../models/SiteSettings');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const fs = require('fs/promises');
 const path = require('path');
+const crypto = require('crypto');
+const { teacherAnswerText, normalizeGradingReport, gradingPrompt } = require('../services/examGrading');
+
+// Sharing a paper does not create an assignment or require a class.
+const createExamPrintLink = async (req, res) => {
+  try {
+    const exam = await Exam.findById(req.params.id);
+    if (!exam) return res.status(404).json({ message: 'Không tìm thấy đề kiểm tra' });
+    if (!exam.printShareToken) {
+      await Exam.updateOne(
+        { _id: exam._id, $or: [{ printShareToken: { $exists: false } }, { printShareToken: null }, { printShareToken: '' }] },
+        { $set: { printShareToken: crypto.randomBytes(18).toString('hex') } }
+      );
+    }
+    const sharedExam = await Exam.findById(exam._id).select('printShareToken');
+    res.json({ parentPrintUrl: `/print/exam/${sharedExam.printShareToken}` });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+const getPublicExamPrint = async (req, res) => {
+  try {
+    if (!/^[a-f0-9]{36}$/.test(req.params.token)) return res.status(404).json({ message: 'Link đề không tồn tại' });
+    const exam = await Exam.findOne({ printShareToken: req.params.token });
+    if (!exam) return res.status(404).json({ message: 'Link đề không tồn tại' });
+    const paper = exam.examPackage;
+    // Explicitly select question fields so answers and teacher notes stay private.
+    const publicPaper = paper ? {
+      title: paper.title,
+      meta: paper.meta ? { schoolName: paper.meta.schoolName, schoolYear: paper.meta.schoolYear, examName: paper.meta.examName, grade: paper.meta.grade, duration: paper.meta.duration } : undefined,
+      questions: {
+        multipleChoice: (paper.questions?.multipleChoice || []).map(q => ({ number: q.number, question: q.question, options: q.options, points: q.points })),
+        essay: (paper.questions?.essay || []).map(q => ({ number: q.number, question: q.question, points: q.points })),
+      },
+    } : null;
+    res.json({ title: exam.title, description: exam.content, examPackage: publicPaper, pdfAttachments: exam.pdfAttachments, canViewAnswers: false });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+const getExamPrintAnswers = async (req, res) => {
+  try {
+    const exam = await Exam.findOne({ printShareToken: req.params.token });
+    if (!exam) return res.status(404).json({ message: 'Link đề không tồn tại' });
+    const paper = exam.examPackage;
+    const answerKey = [
+      ...(paper?.questions?.multipleChoice || []).map((q, i) => `Câu ${q.number || i + 1}: ${q.answer || ''}${q.explanation ? ` - ${q.explanation}` : ''}`),
+      ...(paper?.questions?.essay || []).map((q, i) => `Bài ${i + 1}: ${q.solution || ''}`),
+    ].join('\n');
+    res.json({ canViewAnswers: true, adminSolutionContent: exam.solutionContent, adminAnswerKey: answerKey });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
 
 const UPLOADS_DIR = path.resolve(__dirname, '../../uploads');
 const IMAGE_MIME_BY_EXT = {
+  '.pdf': 'application/pdf',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
   '.png': 'image/png',
@@ -396,7 +453,7 @@ const getExamById = async (req, res) => {
 const createExam = async (req, res) => {
   try {
     console.log('[createExam] classSchedules received:', JSON.stringify(req.body.classSchedules));
-    const allowed = ['title', 'content', 'solutionContent', 'course', 'lesson', 'level', 'totalQuestions', 'isTemplate', 'note', 'pdfAttachments', 'levels', 'classSchedules', 'examPackage'];
+    const allowed = ['title', 'content', 'solutionContent', 'course', 'lesson', 'level', 'totalQuestions', 'isTemplate', 'note', 'pdfAttachments', 'levels', 'classSchedules', 'examPackage', 'solutionImages'];
     const data = {};
     allowed.forEach(field => { if (field in req.body) data[field] = req.body[field]; });
     data.createdBy = req.user._id;
@@ -411,7 +468,7 @@ const createExam = async (req, res) => {
 const updateExam = async (req, res) => {
   try {
     console.log('[updateExam] classSchedules received:', JSON.stringify(req.body.classSchedules));
-    const allowed = ['title', 'content', 'solutionContent', 'course', 'lesson', 'level', 'totalQuestions', 'isTemplate', 'note', 'pdfAttachments', 'levels', 'classSchedules', 'examPackage'];
+    const allowed = ['title', 'content', 'solutionContent', 'course', 'lesson', 'level', 'totalQuestions', 'isTemplate', 'note', 'pdfAttachments', 'levels', 'classSchedules', 'examPackage', 'solutionImages'];
     const $set = {};
     allowed.forEach(field => {
       if (field in req.body) $set[field] = req.body[field];
@@ -462,11 +519,29 @@ const getExamResults = async (req, res) => {
 // POST /api/exams/:id/results  (chấm điểm / cập nhật kết quả)
 const saveExamResult = async (req, res) => {
   try {
-    const exam = await Exam.findById(req.params.id).populate('lesson', 'title');
+    const exam = await Exam.findById(req.params.id).populate('lesson', 'title').populate('classSchedules.class', 'students');
     if (!exam) return res.status(404).json({ message: 'Không tìm thấy đề kiểm tra' });
 
     const { studentId, scores, teacherNote } = req.body;
     if (!studentId) return res.status(400).json({ message: 'Thiếu studentId' });
+
+    // Manual grading records the teacher's total directly and never calls AI.
+    if (req.body.totalScore !== undefined) {
+      const maxScore = maxScoreForExam(exam) || 10;
+      const totalScore = Number(req.body.totalScore);
+      if (req.body.totalScore === null || typeof req.body.totalScore === 'boolean' || String(req.body.totalScore).trim() === '' || !Number.isFinite(totalScore) || totalScore < 0 || totalScore > maxScore) {
+        return res.status(400).json({ message: `Điểm phải nằm trong khoảng 0 đến ${maxScore}` });
+      }
+      const result = await ExamResult.findOneAndUpdate(
+        { exam: req.params.id, student: studentId },
+        { $set: { class: pickClassForStudent(exam, studentId), totalScore, maxScore,
+          scores: [], gradingReport: null, gradingMethod: 'manual', autoFeedback: '',
+          teacherNote: teacherNote || '', gradedBy: req.user._id, gradedAt: new Date(), status: 'graded' },
+          $setOnInsert: { exam: req.params.id, student: studentId } },
+        { upsert: true, new: true, runValidators: true }
+      ).populate('student', 'name email').populate('gradedBy', 'name');
+      return res.json(result);
+    }
 
     // Lấy thông tin học sinh từ User model
     const User = require('../models/User');
@@ -493,11 +568,7 @@ const saveExamResult = async (req, res) => {
       { exam: req.params.id, student: studentId },
       {
         $set: {
-          class: (() => {
-            // Tìm lớp học mà học sinh thuộc vào trong danh sách classSchedules
-            const s = (exam.classSchedules || []).find(s => s.class);
-            return s ? s.class : undefined;
-          })(),
+          class: pickClassForStudent(exam, studentId),
           scores: normalizedScores,
           totalScore,
           maxScore,
@@ -596,51 +667,39 @@ const aiGradeExamResult = async (req, res) => {
 
     const User = require('../models/User');
     const student = await User.findById(req.params.studentId).select('name email');
-    const maxScore = maxScoreForExam(exam);
-    const questionMaxScores = [];
-    for (let q = 1; q <= exam.totalQuestions; q++) {
-      questionMaxScores.push({ questionOrder: q, maxScore: +maxScoreForQuestion(exam, q).toFixed(2) });
-    }
-
+    const maxScore = maxScoreForExam(exam) || 10;
     const submissionParts = await buildImageParts(resultDoc.submissionImages);
-    if (submissionParts.length === 0) {
-      return res.status(400).json({ message: 'Không đọc được ảnh bài làm' });
+    if (!submissionParts.length) throw new Error('Không đọc được ảnh bài làm');
+    const embeddedQuestions = Array.from((exam.content || '').matchAll(/<img[^>]+src=["']([^"']+)["']/gi)).map(match => ({ url: match[1] }));
+    const examParts = await buildImageParts([...(exam.pdfAttachments || []), ...embeddedQuestions]);
+    const embeddedAnswers = Array.from((exam.solutionContent || '').matchAll(/<img[^>]+src=["']([^"']+)["']/gi)).map(match => ({ url: match[1] }));
+    const answerParts = await buildImageParts([...(exam.solutionImages || []), ...embeddedAnswers]);
+    let answerText = teacherAnswerText(exam);
+    const answerSource = answerText || answerParts.length ? 'teacher' : 'generated';
+    if (answerSource === 'generated') {
+      if (!examParts.length && !exam.content?.trim() && !exam.examPackage?.questions?.multipleChoice?.length && !exam.examPackage?.questions?.essay?.length) {
+        throw new Error('Cần bổ sung nội dung đề để AI lập đáp án');
+      }
+      answerText = await generateGeminiContent([
+        `Generate a complete Vietnamese math answer key and scoring rubric for this exam, total ${maxScore} points. Preserve question/subquestion labels. Solve independently without seeing student work. If the exam is unreadable or incomplete return JSON {"error":"explain in Vietnamese"}. Otherwise return JSON {"answerKey":"full answer and rubric in Vietnamese"}. Exam: ${exam.title}\n${exam.content || ''}\n${JSON.stringify(exam.examPackage?.questions || {})}`,
+        ...examParts,
+      ]);
+      const generated = JSON.parse(extractJSON(answerText));
+      if (generated.error || !generated.answerKey?.trim()) throw new Error(generated.error || 'AI chưa lập được đáp án');
+      answerText = generated.answerKey;
     }
-
-    const examText = [
-      examPackageToText(exam.examPackage) || exam.content || exam.title,
-      exam.solutionContent ? `Lời giải/hướng dẫn chấm:\n${exam.solutionContent}` : '',
-    ].filter(Boolean).join('\n\n');
-    const prompt = `Bạn là giáo viên Toán Việt Nam. Hãy chấm bài kiểm tra từ ảnh bài làm của học sinh.
-
-Tên đề: ${exam.title}
-Chủ đề/bài học: ${exam.lesson?.title || ''}
-Học sinh: ${student?.name || 'Học sinh'}
-Tổng điểm: ${maxScore}
-Số câu: ${exam.totalQuestions}
-
-Nội dung đề và đáp án/hướng dẫn chấm nếu có:
-${examText}
-
-Điểm tối đa từng câu:
-${questionMaxScores.map((q) => `- Câu ${q.questionOrder}: ${q.maxScore}`).join('\n')}
-
-Yêu cầu:
-- Chỉ chấm dựa trên ảnh bài làm đính kèm.
-- Nếu không thấy lời giải/câu trả lời của một câu, cho 0 điểm câu đó.
-- Điểm mỗi câu không vượt quá điểm tối đa.
-- Trả về JSON hợp lệ, không markdown, đúng format:
-{"scores":[{"questionOrder":1,"score":0,"note":"nhận xét ngắn"}],"teacherNote":"nhận xét chung ngắn bằng tiếng Việt"}`;
-
-    const responseText = await generateGeminiContent([prompt, ...submissionParts]);
+    const prompt = gradingPrompt({ exam, studentName: student?.name || '', answerText, maxScore });
+    const responseText = await generateGeminiContent([
+      prompt, 'EXAM DOCUMENTS:', ...examParts,
+      'TEACHER ANSWER DOCUMENTS:', ...answerParts,
+      'STUDENT SUBMISSION IMAGES TO GRADE:', ...submissionParts,
+    ]);
     const parsed = JSON.parse(extractJSON(responseText));
+    if (parsed.error) throw new Error(parsed.error);
+    const report = { ...normalizeGradingReport(parsed, maxScore), answerSource,
+      generatedAnswerKey: answerSource === 'generated' ? answerText : '' };
     const scores = [];
-    for (let q = 1; q <= exam.totalQuestions; q++) {
-      const raw = (parsed.scores || []).find((s) => Number(s.questionOrder) === q);
-      scores.push({ questionOrder: q, score: clampScore(raw?.score ?? 0, maxScoreForQuestion(exam, q)) });
-    }
-
-    const totalScore = scores.reduce((sum, s) => sum + (s.score || 0), 0);
+    const totalScore = report.totalScore;
     const saved = await ExamResult.findOneAndUpdate(
       { exam: req.params.id, student: req.params.studentId },
       {
@@ -649,8 +708,10 @@ Yêu cầu:
           scores,
           totalScore,
           maxScore,
-          autoFeedback: parsed.teacherNote || generateAutoFeedback(exam, scores),
-          teacherNote: parsed.teacherNote || '',
+          gradingMethod: 'ai',
+          gradingReport: report,
+          autoFeedback: report.feedback,
+          teacherNote: report.feedback,
           gradedBy: req.user._id,
           gradedAt: new Date(),
           status: 'graded',
@@ -735,7 +796,7 @@ const getStudentExams = async (req, res) => {
       .populate('lesson', 'title')
       .populate('classSchedules.class', 'name')
       .sort({ createdAt: -1 })
-      .select('-content'); // không gửi nội dung ở danh sách
+      .select('-content -solutionImages'); // không gửi nội dung ở danh sách
 
     const examIds = exams.map(e => e._id);
     const results = await ExamResult.find({ exam: { $in: examIds }, student: req.user._id })
@@ -769,6 +830,7 @@ const getStudentExams = async (req, res) => {
 const getStudentExamDetail = async (req, res) => {
   try {
     const exam = await Exam.findById(req.params.id)
+      .select('-solutionImages')
       .populate('lesson', 'title')
       .populate('classSchedules.class', 'name');
     if (!exam) return res.status(404).json({ message: 'Không tìm thấy đề kiểm tra' });
@@ -819,25 +881,32 @@ const generateSharedPractice = async (req, res) => {
 
     // Tính điểm trung bình mỗi mức độ
     const levelStats = exam.levels.map(level => {
-      const earnedList = results.map(r => {
+      const earnedList = results.flatMap(r => {
+        const reportLevel = r.gradingReport?.levels?.find(item => item.label === level.name);
+        if (reportLevel) return [reportLevel.score];
+        if (!r.scores?.length) return [];
         const ls = (r.scores || []).filter(
           s => s.questionOrder >= level.fromQuestion && s.questionOrder <= level.toQuestion
         );
-        return ls.reduce((sum, s) => sum + (s.score || 0), 0);
+        return [ls.reduce((sum, s) => sum + (s.score || 0), 0)];
       });
-      const avg = earnedList.reduce((a, b) => a + b, 0) / results.length;
+      if (!earnedList.length) return null;
+      const avg = earnedList.reduce((a, b) => a + b, 0) / earnedList.length;
       const pct = level.totalPoints > 0 ? avg / level.totalPoints : 1;
       return { name: level.name, avg: +avg.toFixed(2), max: level.totalPoints, pct: +pct.toFixed(3) };
-    });
+    }).filter(Boolean);
+
+    if (!levelStats.length) return res.status(400).json({ message: 'Phiếu chấm chưa có dữ liệu theo mức độ để tạo đề ôn tập. Không thể suy ra mức độ từ tổng điểm.' });
 
     // Tính điểm trung bình mỗi câu
     const questionStats = [];
     for (let q = 1; q <= exam.totalQuestions; q++) {
-      const qScores = results.map(r => {
+      const qScores = results.filter(r => r.scores?.length).map(r => {
         const s = (r.scores || []).find(sc => sc.questionOrder === q);
         return s ? s.score : 0;
       });
-      const avg = qScores.reduce((a, b) => a + b, 0) / results.length;
+      if (!qScores.length) continue;
+      const avg = qScores.reduce((a, b) => a + b, 0) / qScores.length;
       questionStats.push({ q, avg: +avg.toFixed(2) });
     }
 
@@ -884,6 +953,9 @@ Yêu cầu:
 };
 
 module.exports = {
+  createExamPrintLink,
+  getPublicExamPrint,
+  getExamPrintAnswers,
   getExams,
   getExamById,
   createExam,

@@ -1,0 +1,12 @@
+const router = require('express').Router();
+const { protect, adminOnly } = require('../middleware/auth');
+const controller = require('../controllers/telegramController');
+router.use(protect, adminOnly);
+router.get('/settings', controller.getSettings);
+router.put('/settings', controller.saveSettings);
+router.post('/pair', controller.pairAccount);
+router.post('/disconnect', controller.disconnect);
+router.post('/test', controller.testMessage);
+router.get('/activity', controller.getActivity);
+router.post('/tasks/:id/complete', controller.completeTask);
+module.exports = router;

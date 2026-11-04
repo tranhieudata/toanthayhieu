@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CommunityProvider } from './context/CommunityContext';
@@ -36,10 +36,17 @@ import AdminLessons from './pages/admin/AdminLessons';
 import AdminLessonEditor from './pages/admin/AdminLessonEditor';
 import AdminExams from './pages/admin/AdminExams';
 import AdminExamEditor from './pages/admin/AdminExamEditor';
+import AdminExamGrade from './pages/admin/AdminExamGrade';
+import AdminExamGrading from './pages/admin/AdminExamGrading';
 import AdminHomework from './pages/admin/AdminHomework';
 import AdminTeachingSessions from './pages/admin/AdminTeachingSessions';
 import StudentExamsPage from './pages/StudentExamsPage';
 import StudentExamDetailPage from './pages/StudentExamDetailPage';
+
+const LegacyExamGradeRedirect = () => {
+  const { id } = useParams();
+  return <Navigate to={`/admin/exam-grading/${id}`} replace />;
+};
 
 const PrivateRoute = ({ children }) => {
   const { user, loading } = useAuth();
@@ -75,6 +82,7 @@ function App() {
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/classes" element={<ClassesPage />} />
           <Route path="/print/homework/:token" element={<PublicHomeworkPrintPage />} />
+          <Route path="/print/exam/:token" element={<PublicHomeworkPrintPage source="exam" />} />
           <Route path="/courses/:id" element={<CourseDetailPage />} />
           <Route path="/oauth-success" element={<OAuthSuccess />} />
           <Route path="/dashboard" element={<PrivateRoute><DashboardPage /></PrivateRoute>} />
@@ -102,6 +110,9 @@ function App() {
             <Route path="exams" element={<AdminExams />} />
             <Route path="exams/new" element={<AdminExamEditor />} />
             <Route path="exams/:id/edit" element={<AdminExamEditor />} />
+            <Route path="exams/:id/grade" element={<LegacyExamGradeRedirect />} />
+            <Route path="exam-grading" element={<AdminExamGrading />} />
+            <Route path="exam-grading/:id" element={<AdminExamGrade />} />
             <Route path="homeworks" element={<AdminHomework />} />
             <Route path="tuition" element={<AdminTuition />} />
             <Route path="revenue" element={<AdminRevenue />} />

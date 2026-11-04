@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../api/axios';
 import Navbar from '../components/Navbar';
+import ExamGradingReport from '../components/ExamGradingReport';
 import { useTheme } from '../context/ThemeContext';
 import '../styles/study-pages.css';
 import toast from 'react-hot-toast';
@@ -126,6 +127,12 @@ function SharedPracticeSection({ exam, result }) {
   // Find which levels this student hasn't maxed
   const weakLevelNames = new Set();
   (exam.levels || []).forEach(level => {
+    const reportLevel = result.gradingReport?.levels?.find(item => item.label === level.name);
+    if (reportLevel) {
+      if (reportLevel.score < reportLevel.maxScore) weakLevelNames.add(level.name);
+      return;
+    }
+    if (!result.scores?.length) return;
     const levelScores = (result.scores || []).filter(
       s => s.questionOrder >= level.fromQuestion && s.questionOrder <= level.toQuestion
     );
@@ -301,7 +308,7 @@ export default function StudentExamDetailPage() {
   );
 
   const result = exam?.myResult;
-  const maxScore = exam?.levels?.reduce((s, l) => s + (l.totalPoints || 0), 0) || 0;
+  const maxScore = result?.maxScore || exam?.levels?.reduce((s, l) => s + (l.totalPoints || 0), 0) || 10;
   const pct = result && maxScore > 0 ? result.totalScore / maxScore : 0;
 
   const now = new Date();
@@ -357,6 +364,8 @@ export default function StudentExamDetailPage() {
               <FiAward className="text-yellow-500" /> Kết quả của bạn
             </h2>
 
+            {result.gradingReport && <ExamGradingReport result={result} exam={exam} studentName={user?.name || 'Học sinh'} />}
+
             {/* Điểm tổng */}
             <div className="flex items-center gap-4">
               <div className="text-center">
@@ -377,7 +386,7 @@ export default function StudentExamDetailPage() {
             </div>
 
             {/* Điểm từng mức */}
-            {exam.levels?.length > 0 && (
+            {exam.levels?.length > 0 && result.scores?.length > 0 && (
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 {exam.levels.map(level => {
                   const levelScores = (result.scores || []).filter(
@@ -403,7 +412,7 @@ export default function StudentExamDetailPage() {
             </div> */}
 
             {/* Nhận xét từ Gemini AI */}
-            {result.autoFeedback && (
+            {!result.gradingReport && result.autoFeedback && (
               <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-300 rounded-lg p-5 shadow-sm">
                 <p className="text-xs font-bold text-blue-900 mb-1 flex items-center gap-2">
                   <span className="inline-block px-2 py-1 bg-blue-200 text-blue-900 rounded font-mono text-xs font-bold">ToánThầyHiếu</span>
@@ -414,7 +423,7 @@ export default function StudentExamDetailPage() {
             )}
 
             {/* Nhận xét giáo viên */}
-            {result.teacherNote && (
+            {!result.gradingReport && result.teacherNote && (
               <div className="bg-gradient-to-br from-purple-50 to-pink-50 border border-purple-300 rounded-lg p-5 shadow-sm">
                 <p className="text-xs font-bold text-purple-900 mb-1 flex items-center gap-2">
                   <span className="inline-block px-2 py-1 bg-purple-200 text-purple-900 rounded font-mono text-xs font-bold">👨‍🏫</span>

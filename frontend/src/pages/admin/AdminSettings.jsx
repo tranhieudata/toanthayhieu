@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { FiSave, FiUpload, FiSettings, FiCreditCard, FiX, FiPlus, FiTrash2, FiLayers, FiBook, FiMenu, FiEdit2 } from 'react-icons/fi';
 import VN_MATH_CURRICULUM from '../../utils/vnMathCurriculum';
 import { gradeOptions } from '../../hooks/useGradeOptions';
+import TelegramSettings from '../../components/TelegramSettings';
 
 const TAILWIND_COLORS = [
   { label: 'Xanh lá', bg: 'bg-green-100', text: 'text-green-700' },
@@ -351,7 +352,10 @@ export default function AdminSettings() {
         >
           <FiMenu size={16} /> Chủ đề kiểm tra
         </button>
+        <button type="button" onClick={() => setActiveTab('telegram')} className={`whitespace-nowrap border-b-2 px-4 py-2 text-sm font-medium ${activeTab === 'telegram' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-600 hover:text-gray-900'}`}>Telegram</button>
       </div>
+
+      {activeTab === 'telegram' && <TelegramSettings />}
 
       {/* General Tab */}
       {activeTab === 'general' && (

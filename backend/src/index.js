@@ -18,7 +18,10 @@ const uploadsDir = path.join(__dirname, '../uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
 // Connect to MongoDB
-connectDB().then(() => require('./services/storyCleanup').startStoryCleanup());
+connectDB().then(() => {
+  require('./services/storyCleanup').startStoryCleanup();
+  require('./services/telegramWorker').startTelegramWorker();
+});
 
 // Middleware
 const corsOptions = {
@@ -111,6 +114,7 @@ app.use('/api/class-enrollments', require('./routes/classEnrollments'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/tuition', require('./routes/tuition'));
 app.use('/api/settings', require('./routes/settings'));
+app.use('/api/telegram', require('./routes/telegram'));
 app.use('/api/exams', require('./routes/exams'));
 app.use('/api/homeworks', require('./routes/homeworks'));
 app.use('/api/teaching-sessions', require('./routes/teachingSessions'));

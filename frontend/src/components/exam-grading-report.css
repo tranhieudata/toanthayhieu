@@ -1,0 +1,20 @@
+.exam-grade-report { color: #172d41; background: white; font-family: 'Times New Roman', serif; padding: 24px; font-size: 16px; line-height: 1.55; }
+.exam-grade-report header { text-align: center; margin-bottom: 26px; }
+.exam-grade-report header > p:first-child { border-bottom: 1px solid #8b9ba4; padding-bottom: 8px; text-align: left; font-style: italic; }
+.exam-grade-report h1 { font-size: 26px; font-weight: 700; margin: 25px 0 4px; }
+.exam-grade-report h2 { font-size: 19px; font-weight: 700; margin: 24px 0 12px; }
+.exam-grade-report p { margin: 4px 0; }
+.exam-grade-report .report-summary { display: grid; grid-template-columns: 1.2fr 1fr; border: 1px solid #657d8a; }
+.exam-grade-report .report-summary > div { padding: 15px; }
+.exam-grade-report .report-total { background: #edf1f5; display: flex; justify-content: center; align-items: center; gap: 7px; flex-wrap: wrap; }
+.exam-grade-report .report-total strong { font-size: 32px; color: #a53826; }
+.exam-grade-report table { border-collapse: collapse; width: 100%; color: #242424; }
+.exam-grade-report td, .exam-grade-report th { border: 1px solid #bbc4cc; padding: 7px 9px; text-align: center; font-weight: 400; }
+.exam-grade-report thead { background: #edf1f5; }
+.exam-grade-report .report-essay td:last-child, .exam-grade-report .report-essay th:last-child { text-align: left; width: 72%; white-space: pre-wrap; }
+.exam-grade-report .report-correct { color: #2e6b30; font-weight: bold; }
+.exam-grade-report .report-wrong { color: #b33223; font-weight: bold; }
+.exam-grade-report .report-feedback { white-space: pre-wrap; color: #242424; }
+.exam-grade-report .report-table-scroll { overflow-x: auto; }
+@media (max-width: 640px) { .exam-grade-report { padding: 8px; font-size: 14px; } .exam-grade-report h1 { font-size: 21px; } .exam-grade-report .report-summary { grid-template-columns: 1fr; } }
+@media print { @page { size: A4; margin: 16mm 12mm; } .exam-grade-report { padding: 0; font-size: 12pt; } .exam-grade-report .report-summary { grid-template-columns: 1.2fr 1fr; } .exam-grade-report thead { display: table-header-group; } .exam-grade-report tr, .exam-grade-report .report-summary { break-inside: avoid; } .exam-grade-report h2 { break-after: avoid; } .exam-grade-report .report-table-scroll { overflow: visible; } .exam-grade-report table { font-size: 10pt; table-layout: fixed; overflow-wrap: anywhere; } }

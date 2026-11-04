@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { protect, adminOnly } = require('../middleware/auth');
+const { getWeeklyTeachingPlan, saveWeeklyTeachingPlan } = require('../controllers/weeklyTeachingPlanController');
 const {
   getTeachingSessions,
   getTeachingSessionById,
@@ -12,6 +13,8 @@ const {
 } = require('../controllers/teachingSessionController');
 
 router.get('/planner', protect, adminOnly, getTeachingPlanner);
+router.get('/week-plan', protect, adminOnly, getWeeklyTeachingPlan);
+router.put('/week-plan', protect, adminOnly, saveWeeklyTeachingPlan);
 router.post('/parent-summary', protect, adminOnly, generateParentSummary);
 router.get('/', protect, adminOnly, getTeachingSessions);
 router.get('/:id', protect, adminOnly, getTeachingSessionById);

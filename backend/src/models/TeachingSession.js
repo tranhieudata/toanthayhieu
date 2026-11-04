@@ -16,6 +16,10 @@ const teachingSessionSchema = new mongoose.Schema(
   {
     class: { type: mongoose.Schema.Types.ObjectId, ref: 'Class', required: true },
     date: { type: Date, required: true },
+    startTime: { type: String, default: '' },
+    endTime: { type: String, default: '' },
+    weeklyPlanKey: { type: String, unique: true, sparse: true },
+    planningNote: { type: String, default: '' },
     plannedLesson: { type: mongoose.Schema.Types.ObjectId, ref: 'Lesson' },
     actualLesson: { type: mongoose.Schema.Types.ObjectId, ref: 'Lesson' },
     previousSession: { type: mongoose.Schema.Types.ObjectId, ref: 'TeachingSession' },

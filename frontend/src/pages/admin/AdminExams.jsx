@@ -457,14 +457,8 @@ export default function AdminExams() {
   const openParentPrintLink = async (examId) => {
     const printWindow = window.open('', '_blank');
     try {
-      const { data } = await api.get('/homeworks', { params: { sourceExam: examId } });
-      const homework = (data || []).find(item => item.parentPrintUrl) || data?.[0];
-      const printUrl = homework?.parentPrintUrl || (homework?.printShareToken ? `/print/homework/${homework.printShareToken}` : '');
-
-      if (!printUrl) {
-        printWindow?.close();
-        return toast.error('Đề này chưa có link phụ huynh');
-      }
+      const { data } = await api.post(`/exams/${examId}/print-link`);
+      const printUrl = data.parentPrintUrl;
 
       if (printWindow) {
         printWindow.location.href = printUrl;

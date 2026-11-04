@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useState, useEffect, useMemo } from 'react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import api, { getUploadUrl } from '../../api/axios';
 import toast from 'react-hot-toast';
 import {
@@ -7,24 +7,9 @@ import {
   FiBarChart2, FiBookOpen, FiRefreshCw, FiAlertCircle,
   FiUpload, FiImage, FiTrash2, FiEye, FiX,
 } from 'react-icons/fi';
+import ExamGradingReport from '../../components/ExamGradingReport';
+import RichTextEditor from '../../components/RichTextEditor';
 import { compressImageFile } from '../../utils/imageCompression';
-
-function getLevelForQuestion(q, levels) {
-  return levels.find(l => q >= l.fromQuestion && q <= l.toQuestion);
-}
-
-function ScoreInput({ value, onChange, maxScore }) {
-  return (
-    <input
-      type="number"
-      min="0"
-      step="0.25"
-      className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm w-24 text-center focus:outline-none focus:ring-2 focus:ring-blue-400"
-      value={value}
-      onChange={e => onChange(Math.min(Number(e.target.value) || 0, maxScore))}
-    />
-  );
-}
 
 function getClipboardImageFiles(event) {
   const clipboard = event.clipboardData;
@@ -50,14 +35,14 @@ function getClipboardImageFiles(event) {
 }
 
 /* ─── Tab: Tổng quan ─────────────────────────────────────────────────────── */
-function OverviewTab({ exam, students, results, maxScore, maxScorePerQuestion, levelColors }) {
+function OverviewTab({ students, results, maxScore }) {
   const gradedResults = useMemo(
     () => Object.values(results).filter(r => r.status === 'graded'),
     [results]
   );
 
   const scores10 = useMemo(
-    () => gradedResults.map(r => maxScore > 0 ? (r.totalScore / maxScore) * 10 : 0),
+    () => gradedResults.map(r => (r.maxScore || maxScore) > 0 ? (r.totalScore / (r.maxScore || maxScore)) * 10 : 0),
     [gradedResults, maxScore]
   );
   const avgScore10 = scores10.length > 0 ? scores10.reduce((a, b) => a + b, 0) / scores10.length : 0;
@@ -72,38 +57,6 @@ function OverviewTab({ exam, students, results, maxScore, maxScorePerQuestion, l
     { label: 'Giỏi (8–9)', min: 8, max: 9, color: 'bg-green-400' },
     { label: 'Xuất sắc (≥9)', min: 9, max: 10.1, color: 'bg-purple-400' },
   ].map(b => ({ ...b, count: scores10.filter(s => s >= b.min && s < b.max).length }));
-
-  const levelStats = useMemo(
-    () => exam.levels.map(level => {
-      const earnedList = gradedResults.map(r => {
-        const ls = (r.scores || []).filter(
-          s => s.questionOrder >= level.fromQuestion && s.questionOrder <= level.toQuestion
-        );
-        return ls.reduce((sum, s) => sum + (s.score || 0), 0);
-      });
-      const avg = earnedList.length > 0 ? earnedList.reduce((a, b) => a + b, 0) / earnedList.length : 0;
-      const pct = level.totalPoints > 0 ? avg / level.totalPoints : 0;
-      return { ...level, avg, pct };
-    }),
-    [gradedResults, exam.levels]
-  );
-
-  const questionStats = useMemo(() => {
-    const rows = [];
-    for (let q = 1; q <= exam.totalQuestions; q++) {
-      const maxQ = maxScorePerQuestion(q);
-      const qScores = gradedResults.map(r => {
-        const s = (r.scores || []).find(sc => sc.questionOrder === q);
-        return s ? s.score : 0;
-      });
-      const avg = qScores.length > 0 ? qScores.reduce((a, b) => a + b, 0) / qScores.length : 0;
-      const wrongCount = qScores.filter(s => s < maxQ).length;
-      const wrongPct = qScores.length > 0 ? wrongCount / qScores.length : 0;
-      const level = getLevelForQuestion(q, exam.levels);
-      rows.push({ q, maxQ, avg, wrongCount, wrongPct, levelName: level?.name || '' });
-    }
-    return rows.sort((a, b) => b.wrongPct - a.wrongPct);
-  }, [gradedResults, exam, maxScorePerQuestion]);
 
   if (gradedResults.length === 0) {
     return (
@@ -151,86 +104,7 @@ function OverviewTab({ exam, students, results, maxScore, maxScorePerQuestion, l
         </div>
       </div>
 
-      {/* Level breakdown */}
-      <div className="bg-white rounded-xl shadow-sm p-5">
-        <h3 className="font-semibold text-gray-800 mb-4">Điểm trung bình từng mức độ</h3>
-        <div className="space-y-3">
-          {levelStats.map(level => {
-            const colors = levelColors[level.name] || { badge: 'bg-gray-100 text-gray-700' };
-            return (
-              <div key={level.name} className="flex items-center gap-3">
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium w-32 text-center shrink-0 ${colors.badge}`}>
-                  {level.name}
-                </span>
-                <div className="flex-1 bg-gray-100 rounded-full h-4 overflow-hidden">
-                  <div
-                    className={`h-4 rounded-full transition-all ${level.pct >= 0.8 ? 'bg-green-400' : level.pct >= 0.5 ? 'bg-yellow-400' : 'bg-red-400'}`}
-                    style={{ width: `${level.pct * 100}%` }}
-                  />
-                </div>
-                <span className="text-xs font-semibold text-gray-700 w-28 text-right shrink-0">
-                  {level.avg.toFixed(2)}/{level.totalPoints} ({(level.pct * 100).toFixed(0)}%)
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
 
-      {/* Per-question table */}
-      <div className="bg-white rounded-xl shadow-sm p-5">
-        <h3 className="font-semibold text-gray-800 mb-4">
-          Thống kê từng câu <span className="text-xs font-normal text-gray-400">(sắp xếp theo tỉ lệ sai giảm dần)</span>
-        </h3>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-100 text-xs text-gray-500 uppercase tracking-wide">
-                <th className="text-left py-2 pr-4">Câu</th>
-                <th className="text-left py-2 pr-4">Mức độ</th>
-                <th className="text-right py-2 pr-4">Điểm TB</th>
-                <th className="text-right py-2 pr-4">Tối đa</th>
-                <th className="text-right py-2 pr-4">Sai / Tổng</th>
-                <th className="text-left py-2">Tỉ lệ sai</th>
-              </tr>
-            </thead>
-            <tbody>
-              {questionStats.map(qs => {
-                const colors = levelColors[qs.levelName] || { badge: 'bg-gray-100 text-gray-600' };
-                return (
-                  <tr key={qs.q} className="border-b border-gray-50 hover:bg-gray-50">
-                    <td className="py-2 pr-4 font-medium">Câu {qs.q}</td>
-                    <td className="py-2 pr-4">
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${colors.badge}`}>{qs.levelName}</span>
-                    </td>
-                    <td className="py-2 pr-4 text-right">{qs.avg.toFixed(2)}</td>
-                    <td className="py-2 pr-4 text-right text-gray-400">{qs.maxQ.toFixed(2)}</td>
-                    <td className="py-2 pr-4 text-right">
-                      <span className={qs.wrongCount > 0 ? 'text-red-600 font-medium' : 'text-green-600'}>
-                        {qs.wrongCount}
-                      </span>
-                      <span className="text-gray-400">/{gradedResults.length}</span>
-                    </td>
-                    <td className="py-2 min-w-24">
-                      <div className="flex items-center gap-2">
-                        <div className="flex-1 bg-gray-100 rounded-full h-2 overflow-hidden">
-                          <div
-                            className={`h-2 rounded-full ${qs.wrongPct > 0.6 ? 'bg-red-400' : qs.wrongPct > 0.3 ? 'bg-yellow-400' : 'bg-green-400'}`}
-                            style={{ width: `${qs.wrongPct * 100}%` }}
-                          />
-                        </div>
-                        <span className="text-xs text-gray-500 w-9 text-right shrink-0">
-                          {(qs.wrongPct * 100).toFixed(0)}%
-                        </span>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
     </div>
   );
 }
@@ -370,24 +244,25 @@ function PracticeTab({ exam, results, onPracticeGenerated }) {
 export default function AdminExamGrade() {
   const navigate = useNavigate();
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
+  const requestedStudentId = searchParams.get('studentId');
 
   const [activeTab, setActiveTab] = useState('grade');
   const [exam, setExam] = useState(null);
   const [students, setStudents] = useState([]);
   const [results, setResults] = useState({});
   const [selectedStudent, setSelectedStudent] = useState(null);
-  const [scores, setScores] = useState({});
+  const [manualScore, setManualScore] = useState('');
+  const [answerContent, setAnswerContent] = useState('');
+  const [answerImages, setAnswerImages] = useState([]);
+  const [savingAnswers, setSavingAnswers] = useState(false);
   const [teacherNote, setTeacherNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [levelColors, setLevelColors] = useState({});
-  const [newResult, setNewResult] = useState(null);
+
   const [uploadingImages, setUploadingImages] = useState(false);
   const [aiGrading, setAiGrading] = useState(false);
   const [previewImage, setPreviewImage] = useState(null);
-  const questionBlueprint = useMemo(() => buildQuestionBlueprint(exam), [exam]);
-  const gradingSections = useMemo(() => groupBlueprint(questionBlueprint), [questionBlueprint]);
-
   // Load exam + students + existing results
   useEffect(() => {
     const loadAll = async () => {
@@ -396,6 +271,8 @@ export default function AdminExamGrade() {
         const firstScheduledClass = examData.classSchedules?.find(s => s.class)?.class || null;
         const examClass = examData.class || firstScheduledClass;
         setExam({ ...examData, class: examClass || null });
+        setAnswerContent(examData.solutionContent || '');
+        setAnswerImages(examData.solutionImages || []);
 
         // Load students from every class assigned to this exam.
         const classIds = [
@@ -422,17 +299,6 @@ export default function AdminExamGrade() {
         resultList.forEach(r => { resultMap[r.student._id || r.student] = r; });
         setResults(resultMap);
 
-        // Load difficulty levels colors
-        const { data: settings } = await api.get('/settings');
-        const colorMap = {};
-        (settings.difficultyLevels || []).forEach(level => {
-          colorMap[level.name] = {
-            bg: level.bgColor || 'bg-gray-50',
-            badge: `${level.bgColor} ${level.textColor}`,
-            border: level.bgColor.replace('-100', '-200') || 'border-gray-200',
-          };
-        });
-        setLevelColors(colorMap);
       } catch {
         toast.error('Không tải được dữ liệu');
       } finally {
@@ -442,53 +308,40 @@ export default function AdminExamGrade() {
     loadAll();
   }, [id]);
 
-  const maxScorePerQuestion = useCallback((qOrder) => {
-    if (!exam) return 0;
-    const question = questionBlueprint.find(item => item.order === qOrder);
-    if (question) return question.maxScore;
-    const level = getLevelForQuestion(qOrder, exam.levels);
-    if (!level) return 0;
-    const count = level.toQuestion - level.fromQuestion + 1;
-    return count > 0 ? level.totalPoints / count : 0;
-  }, [exam, questionBlueprint]);
-
   const selectStudent = (student) => {
+    if (saving || aiGrading || uploadingImages) return;
     setSelectedStudent(student);
-    setNewResult(null); // reset khi chọn học sinh khác
     const existing = results[student._id];
-    if (existing) {
-      const scoreMap = {};
-      existing.scores.forEach(s => { scoreMap[s.questionOrder] = s.score; });
-      setScores(scoreMap);
-      setTeacherNote(existing.teacherNote || '');
-    } else {
-      // Initialize all questions to 0
-      const scoreMap = {};
-      for (let q = 1; q <= (questionBlueprint.length || exam?.totalQuestions || 0); q++) {
-        scoreMap[q] = 0;
-      }
-      setScores(scoreMap);
-      setTeacherNote('');
-    }
+    setManualScore(existing?.status === 'graded' ? existing.totalScore : '');
+    setTeacherNote(existing?.teacherNote || '');
   };
 
-  const totalScore = Object.values(scores).reduce((s, v) => s + v, 0);
-  const maxScore = questionBlueprint.length > 0
-    ? questionBlueprint.reduce((sum, question) => sum + (Number(question.maxScore) || 0), 0)
-    : (exam?.levels.reduce((s, l) => s + l.totalPoints, 0) || 0);
+  useEffect(() => {
+    if (loading || !requestedStudentId) return;
+    const student = students.find(item => item._id === requestedStudentId);
+    if (!student) return;
+    setSelectedStudent(student);
+    const result = results[student._id];
+    setManualScore(result?.status === 'graded' ? result.totalScore : '');
+    setTeacherNote(result?.teacherNote || '');
+  }, [loading, students, requestedStudentId]);
+
+  const maxScore = Number(exam?.examPackage?.totals?.totalPoints)
+    || [...(exam?.examPackage?.questions?.multipleChoice || []), ...(exam?.examPackage?.questions?.essay || [])].reduce((sum, q) => sum + (Number(q.points) || 0), 0)
+    || (exam?.levels || []).reduce((sum, level) => sum + (Number(level.totalPoints) || 0), 0) || 10;
+  const totalScore = Number(manualScore) || 0;
 
   const handleSave = async () => {
     if (!selectedStudent) return;
+    if (manualScore === '' || !Number.isFinite(Number(manualScore)) || Number(manualScore) < 0 || Number(manualScore) > maxScore) return toast.error(`Nhập điểm từ 0 đến ${maxScore}`);
     setSaving(true);
     try {
-      const scoreArr = Object.entries(scores).map(([q, s]) => ({ questionOrder: Number(q), score: s }));
       const { data: result } = await api.post(`/exams/${id}/results`, {
         studentId: selectedStudent._id,
-        scores: scoreArr,
+        totalScore: manualScore,
         teacherNote,
       });
       setResults(prev => ({ ...prev, [selectedStudent._id]: result }));
-      setNewResult(result); // lưu kết quả mới để hiển thị feedback tươi
       toast.success(`Đã lưu kết quả cho ${selectedStudent.name}`);
     } catch (err) {
       toast.error(err.response?.data?.message || 'Lỗi lưu kết quả');
@@ -512,6 +365,8 @@ export default function AdminExamGrade() {
       submissionImages: images,
     });
     setResults(prev => ({ ...prev, [studentId]: data }));
+    setManualScore('');
+    setTeacherNote('');
     toast.success(successMessage);
   };
 
@@ -560,13 +415,11 @@ export default function AdminExamGrade() {
     setAiGrading(true);
     const loadingToast = toast.loading('AI đang chấm bài từ ảnh...');
     try {
+      await api.put(`/exams/${id}`, { solutionContent: answerContent, solutionImages: answerImages });
       const { data } = await api.post(`/exams/${id}/results/${selectedStudent._id}/ai-grade`);
       setResults(prev => ({ ...prev, [selectedStudent._id]: data }));
-      const scoreMap = {};
-      (data.scores || []).forEach(s => { scoreMap[s.questionOrder] = s.score; });
-      setScores(scoreMap);
+      setManualScore(data.totalScore);
       setTeacherNote(data.teacherNote || data.autoFeedback || '');
-      setNewResult(data);
       toast.dismiss(loadingToast);
       toast.success('AI đã chấm xong');
     } catch (err) {
@@ -575,6 +428,29 @@ export default function AdminExamGrade() {
     } finally {
       setAiGrading(false);
     }
+  };
+
+  const saveAnswers = async () => {
+    setSavingAnswers(true);
+    try {
+      await api.put(`/exams/${id}`, { solutionContent: answerContent, solutionImages: answerImages });
+      toast.success('Đã lưu đáp án và hướng dẫn chấm');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Không lưu được đáp án');
+    } finally { setSavingAnswers(false); }
+  };
+
+  const addAnswerImages = async (files) => {
+    setSavingAnswers(true);
+    try {
+      const images = [];
+      for (const file of files) images.push(await uploadExamImage(file));
+      const nextImages = [...answerImages, ...images];
+      await api.put(`/exams/${id}`, { solutionContent: answerContent, solutionImages: nextImages });
+      setAnswerImages(nextImages);
+      toast.success('Đã lưu ảnh đáp án');
+    } catch (err) { toast.error(err.response?.data?.message || 'Không tải được ảnh đáp án'); }
+    finally { setSavingAnswers(false); }
   };
 
   if (loading) return (
@@ -595,8 +471,8 @@ export default function AdminExamGrade() {
     <div className="space-y-5">
       {/* Header */}
       <div className="flex items-center gap-4">
-        <button onClick={() => navigate('/admin/exams')} className="flex items-center gap-2 text-gray-500 hover:text-gray-800 text-sm">
-          <FiArrowLeft size={16} /> Quay lại
+        <button onClick={() => navigate('/admin/exam-grading')} className="flex items-center gap-2 text-gray-500 hover:text-gray-800 text-sm">
+          <FiArrowLeft size={16} /> Danh sách chấm đề
         </button>
         <div>
           <h1 className="text-xl font-bold text-gray-900">{exam.title}</h1>
@@ -626,6 +502,20 @@ export default function AdminExamGrade() {
         ))}
       </div>
 
+      {activeTab === 'grade' && <details className="rounded-xl border border-blue-100 bg-white p-4">
+        <summary className="cursor-pointer font-semibold text-blue-900">Đáp án và hướng dẫn chấm của thầy</summary>
+        <p className="my-3 text-sm text-gray-500">AI ưu tiên nội dung và ảnh đáp án bên dưới, giữ cách chia câu/ý và thang điểm của thầy. Khi chưa có, AI dùng đáp án đã lưu trong đề; nếu vẫn chưa có thì tự lập đáp án trước khi chấm.</p>
+        <RichTextEditor value={answerContent} onChange={setAnswerContent} />
+        <div className="my-3 flex flex-wrap gap-2">{answerImages.map((image, index) => <div key={image.url} className="relative">
+          <img src={getUploadUrl(image.url)} alt={`Đáp án ${index + 1}`} className="h-28 w-28 rounded border object-cover" />
+          <button type="button" disabled={savingAnswers || aiGrading} onClick={() => setAnswerImages(prev => prev.filter((_, i) => i !== index))} className="absolute right-0 top-0 rounded bg-red-600 p-1 text-white" title="Bỏ ảnh đáp án"><FiX /></button>
+        </div>)}</div>
+        <div className="flex gap-3">
+          <label className="cursor-pointer rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-700">Thêm ảnh đáp án<input type="file" accept="image/*" multiple hidden disabled={savingAnswers || aiGrading} onChange={e => { addAnswerImages(Array.from(e.target.files || [])); e.target.value = ''; }} /></label>
+          <button type="button" onClick={saveAnswers} disabled={savingAnswers || aiGrading} className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white disabled:opacity-50">{savingAnswers ? 'Đang lưu...' : 'Lưu đáp án'}</button>
+        </div>
+      </details>}
+
       {/* ── Tab: Chấm điểm ── */}
       {activeTab === 'grade' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -648,6 +538,7 @@ export default function AdminExamGrade() {
                 return (
                   <button
                     key={s._id}
+                    disabled={saving || aiGrading || uploadingImages}
                     onClick={() => selectStudent(s)}
                     className={`w-full text-left px-3 py-2.5 rounded-lg transition-colors flex items-center justify-between gap-2 ${
                       isSelected ? 'bg-blue-600 text-white' : 'hover:bg-gray-50 text-gray-700'
@@ -717,7 +608,7 @@ export default function AdminExamGrade() {
                           type="file"
                           accept="image/*"
                           multiple
-                          disabled={uploadingImages}
+                          disabled={uploadingImages || aiGrading || saving}
                           className="hidden"
                           onChange={(e) => {
                             handleAddImages(Array.from(e.target.files || []));
@@ -727,7 +618,7 @@ export default function AdminExamGrade() {
                       </label>
                       <button
                         onClick={handleAIGrade}
-                        disabled={aiGrading || !(results[selectedStudent._id]?.submissionImages?.length)}
+                        disabled={aiGrading || saving || savingAnswers || uploadingImages || !(results[selectedStudent._id]?.submissionImages?.length)}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 text-xs font-medium"
                       >
                         <FiRefreshCw size={13} className={aiGrading ? 'animate-spin' : ''} />
@@ -757,6 +648,7 @@ export default function AdminExamGrade() {
                           <button
                             type="button"
                             onClick={() => handleRemoveImage(i)}
+                            disabled={uploadingImages || aiGrading || saving}
                             className="absolute top-1 right-1 p-1 rounded-full bg-red-600 text-white opacity-0 group-hover:opacity-100 transition"
                             title="Xóa ảnh"
                           >
@@ -774,40 +666,14 @@ export default function AdminExamGrade() {
                 </div>
               </div>
 
-              {gradingSections.map((section) => {
-                const sectionTotal = section.questions.reduce((sum, question) => sum + (scores[question.order] || 0), 0);
-                const sectionMax = section.questions.reduce((sum, question) => sum + (question.maxScore || 0), 0);
-                const levelName = section.questions[0]?.levelName || section.title;
-                const colors = levelColors[levelName] || { bg: 'bg-gray-50', badge: 'bg-gray-100 text-gray-700', border: 'border-gray-200' };
-
-                return (
-                  <div key={section.title} className={`bg-white rounded-xl shadow-sm p-4 border ${colors.border}`}>
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${colors.badge}`}>{levelName}</span>
-                        <span className="text-xs text-gray-500">{section.title}</span>
-                      </div>
-                      <span className="text-sm font-semibold text-gray-700">
-                        {sectionTotal.toFixed(2)} / {sectionMax.toFixed(2)} điểm
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                      {section.questions.map(question => (
-                        <div key={question.order} className={`${colors.bg} rounded-lg p-2.5 text-center`}>
-                          <div className="text-xs text-gray-500 mb-1.5">{question.label}</div>
-                          <ScoreInput
-                            value={scores[question.order] || 0}
-                            onChange={v => setScores(prev => ({ ...prev, [question.order]: v }))}
-                            maxScore={question.maxScore}
-                          />
-                          <div className="text-xs text-gray-400 mt-1">/ {question.maxScore.toFixed(2)}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
+              <div className="rounded-xl bg-white p-4 shadow-sm">
+                <h2 className="mb-3 font-semibold text-gray-900">Chấm thủ công</h2>
+                <label className="flex items-center gap-3 text-sm text-gray-700">Tổng điểm
+                  <input type="number" min="0" max={maxScore} step="0.01" value={manualScore} disabled={saving || aiGrading} onChange={e => setManualScore(e.target.value)} className="w-28 rounded-lg border border-gray-300 px-3 py-2" />
+                  / {maxScore} điểm
+                </label>
+                {results[selectedStudent._id]?.gradingReport && <p className="mt-2 text-xs text-gray-500">Lưu điểm thủ công sẽ thay phiếu AI bằng tổng điểm và nhận xét của thầy.</p>}
+              </div>
 
               {/* Teacher note */}
               <div className="bg-white rounded-xl shadow-sm p-4">
@@ -817,52 +683,28 @@ export default function AdminExamGrade() {
                 <textarea
                   rows={3}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                  placeholder="Nhập nhận xét riêng cho học sinh (tuỳ chọn, sẽ thay thế nhận xét tự động)..."
+                  placeholder="Nhập nhận xét của thầy..."
                   value={teacherNote}
                   onChange={e => setTeacherNote(e.target.value)}
                 />
               </div>
 
-              {/* Auto-feedback preview (if already graded) */}
-              {results[selectedStudent._id]?.autoFeedback && (
-                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-300 rounded-xl p-4 shadow-sm">
-                  <div className="flex items-center gap-2 mb-3 text-blue-900 font-semibold text-sm">
-                    <span className="inline-block px-2 py-1 bg-blue-200 text-blue-900 rounded font-mono text-xs font-bold">AI</span>
-                    <span>Nhận xét từ Gemini AI (lần chấm trước)</span>
-                  </div>
-                  <pre className="text-sm text-blue-900 whitespace-pre-wrap font-sans leading-relaxed">{results[selectedStudent._id].autoFeedback}</pre>
-                </div>
-              )}
-
               {/* Save */}
               <div className="space-y-3">
-                <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 text-xs text-indigo-800">
-                  <p className="font-semibold mb-1">✨ Gemini AI Feedback</p>
-                  <p>Nhận xét tự động sẽ được sinh bằng Gemini AI dựa trên điểm số từng mức độ.</p>
-                </div>
                 <div className="flex justify-end">
                   <button
                     onClick={handleSave}
-                    disabled={saving}
+                    disabled={saving || aiGrading || uploadingImages || manualScore === ''}
                     className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-lg font-medium disabled:opacity-60 text-sm"
                   >
                     <FiSave size={15} />
-                    {saving ? 'Đang lưu (sinh feedback...)' : results[selectedStudent._id] ? 'Cập nhật điểm' : 'Lưu điểm'}
+                    {saving ? 'Đang lưu...' : 'Lưu điểm thủ công'}
                   </button>
                 </div>
               </div>
 
-              {/* Show auto feedback chỉ sau khi vừa save */}
-              {newResult?.autoFeedback && (
-                <div className="bg-gradient-to-br from-emerald-50 to-green-50 border border-green-300 rounded-xl p-4 shadow-sm">
-                  <div className="flex items-center gap-2 mb-3 text-green-900 font-semibold text-sm">
-                    <span className="inline-block px-2 py-1 bg-green-200 text-green-900 rounded font-mono text-xs font-bold">AI</span>
-                    <span>Nhận xét Gemini AI vừa sinh</span>
-                    <FiCheckCircle size={14} className="text-green-600" />
-                  </div>
-                  <pre className="text-sm text-green-900 whitespace-pre-wrap font-sans leading-relaxed">{newResult.autoFeedback}</pre>
-                </div>
-              )}
+              <ExamGradingReport result={results[selectedStudent._id]} exam={exam} studentName={selectedStudent.name} showGeneratedAnswer />
+
             </>
           )}
         </div>
@@ -876,8 +718,6 @@ export default function AdminExamGrade() {
           students={students}
           results={results}
           maxScore={maxScore}
-          maxScorePerQuestion={maxScorePerQuestion}
-          levelColors={levelColors}
         />
       )}
 
@@ -915,107 +755,4 @@ export default function AdminExamGrade() {
       )}
     </div>
   );
-}
-
-function getPaperLevels(paper) {
-  return (paper?.cognitiveLevels?.length ? paper.cognitiveLevels : [
-    { key: 'NB', name: 'Nhận biết' },
-    { key: 'TH', name: 'Thông hiểu' },
-    { key: 'VD', name: 'Vận dụng' },
-    { key: 'VDC', name: 'Vận dụng cao' },
-  ]).map((level, index) => ({
-    key: level.key || level.name || `L${index + 1}`,
-    name: level.name || level.key || `Mức ${index + 1}`,
-  }));
-}
-
-function buildQuestionBlueprint(exam) {
-  const paper = exam?.examPackage;
-  if (!exam) return [];
-  const levels = getPaperLevels(paper);
-  const levelName = key => levels.find(level => level.key === key)?.name || key || '';
-  const mc = paper?.questions?.multipleChoice || [];
-  const essay = paper?.questions?.essay || [];
-
-  if (paper?.matrix?.length) {
-    const blueprint = [];
-    paper.matrix.forEach(row => {
-      levels.forEach(level => {
-        ['tn', 'tl'].forEach(type => {
-          const cell = row[type]?.[level.key];
-          const count = Number(cell?.count) || 0;
-          const pointEach = count > 0 ? (Number(cell?.points) || 0) / count : 0;
-          for (let i = 0; i < count; i += 1) {
-            const order = blueprint.length + 1;
-            blueprint.push({
-              order,
-              label: type === 'tn' ? `Câu ${order}` : `Bài ${order}`,
-              type: type === 'tn' ? 'TNKQ' : 'Tự luận',
-              level: level.key,
-              levelName: level.name,
-              unit: row.unit || '',
-              section: `${row.unit || row.topic || 'Nội dung'} - ${type === 'tn' ? 'TNKQ' : 'Tự luận'} - ${level.name}`,
-              maxScore: pointEach,
-            });
-          }
-        });
-      });
-    });
-    return blueprint;
-  }
-
-  if (mc.length || essay.length) {
-    return [
-      ...mc.map((q, index) => ({
-        order: index + 1,
-        label: `Câu ${q.number || index + 1}`,
-        type: 'TNKQ',
-        level: q.level,
-        levelName: levelName(q.level),
-        unit: q.unit || '',
-        section: `${q.unit || 'Trắc nghiệm'} - ${levelName(q.level)}`,
-        maxScore: Number(q.points) || 0,
-      })),
-      ...essay.map((q, index) => ({
-        order: mc.length + index + 1,
-        label: `Bài ${index + 1}`,
-        type: 'Tự luận',
-        level: q.level,
-        levelName: levelName(q.level),
-        unit: q.unit || '',
-        section: `${q.unit || 'Tự luận'} - ${levelName(q.level)}`,
-        maxScore: Number(q.points) || 0,
-      })),
-    ];
-  }
-
-  const fallback = [];
-  (exam.levels || []).forEach(level => {
-    const count = level.toQuestion - level.fromQuestion + 1;
-    const pointEach = count > 0 ? level.totalPoints / count : 0;
-    for (let q = level.fromQuestion; q <= level.toQuestion; q += 1) {
-      fallback.push({
-        order: q,
-        label: `Câu ${q}`,
-        type: 'Câu hỏi',
-        levelName: level.name,
-        section: level.name,
-        maxScore: pointEach,
-      });
-    }
-  });
-  return fallback.sort((a, b) => a.order - b.order);
-}
-
-function groupBlueprint(blueprint) {
-  const groups = [];
-  blueprint.forEach(question => {
-    let group = groups.find(item => item.title === question.section);
-    if (!group) {
-      group = { title: question.section, questions: [] };
-      groups.push(group);
-    }
-    group.questions.push(question);
-  });
-  return groups;
 }

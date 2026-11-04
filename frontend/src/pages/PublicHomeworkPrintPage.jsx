@@ -159,7 +159,7 @@ function hasAdminAnswers(homework) {
 
 const INK_COLORS = ['#dc2626', '#2563eb', '#16a34a', '#111827'];
 
-export default function PublicHomeworkPrintPage() {
+export default function PublicHomeworkPrintPage({ source = 'homework' }) {
   const { token } = useParams();
   const printPageRef = useRef(null);
   const inkCanvasRef = useRef(null);
@@ -174,11 +174,15 @@ export default function PublicHomeworkPrintPage() {
   const [isPrinting, setIsPrinting] = useState(false);
 
   useEffect(() => {
-    api.get(`/homeworks/public-print/${token}`)
+    const endpoint = `/${source === 'exam' ? 'exams' : 'homeworks'}/public-print/${token}`;
+    setLoading(true);
+    setError('');
+    setHomework(null);
+    api.get(endpoint)
       .then(async (res) => {
         let nextHomework = res.data;
         if (getAuthToken()) {
-          const answersRes = await api.get(`/homeworks/public-print/${token}/answers`, {
+          const answersRes = await api.get(`${endpoint}/answers`, {
             validateStatus: status => status < 500,
           });
           if (answersRes.status === 200) {
@@ -189,7 +193,7 @@ export default function PublicHomeworkPrintPage() {
       })
       .catch((err) => setError(err.response?.data?.message || 'Link bài tập không tồn tại'))
       .finally(() => setLoading(false));
-  }, [token]);
+  }, [token, source]);
 
   const resizeInkCanvas = () => {
     const canvas = inkCanvasRef.current;

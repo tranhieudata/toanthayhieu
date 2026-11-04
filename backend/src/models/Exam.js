@@ -18,8 +18,10 @@ const classScheduleSchema = new mongoose.Schema({
 const examSchema = new mongoose.Schema(
   {
     title: { type: String, required: true, trim: true },
+    printShareToken: { type: String, unique: true, sparse: true },
     content: { type: String, default: '' }, // Nội dung đề (HTML + LaTeX)
     solutionContent: { type: String, default: '' },
+    solutionImages: [{ url: String, uploadedAt: { type: Date, default: Date.now } }],
     course: { type: mongoose.Schema.Types.ObjectId, ref: 'Course' },
     lesson: { type: mongoose.Schema.Types.ObjectId, ref: 'Lesson' },
     level: { type: mongoose.Schema.Types.ObjectId, ref: 'Level' }, // Lớp 6, 7, 8, etc.

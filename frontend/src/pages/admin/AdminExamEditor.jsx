@@ -787,6 +787,7 @@ export default function AdminExamEditor() {
               />
               Thêm thành bài tập
             </label>
+            <p className="mt-2 text-xs text-emerald-800">Mỗi đề có link xem gửi phụ huynh ngay sau khi lưu, kể cả khi chưa giao cho lớp. Chọn mục này nếu muốn thêm đề vào phần Bài tập của lớp.</p>
             {form.assignHomework && (
               <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
                 <label className="space-y-1">

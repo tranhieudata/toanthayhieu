@@ -1,5 +1,5 @@
 ﻿import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useRef } from 'react';
 import api, { getUploadUrl } from '../../api/axios';
 import toast from 'react-hot-toast';
@@ -79,6 +79,8 @@ function getClipboardImageFiles(event) {
 }
 
 export default function AdminHomework() {
+  const [searchParams] = useSearchParams();
+  const requestedHomeworkId = searchParams.get('homeworkId');
   const navigate = useNavigate();
   const videoRef = useRef(null);
   const cameraStreamRef = useRef(null);
@@ -162,6 +164,17 @@ export default function AdminHomework() {
   useEffect(() => {
     loadHomeworks();
   }, [filterClass]);
+
+  useEffect(() => {
+    if (!requestedHomeworkId) return undefined;
+    let active = true;
+    api.get(`/homeworks/${requestedHomeworkId}`).then(({ data }) => {
+      if (!active) return;
+      setSelectedHomework(data);
+      loadSubmissions(data._id);
+    }).catch(() => { if (active) toast.error('Không mở được bài tập từ thông báo'); });
+    return () => { active = false; };
+  }, [requestedHomeworkId]);
 
   const closeAdminCamera = (closeModal = true) => {
     if (cameraStreamRef.current) {

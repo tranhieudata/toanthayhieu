@@ -15,6 +15,8 @@ const examResultSchema = new mongoose.Schema(
     maxScore: { type: Number, default: 0 },
     autoFeedback: { type: String, default: '' },
     teacherNote: { type: String, default: '' },
+    gradingMethod: { type: String, enum: ['manual', 'ai'] },
+    gradingReport: { type: mongoose.Schema.Types.Mixed, default: null },
     gradedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     gradedAt: { type: Date },
     status: { type: String, enum: ['pending', 'graded'], default: 'pending' },

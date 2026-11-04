@@ -2,6 +2,9 @@ const express = require('express');
 const router = express.Router();
 const { protect, adminOnly } = require('../middleware/auth');
 const {
+  createExamPrintLink,
+  getPublicExamPrint,
+  getExamPrintAnswers,
   getExams,
   getExamById,
   createExam,
@@ -20,6 +23,9 @@ const {
 const { getCurriculum, generateExamPaper, saveExamPaper, exportExamPaper } = require('../controllers/examPaperController');
 
 // Student routes (phải đặt TRƯỚC /:id để không bị match nhầm)
+router.get('/public-print/:token', getPublicExamPrint);
+router.get('/public-print/:token/answers', protect, adminOnly, getExamPrintAnswers);
+router.post('/:id/print-link', protect, adminOnly, createExamPrintLink);
 router.get('/student', protect, getStudentExams);
 router.get('/student/:id', protect, getStudentExamDetail);
 router.post('/student/:id/submit', protect, submitExamImages);
