@@ -7,13 +7,15 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test:community": "node --test test/community.test.js"
+    "test:community": "node --test test/community.test.js",
+    "test:editor-images": "node --test test/editor-images.test.js"
   },
   "dependencies": {
     "axios": "^1.6.2",
     "katex": "^0.16.45",
     "quill": "^2.0.3",
     "quill-better-table": "^1.2.10",
+    "quill-delta": "^5.1.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-hook-form": "^7.49.2",

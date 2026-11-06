@@ -43,6 +43,9 @@ export default function AdminLessonEditor() {
   const [courseLessons, setCourseLessons] = useState([]);
   const [curriculum, setCurriculum] = useState(VN_MATH_CURRICULUM);
   const [loading, setLoading] = useState(false);
+  const [imageUploading, setImageUploading] = useState(false);
+  const imageUploadingRef = useRef(false);
+  useEffect(() => { imageUploadingRef.current = imageUploading; }, [imageUploading]);
   const [fetching, setFetching] = useState(!!id);
   const [autoSaving, setAutoSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState(null);
@@ -161,6 +164,7 @@ export default function AdminLessonEditor() {
     if (fetching) return undefined;
     const timer = setInterval(async () => {
       const f = formRef.current;
+      if (imageUploadingRef.current) return;
       if (!f.title.trim()) return; // Không lưu nháp nếu chưa có tiêu đề
 
       const courseIdToUse = isEdit ? f.course : (f.course || courseId);
@@ -231,6 +235,10 @@ export default function AdminLessonEditor() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (imageUploading) {
+      toast.error('Vui lòng chờ tải ảnh xong trước khi lưu bài.');
+      return;
+    }
     setLoading(true);
     try {
       const courseIdToUse = isEdit ? form.course : (form.course || courseId);
@@ -685,6 +693,7 @@ export default function AdminLessonEditor() {
         <div className="card p-6">
           <label className="block text-sm font-medium text-gray-700 mb-3">Nội dung bài học</label>
           <RichTextEditor
+            onUploadingChange={setImageUploading}
             value={form.content}
             onChange={(html) => setForm(f => ({ ...f, content: html }))}
             placeholder="Nhập nội dung bài học. Dùng nút ƒx để chèn công thức toán..."
@@ -717,7 +726,7 @@ export default function AdminLessonEditor() {
           </button>
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || imageUploading}
             className="btn-primary flex-1 flex items-center justify-center gap-2"
           >
             <FiSave size={16} />

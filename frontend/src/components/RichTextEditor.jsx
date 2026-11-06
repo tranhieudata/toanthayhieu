@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Quill from 'quill';
 import katex from 'katex';
 import api, { getUploadUrl } from '../api/axios';
+import { IMAGE_TYPES, insertUploadedImages } from '../utils/editorImages';
 import 'quill/dist/quill.snow.css';
 import 'katex/dist/katex.min.css';
 
@@ -13,21 +14,55 @@ const Align = Quill.import('formats/align');
 Align.whitelist = ['', 'center', 'right', 'justify'];
 Quill.register(Align, true);
 
-export default function RichTextEditor({ value, onChange, placeholder = 'Nhập nội dung...' }) {
+export default function RichTextEditor({ value, onChange, onUploadingChange, placeholder = 'Nhập nội dung...' }) {
   const containerRef = useRef(null);
   const quillRef = useRef(null);
   const onChangeRef = useRef(onChange);
+  const selectedImageRef = useRef(null);
+  const documentVersionRef = useRef(0);
+  const [image, setImage] = useState(null);
+  const [uploading, setUploading] = useState(0);
+  const [uploadError, setUploadError] = useState('');
 
-  const uploadAndInsertImage = async (file, index) => {
-    if (!file?.type?.startsWith('image/')) return;
-    const formData = new FormData();
-    formData.append('file', file);
-    const { data } = await api.post('/upload/image', formData);
+  useEffect(() => {
+    onUploadingChange?.(uploading > 0);
+  }, [uploading, onUploadingChange]);
+
+  useEffect(() => () => onUploadingChange?.(false), [onUploadingChange]);
+
+  const selectImage = node => {
+    selectedImageRef.current = node;
+    if (!node) return setImage(null);
     const quill = quillRef.current;
-    if (!quill) return;
-    const insertAt = typeof index === 'number' ? index : quill.getSelection(true)?.index ?? quill.getLength();
-    quill.insertEmbed(insertAt, 'image', getUploadUrl(data.url), 'user');
-    quill.setSelection(insertAt + 1, 0);
+    const index = quill.getIndex(Quill.find(node));
+    setImage({
+      width: node.getAttribute('width') || '',
+      displayWidth: Math.round(node.getBoundingClientRect().width),
+      alt: node.getAttribute('alt') || '',
+      align: quill.getFormat(index, 1).align || '',
+    });
+  };
+
+  const withImage = action => {
+    const quill = quillRef.current;
+    const node = selectedImageRef.current;
+    if (!quill || !node || !quill.root.contains(node)) return;
+    action(quill, quill.getIndex(Quill.find(node)), node);
+    selectImage(quill.root.contains(node) ? node : null);
+  };
+
+  const resizeImage = width => withImage((quill, index) => {
+    quill.formatText(index, 1, { width, height: false }, 'user');
+  });
+
+  const addTextLine = before => {
+    withImage((quill, index) => {
+      const [line, offset] = quill.getLine(index);
+      const at = before ? index - offset : index - offset + line.length() - 1;
+      quill.insertText(at, '\n', 'user');
+      quill.setSelection(before ? at : at + 1, 0, 'user');
+    });
+    selectImage(null);
   };
 
   // Luôn giữ onChangeRef trỏ đến hàm onChange mới nhất (tránh stale closure)
@@ -41,10 +76,32 @@ export default function RichTextEditor({ value, onChange, placeholder = 'Nhập 
     // Xóa nội dung cũ (quan trọng để React Strict Mode hoạt động đúng)
     containerRef.current.innerHTML = '';
 
-    quillRef.current = new Quill(containerRef.current, {
+    let quill;
+    const uploadImages = async (range, files) => {
+      const version = documentVersionRef.current;
+      const isActive = () => quillRef.current === quill && documentVersionRef.current === version;
+      setUploading(count => count + 1);
+      setUploadError('');
+      try {
+        await insertUploadedImages(quill, range, files, async file => {
+          const formData = new FormData();
+          formData.append('file', file);
+          const { data } = await api.post('/upload/image', formData);
+          return getUploadUrl(data.url);
+        }, isActive);
+      } catch (error) {
+        if (isActive()) setUploadError(error.response?.data?.message || error.message || 'Không tải được ảnh. Vui lòng thử lại.');
+      } finally {
+        if (quillRef.current === quill) setUploading(count => Math.max(0, count - 1));
+      }
+    };
+
+    quill = new Quill(containerRef.current, {
       theme: 'snow',
       placeholder,
       modules: {
+        history: { userOnly: true },
+        uploader: { mimetypes: IMAGE_TYPES, handler: uploadImages },
         toolbar: {
           container: [
             [{ header: [1, 2, 3, 4, false] }],
@@ -62,15 +119,12 @@ export default function RichTextEditor({ value, onChange, placeholder = 'Nhập 
             image: () => {
               const input = document.createElement('input');
               input.type = 'file';
-              input.accept = 'image/*';
-              input.onchange = async () => {
-                const file = input.files?.[0];
-                if (!file) return;
-                try {
-                  await uploadAndInsertImage(file);
-                } catch (error) {
-                  window.alert(error.response?.data?.message || 'Khong tai duoc anh');
-                }
+              input.accept = IMAGE_TYPES.join(',');
+              input.multiple = true;
+              const range = quill.getSelection(true) || { index: quill.getLength() - 1, length: 0 };
+              input.onchange = () => {
+                const files = Array.from(input.files || []);
+                if (files.length) uploadImages(range, files);
               };
               input.click();
             },
@@ -78,65 +132,47 @@ export default function RichTextEditor({ value, onChange, placeholder = 'Nhập 
         },
       },
     });
+    quillRef.current = quill;
 
     // Set initial content
     if (value) {
       quillRef.current.root.innerHTML = value;
+      quill.update('silent');
+      quill.history.clear();
     }
 
     // Handle text changes - dùng onChangeRef để tránh stale closure
     const handleChange = () => {
+      if (selectedImageRef.current) {
+        selectImage(quill.root.contains(selectedImageRef.current) ? selectedImageRef.current : null);
+      }
       const html = quillRef.current.root.innerHTML;
       onChangeRef.current(html);
     };
 
     quillRef.current.on('text-change', handleChange);
 
-    const handlePaste = async (event) => {
-      const items = Array.from(event.clipboardData?.items || []);
-      const imageItems = items.filter(item => item.type?.startsWith('image/'));
-      if (imageItems.length === 0) return;
-      event.preventDefault();
-      const index = quillRef.current.getSelection(true)?.index ?? quillRef.current.getLength();
-      for (let i = 0; i < imageItems.length; i += 1) {
-        const file = imageItems[i].getAsFile();
-        if (!file) continue;
-        try {
-          await uploadAndInsertImage(file, index + i);
-        } catch (error) {
-          window.alert(error.response?.data?.message || 'Khong tai duoc anh');
-        }
-      }
+    const handleImageClick = event => {
+      const node = event.target instanceof HTMLImageElement ? event.target : null;
+      if (node) quill.setSelection(quill.getIndex(Quill.find(node)), 1, 'silent');
+      selectImage(node);
     };
-
-    const handleDrop = async (event) => {
-      const files = Array.from(event.dataTransfer?.files || []).filter(file => file.type?.startsWith('image/'));
-      if (files.length === 0) return;
-      event.preventDefault();
-      const index = quillRef.current.getSelection(true)?.index ?? quillRef.current.getLength();
-      for (let i = 0; i < files.length; i += 1) {
-        try {
-          await uploadAndInsertImage(files[i], index + i);
-        } catch (error) {
-          window.alert(error.response?.data?.message || 'Khong tai duoc anh');
-        }
-      }
+    const handleSelection = range => {
+      if (!range) return;
+      const [leaf] = quill.getLeaf(range.index);
+      selectImage(leaf?.domNode instanceof HTMLImageElement ? leaf.domNode : null);
     };
-
-    quillRef.current.root.addEventListener('paste', handlePaste);
-    quillRef.current.root.addEventListener('drop', handleDrop);
+    quill.root.addEventListener('click', handleImageClick);
+    quill.on('selection-change', handleSelection);
 
     return () => {
-      if (quillRef.current) {
-        quillRef.current.off('text-change', handleChange);
-        quillRef.current.root.removeEventListener('paste', handlePaste);
-        quillRef.current.root.removeEventListener('drop', handleDrop);
-        // Reset ref để React Strict Mode có thể khởi tạo lại đúng cách
-        quillRef.current = null;
-      }
-      if (containerRef.current) {
-        containerRef.current.innerHTML = '';
-      }
+      quill.off('text-change', handleChange);
+      quill.off('selection-change', handleSelection);
+      quill.root.removeEventListener('click', handleImageClick);
+      selectedImageRef.current = null;
+      quill.getModule('toolbar').container.remove();
+      quillRef.current = null;
+      containerRef.current?.replaceChildren();
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -147,12 +183,60 @@ export default function RichTextEditor({ value, onChange, placeholder = 'Nhập 
       value !== undefined &&
       value !== quillRef.current.root.innerHTML
     ) {
+      documentVersionRef.current += 1;
+      selectImage(null);
       quillRef.current.root.innerHTML = value || '';
+      quillRef.current.update('silent');
+      quillRef.current.history.clear();
     }
   }, [value]);
 
   return (
-    <div>
+    <div className="rich-text-editor">
+      <div className="editor-image-help">
+        <span>Ảnh: bấm nút hình ảnh, dán bằng Ctrl+V hoặc kéo thả. Bấm vào ảnh để chỉnh kích thước và căn lề. Dùng Ctrl+X / Ctrl+V để chuyển ảnh đến vị trí con trỏ.</span>
+        {uploading > 0 && <span role="status">Đang tải ảnh… Vui lòng chờ ảnh hiện trước khi lưu bài.</span>}
+        {uploadError && <span role="alert" className="text-red-600">{uploadError}</span>}
+      </div>
+      {image && (
+        <div className="editor-image-controls" role="group" aria-label="Chỉnh ảnh đã chọn" onMouseDown={event => {
+          if (event.target.closest('button')) event.preventDefault();
+        }}>
+          <strong>Ảnh đã chọn</strong>
+          <label>Chiều rộng (px)
+            <input type="number" min="32" max="2400" value={image.widthInput ?? (image.width.endsWith('%') ? image.displayWidth : image.width || image.displayWidth)}
+              onChange={event => {
+                setImage(current => ({ ...current, widthInput: event.target.value }));
+              }}
+              onBlur={event => {
+                const width = Number(event.target.value);
+                if (width >= 32 && width <= 2400) resizeImage(String(width));
+                else selectImage(selectedImageRef.current);
+              }}
+              onKeyDown={event => {
+                if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); }
+              }} />
+          </label>
+          <label>Kích thước
+            <input type="range" aria-label="Kéo để đổi chiều rộng ảnh" min="32" max="1200"
+              value={Math.min(1200, image.displayWidth || 32)} onChange={event => resizeImage(event.target.value)} />
+          </label>
+          {[25, 50, 75, 100].map(size => <button type="button" key={size} onClick={() => resizeImage(`${size}%`)}>{size}%</button>)}
+          <button type="button" onClick={() => resizeImage(false)}>Cỡ gốc</button>
+          {[['', 'Trái'], ['center', 'Giữa'], ['right', 'Phải']].map(([align, label]) => (
+            <button type="button" key={label} aria-pressed={image.align === align}
+              onClick={() => withImage((quill, index) => quill.formatLine(index, 1, 'align', align || false, 'user'))}>{label}</button>
+          ))}
+          <label>Mô tả ảnh
+            <input type="text" value={image.alt} placeholder="Mô tả nội dung hình"
+              onChange={event => withImage((quill, index) => quill.formatText(index, 1, 'alt', event.target.value, 'user'))} />
+          </label>
+          <button type="button" onClick={() => addTextLine(true)}>Viết phía trên</button>
+          <button type="button" onClick={() => addTextLine(false)}>Viết phía dưới</button>
+          <button type="button" onClick={() => withImage((quill, index) => quill.deleteText(index, 1, 'user'))}>Xóa ảnh</button>
+          <button type="button" onClick={() => selectImage(null)}>Đóng</button>
+        </div>
+      )}
       <div ref={containerRef} className="bg-white rounded-lg border border-gray-300" />
       <p className="text-xs text-gray-400 mt-2">
         <strong>Công thức toán:</strong> Dùng <code className="bg-gray-100 px-1 rounded">{'$x^2 + y^2$'}</code> cho công thức nội tuyến,{' '}
@@ -160,6 +244,22 @@ export default function RichTextEditor({ value, onChange, placeholder = 'Nhập 
         Hoặc nhấn nút <strong>ƒx</strong> trên thanh công cụ.
       </p>
       <style>{`
+        .rich-text-editor .editor-image-help {
+          display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; font-size: 13px; color: #64748b;
+        }
+        .rich-text-editor .editor-image-controls {
+          display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+          padding: 12px; margin-bottom: 10px; border: 1px solid #93c5fd;
+          border-radius: 8px; background: #eff6ff; font-size: 13px;
+        }
+        .rich-text-editor .editor-image-controls label { display: flex; align-items: center; gap: 6px; }
+        .rich-text-editor .editor-image-controls input { min-width: 0; border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px; }
+        .rich-text-editor .editor-image-controls input[type=number] { width: 76px; }
+        .rich-text-editor .editor-image-controls input[type=text] { width: 180px; }
+        .rich-text-editor .editor-image-controls button { border: 1px solid #cbd5e1; border-radius: 4px; background: white; padding: 4px 8px; }
+        .rich-text-editor .editor-image-controls button:hover,
+        .rich-text-editor .editor-image-controls button[aria-pressed=true] { background: #dbeafe; border-color: #2563eb; }
+        .rich-text-editor .ql-editor img { cursor: pointer; }
         .ql-toolbar {
           border: 1px solid #d1d5db;
           border-bottom: none;
