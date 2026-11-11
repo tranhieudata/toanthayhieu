@@ -108,6 +108,7 @@ app.post('/api/upload', (req, res) => {
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/courses', require('./routes/courses'));
 app.use('/api/lessons', require('./routes/lessons'));
+app.use('/api/articles', require('./routes/articles'));
 app.use('/api/exercises', require('./routes/exercises'));
 app.use('/api/classes', require('./routes/classes'));
 app.use('/api/class-enrollments', require('./routes/classEnrollments'));

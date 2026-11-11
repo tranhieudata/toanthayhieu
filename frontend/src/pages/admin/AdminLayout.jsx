@@ -12,6 +12,7 @@ const navItems = [
   { to: '/admin/community', icon: <FiUsers />, label: 'Cộng đồng & thử thách' },
   { to: '/admin', icon: <FiHome />, label: 'Tổng quan', exact: true },
   { to: '/admin/content', icon: <FiFile />, label: 'Quản lý nội dung' },
+  { to: '/new?manage=true', icon: <FiFile />, label: 'Bài viết & SEO' },
   { to: '/admin/teaching-sessions', icon: <FiBookOpen />, label: 'Buổi dạy' },
   { to: '/admin/students', icon: <FiUsers />, label: 'Học sinh' },
   { to: '/admin/classes', icon: <FiCalendar />, label: 'Lớp học' },

@@ -18,11 +18,12 @@ export default function Navbar({ homeNavigation = false }) {
   const tabs = user ? [
     { to: '/dashboard', label: 'Tổng quan', icon: FiHome, active: location.pathname === '/dashboard' && location.hash !== '#my-classes' },
     { to: '/community', label: 'Cộng đồng', icon: FiHeart, active: location.pathname.startsWith('/community') },
+    { to: '/new', label: 'Bài viết', icon: FiBookOpen, active: location.pathname.startsWith('/new') },
     ...(!isAdmin ? [{ to: '/homeworks', label: 'Bài tập', icon: FiBookOpen, active: location.pathname.startsWith('/homeworks') }] : []),
     { to: '/classes', label: 'Lớp học', icon: FiLayers, active: location.pathname === '/classes' || location.pathname.startsWith('/class/') || location.pathname.startsWith('/lesson') },
     ...(!isAdmin ? [{ to: '/dashboard#my-classes', label: 'Lớp học của tôi', icon: FiUsers, active: location.pathname === '/dashboard' && location.hash === '#my-classes' }] : []),
     ...(!isAdmin ? [{ to: '/exams', label: 'Đề kiểm tra', icon: FiClipboard, active: location.pathname.startsWith('/exams') }] : [{ to: '/admin', label: 'Quản trị', icon: FiSettings, active: location.pathname.startsWith('/admin') }]),
-  ] : [{ to: '/classes', label: 'Lớp học', icon: FiLayers, active: location.pathname === '/classes' }];
+  ] : [{ to: '/classes', label: 'Lớp học', icon: FiLayers, active: location.pathname === '/classes' }, { to: '/new', label: 'Bài viết', icon: FiBookOpen, active: location.pathname.startsWith('/new') }];
   useEffect(() => { setDropdownOpen(false); }, [location.pathname, location.search]);
   useEffect(() => {
     if (!dropdownOpen) return;
@@ -64,7 +65,7 @@ export default function Navbar({ homeNavigation = false }) {
           </div> : <div className="student-guest-actions"><Link to="/login">Đăng nhập</Link><Link className="student-register" to="/register">Đăng ký</Link></div>}
         </div>
       </div>
-      <nav className="student-primary-tabs" aria-label={homeNavigation && !user ? 'Khám phá Toán Thầy Hiếu' : 'Điều hướng học sinh'}>{homeNavigation && !user ? <><a className="student-primary-tab" href="#cach-hoc">Cách học cùng thầy</a><a className="student-primary-tab" href="#lop-hoc">Lớp học</a><a className="student-primary-tab" href="#bat-dau">Hướng dẫn bắt đầu</a></> : tabs.map(({ to, label, icon: Icon, active }) => <Link key={to} to={to} aria-current={active ? 'page' : undefined} className={`student-primary-tab ${active ? 'is-active' : ''}`}><Icon /><span>{label}</span></Link>)}</nav>
+      <nav className="student-primary-tabs" aria-label={homeNavigation && !user ? 'Khám phá Toán Thầy Hiếu' : 'Điều hướng học sinh'}>{homeNavigation && !user ? <><a className="student-primary-tab" href="#cach-hoc">Cách học cùng thầy</a><a className="student-primary-tab" href="#lop-hoc">Lớp học</a><Link className="student-primary-tab" to="/new">Bài viết</Link><a className="student-primary-tab" href="#bat-dau">Hướng dẫn bắt đầu</a></> : tabs.map(({ to, label, icon: Icon, active }) => <Link key={to} to={to} aria-current={active ? 'page' : undefined} className={`student-primary-tab ${active ? 'is-active' : ''}`}><Icon /><span>{label}</span></Link>)}</nav>
     </div>
   </header>;
 }

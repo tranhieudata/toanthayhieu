@@ -8,6 +8,9 @@ import AdminCommunity from './pages/admin/AdminCommunity';
 
 // Public pages
 import HomePage from './pages/HomePage';
+import ArticlesPage from './pages/ArticlesPage';
+import ArticlePage from './pages/ArticlePage';
+import AdminArticleEditor from './pages/admin/AdminArticleEditor';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import CourseDetailPage from './pages/CourseDetailPage';
@@ -81,6 +84,10 @@ function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/classes" element={<ClassesPage />} />
+          <Route path="/new" element={<ArticlesPage />} />
+          <Route path="/new/write" element={<AdminRoute><AdminArticleEditor /></AdminRoute>} />
+          <Route path="/new/:slug/edit" element={<AdminRoute><AdminArticleEditor /></AdminRoute>} />
+          <Route path="/new/:slug" element={<ArticlePage />} />
           <Route path="/print/homework/:token" element={<PublicHomeworkPrintPage />} />
           <Route path="/print/exam/:token" element={<PublicHomeworkPrintPage source="exam" />} />
           <Route path="/courses/:id" element={<CourseDetailPage />} />
