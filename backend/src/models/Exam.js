@@ -38,6 +38,7 @@ const examSchema = new mongoose.Schema(
     examPackage: { type: mongoose.Schema.Types.Mixed, default: null },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     sharedPractice: { type: String, default: '' }, // JSON: { generatedAt, stats, exercises:[{level, questions:[{q,hint}]}] }
+    classPractices: { type: Map, of: String },
   },
   { timestamps: true }
 );

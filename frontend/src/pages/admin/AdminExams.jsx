@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import api, { getUploadUrl } from '../../api/axios';
 import toast from 'react-hot-toast';
-import { FiPlus, FiEdit2, FiTrash2, FiBook, FiArchive, FiCalendar, FiClock, FiEye, FiDownload, FiPrinter, FiX, FiChevronLeft, FiChevronRight } from 'react-icons/fi';
+import { FiPlus, FiEdit2, FiTrash2, FiBook, FiArchive, FiCalendar, FiClock, FiEye, FiDownload, FiPrinter, FiX, FiChevronLeft, FiChevronRight, FiSearch, FiMoreHorizontal } from 'react-icons/fi';
+import { examGradeLabel, examClassNames, filterAndSortExams } from '../../utils/examList';
 import AdminExamComposer from './AdminExamComposer';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
@@ -238,7 +239,7 @@ function printExamContent(exam) {
           .katex { font-size: 1em; }
         </style>
       </head>
-      <body>${html}</body>
+      <body><div class="exam-content">${html}</div></body>
     </html>
   `);
   iframe.contentDocument.close();
@@ -369,6 +370,11 @@ function PaperPreview({ paper }) {
 
 export default function AdminExams() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const [search, setSearch] = useState('');
+  const [filterUsage, setFilterUsage] = useState('');
+  const [sortOrder, setSortOrder] = useState('created');
+  const [highlightedId, setHighlightedId] = useState(location.state?.savedExamId || null);
   const [exams, setExams] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filterTemplate, setFilterTemplate] = useState('all'); // 'all' | 'true' | 'false'
@@ -385,14 +391,18 @@ export default function AdminExams() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
 
-  const loadExams = async () => {
+  useEffect(() => { setCurrentPage(1); }, [search, filterUsage, sortOrder]);
+
+  const loadExams = async ({ resetFilters = false } = {}) => {
     setLoading(true);
     try {
       const params = {};
-      if (filterTemplate !== 'all') params.isTemplate = filterTemplate;
-      if (filterClass) params.classId = filterClass;
-      if (filterLesson) params.lessonId = filterLesson;
-      if (filterLevel) params.levelId = filterLevel;
+      if (!resetFilters) {
+        if (filterTemplate !== 'all') params.isTemplate = filterTemplate;
+        if (filterClass) params.classId = filterClass;
+        if (filterLesson) params.lessonId = filterLesson;
+        if (filterLevel) params.levelId = filterLevel;
+      }
       const { data } = await api.get('/exams', { params });
       setExams(data);
       setCurrentPage(1);
@@ -436,11 +446,12 @@ export default function AdminExams() {
   };
 
   const totalPoints = (exam) => exam.levels?.reduce((s, l) => s + l.totalPoints, 0) ?? 0;
-  const totalPages = Math.max(1, Math.ceil(exams.length / EXAMS_PER_PAGE));
+  const visibleExams = filterAndSortExams(exams, search, filterUsage, sortOrder);
+  const totalPages = Math.max(1, Math.ceil(visibleExams.length / EXAMS_PER_PAGE));
   const page = Math.min(currentPage, totalPages);
   const pageStart = (page - 1) * EXAMS_PER_PAGE;
-  const pageEnd = Math.min(pageStart + EXAMS_PER_PAGE, exams.length);
-  const paginatedExams = exams.slice(pageStart, pageEnd);
+  const pageEnd = Math.min(pageStart + EXAMS_PER_PAGE, visibleExams.length);
+  const paginatedExams = visibleExams.slice(pageStart, pageEnd);
 
   const openPreview = async (examId) => {
     setPreviewLoading(true);
@@ -492,7 +503,7 @@ export default function AdminExams() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
           <FiBook className="text-blue-600" /> Tạo Đề
         </h1>
@@ -529,10 +540,17 @@ export default function AdminExams() {
 
       {activeTab === 'compose' && (
         <AdminExamComposer
-          onSaved={() => {
+          onSaved={(savedExamId) => {
             setActiveTab('list');
-            setFilterTemplate('true');
-            loadExams();
+            setFilterTemplate('all');
+            setFilterClass('');
+            setFilterLesson('');
+            setFilterLevel('');
+            setFilterUsage('');
+            setSearch('');
+            setSortOrder('created');
+            setHighlightedId(savedExamId);
+            loadExams({ resetFilters: true });
           }}
         />
       )}
@@ -542,6 +560,31 @@ export default function AdminExams() {
 
       {/* Filters */}
       <div className="bg-white rounded-xl shadow-sm p-4 flex flex-wrap gap-4 items-center">
+        <div className="w-full flex flex-wrap items-end gap-3">
+          <div className="flex-1 min-w-0 basis-60">
+            <label htmlFor="exam-search" className="text-xs text-gray-500 block mb-1">Tìm đề</label>
+            <div className="relative">
+              <FiSearch className="absolute left-3 top-2.5 text-gray-400" aria-hidden="true" />
+              <input id="exam-search" type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Tìm theo tên đề…" className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+          </div>
+          <div>
+            <label htmlFor="exam-sort" className="text-xs text-gray-500 block mb-1">Sắp xếp</label>
+            <select id="exam-sort" value={sortOrder} onChange={e => setSortOrder(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="created">Mới tạo gần đây</option>
+              <option value="updated">Mới chỉnh sửa gần đây</option>
+              <option value="title">Tên đề A–Z</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label htmlFor="exam-usage" className="text-xs text-gray-500 block mb-1">Hình thức giao</label>
+          <select id="exam-usage" value={filterUsage} onChange={e => setFilterUsage(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="">Tất cả hình thức</option>
+            <option value="homework">BTVN</option>
+            <option value="exam">Đề Thi</option>
+          </select>
+        </div>
         <div>
           <label className="text-xs text-gray-500 block mb-1">Loại đề</label>
           <select
@@ -565,10 +608,10 @@ export default function AdminExams() {
             {classes.map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
           </select>
         </div>
-        <div>
+        <div className="min-w-0 max-w-full">
           <label className="text-xs text-gray-500 block mb-1">Bài học</label>
           <select
-            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="max-w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             value={filterLesson}
             onChange={e => setFilterLesson(e.target.value)}
           >
@@ -588,43 +631,60 @@ export default function AdminExams() {
           </select>
         </div>
         <div className="ml-auto text-sm text-gray-500">
-          {exams.length ? `${pageStart + 1}-${pageEnd} / ${exams.length} đề` : '0 đề'}
+          {visibleExams.length ? `${pageStart + 1}-${pageEnd} / ${visibleExams.length} đề` : '0 đề'}
         </div>
       </div>
 
       {/* List */}
       {loading ? (
         <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" /></div>
-      ) : exams.length === 0 ? (
+      ) : visibleExams.length === 0 ? (
         <div className="bg-white rounded-xl shadow-sm p-12 text-center text-gray-400">
           <FiBook className="mx-auto text-4xl mb-3 text-gray-300" />
-          <p>Chưa có đề kiểm tra nào</p>
+          <p>{search || filterUsage || filterClass || filterLesson || filterLevel || filterTemplate !== 'all' ? 'Không tìm thấy đề phù hợp. Hãy thử tên khác hoặc thay đổi bộ lọc.' : 'Chưa có đề kiểm tra nào'}</p>
         </div>
       ) : (
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+        <div className="bg-white rounded-xl shadow-sm">
           <div className="divide-y divide-gray-100">
             {paginatedExams.map((exam, index) => (
               <div
                 key={exam._id}
-                onClick={() => openPreview(exam._id)}
-                className="group flex items-center gap-3 px-3 py-2 hover:bg-blue-50/60 cursor-pointer"
+                className={`group flex items-center gap-2 sm:gap-3 px-3 py-1.5 hover:bg-blue-50/60 ${highlightedId === exam._id ? 'bg-blue-50 ring-1 ring-inset ring-blue-200' : ''}`}
               >
                 <span className="w-9 shrink-0 text-right text-xs text-gray-400">{pageStart + index + 1}</span>
-                <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900 group-hover:text-blue-700">
-                  {exam.title || 'Tạo Đề'}
-                </span>
+                <div className="min-w-0 flex-1 flex items-center gap-3 overflow-x-auto whitespace-nowrap">
+                  <div className="flex shrink-0 items-center gap-1.5 text-xs">
+                    {exam.homeworkClasses?.length > 0 && <span title={`Bài tập: ${exam.homeworkClasses.map(cls => cls.name).join(', ')}`} className="rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-800">BTVN</span>}
+                    {exam.classSchedules?.some(schedule => schedule.class) && <span title={`Giao đề: ${exam.classSchedules.map(schedule => schedule.class?.name).filter(Boolean).join(', ')}`} className="rounded-full bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700">Đề Thi</span>}
+                    {examGradeLabel(exam) && <span className="rounded-full bg-blue-50 px-2 py-0.5 font-medium text-blue-700">{examGradeLabel(exam)}</span>}
+                    {highlightedId === exam._id && <span className="text-blue-600 font-medium">Vừa lưu</span>}
+                  </div>
+                  <button onClick={() => openPreview(exam._id)} title={exam.title || 'Tạo Đề'} className="min-w-48 flex-1 truncate text-left text-sm font-medium text-gray-900 hover:text-blue-700 focus-visible:outline-blue-500">
+                    {exam.title || 'Tạo Đề'}
+                  </button>
+                  <p className="flex shrink-0 items-center gap-3 text-xs text-gray-500">
+                    {examClassNames(exam).length > 0 && <span className="max-w-48 truncate" title={`Lớp: ${examClassNames(exam).join(', ')}`}>Lớp: {examClassNames(exam).join(', ')}</span>}
+                    {exam.examPackage?.meta?.duration && <span>{exam.examPackage.meta.duration} phút</span>}
+                    {exam.createdAt && <span>Tạo {new Date(exam.createdAt).toLocaleDateString('vi-VN')}</span>}
+                  </p>
+                </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  <button onClick={(e) => { e.stopPropagation(); openPreview(exam._id); }} className="p-1.5 text-emerald-600 hover:bg-emerald-100 rounded" title="Xem đề"><FiEye size={15} /></button>
-                  <button onClick={(e) => { e.stopPropagation(); openParentPrintLink(exam._id); }} className="p-1.5 text-purple-600 hover:bg-purple-100 rounded" title="Xem link phụ huynh"><FiPrinter size={15} /></button>
-                  <button onClick={(e) => { e.stopPropagation(); navigate(`/admin/exams/${exam._id}/edit`); }} className="p-1.5 text-blue-500 hover:bg-blue-100 rounded" title="Sửa"><FiEdit2 size={15} /></button>
-                  <button onClick={(e) => { e.stopPropagation(); handleDelete(exam._id); }} disabled={deleting === exam._id} className="p-1.5 text-red-400 hover:bg-red-100 rounded disabled:opacity-40" title="Xóa"><FiTrash2 size={15} /></button>
+                  <button onClick={() => openParentPrintLink(exam._id)} className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 rounded-lg" title={`Mở bản in: ${exam.title}`}><FiPrinter size={16} /> In</button>
+                  <details className="relative" onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) e.currentTarget.open = false; }} onKeyDown={e => { if (e.key === 'Escape') { e.currentTarget.open = false; e.currentTarget.querySelector('summary').focus(); } }}>
+                    <summary className="list-none cursor-pointer p-2 text-gray-500 hover:bg-gray-100 rounded-lg [&::-webkit-details-marker]:hidden" aria-label={`Thao tác với đề ${exam.title}`}><FiMoreHorizontal size={18} /></summary>
+                    <div className="absolute right-0 top-full mt-1 z-20 w-40 bg-white border border-gray-200 rounded-lg shadow-lg p-1" onClick={e => { e.currentTarget.closest('details').open = false; }}>
+                      <button onClick={() => openPreview(exam._id)} className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded"><FiEye /> Xem đề</button>
+                      <button onClick={() => navigate(`/admin/exams/${exam._id}/edit`)} className="flex w-full items-center gap-2 px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded"><FiEdit2 /> Sửa đề</button>
+                      <button onClick={() => handleDelete(exam._id)} disabled={deleting === exam._id} className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded disabled:opacity-40"><FiTrash2 /> Xóa đề</button>
+                    </div>
+                  </details>
                 </div>
               </div>
             ))}
           </div>
         </div>
       )}
-      {!loading && exams.length > EXAMS_PER_PAGE && (
+      {!loading && visibleExams.length > EXAMS_PER_PAGE && (
         <div className="flex items-center justify-between bg-white rounded-xl shadow-sm px-4 py-3">
           <span className="text-sm text-gray-500">Trang {page} / {totalPages}</span>
           <div className="flex items-center gap-1">
@@ -731,7 +791,7 @@ export default function AdminExams() {
                     <PaperPreview paper={previewExam.examPackage} />
                   ) : hasMeaningfulHtml(previewExam?.content) ? (
                     <div
-                      className="prose max-w-none"
+                      className="exam-content prose max-w-none overflow-x-auto"
                       dangerouslySetInnerHTML={{ __html: renderStoredExamContentHtml(previewExam.content) }}
                     />
                   ) : null}
@@ -739,7 +799,7 @@ export default function AdminExams() {
                     <section className="mt-8 border-t border-emerald-100 pt-5">
                       <h3 className="mb-3 font-semibold text-emerald-700">Lời giải / đáp án cho admin</h3>
                       <div
-                        className="prose max-w-none rounded-lg border border-emerald-100 bg-emerald-50/40 p-4"
+                        className="exam-content prose max-w-none overflow-x-auto rounded-lg border border-emerald-100 bg-emerald-50/40 p-4"
                         dangerouslySetInnerHTML={{ __html: renderStoredExamContentHtml(previewExam.solutionContent) }}
                       />
                     </section>

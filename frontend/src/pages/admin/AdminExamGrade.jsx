@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import api, { getUploadUrl } from '../../api/axios';
 import toast from 'react-hot-toast';
 import {
@@ -110,7 +110,7 @@ function OverviewTab({ students, results, maxScore }) {
 }
 
 /* ─── Tab: Đề ôn tập ────────────────────────────────────────────────────── */
-function PracticeTab({ exam, results, onPracticeGenerated }) {
+function PracticeTab({ exam, classId, results, onPracticeGenerated }) {
   const [openHints, setOpenHints] = useState({});
 
   const practiceData = useMemo(() => {
@@ -127,7 +127,7 @@ function PracticeTab({ exam, results, onPracticeGenerated }) {
   const handleGenerate = async () => {
     setGenerating(true);
     try {
-      const { data } = await api.post(`/exams/${exam._id}/generate-practice`);
+      const { data } = await api.post(`/exams/${exam._id}/generate-practice`, { classId });
       onPracticeGenerated(data.sharedPractice);
       toast.success('Đã tạo đề ôn tập thành công!');
     } catch (err) {
@@ -242,13 +242,28 @@ function PracticeTab({ exam, results, onPracticeGenerated }) {
 }
 
 export default function AdminExamGrade() {
-  const navigate = useNavigate();
   const { id } = useParams();
   const [searchParams] = useSearchParams();
+  const requestedClassId = searchParams.get('classId');
   const requestedStudentId = searchParams.get('studentId');
 
+  return <ExamGrade key={JSON.stringify([id, requestedClassId, requestedStudentId])}
+    id={id} requestedClassId={requestedClassId} requestedStudentId={requestedStudentId} />;
+}
+
+const classroomId = classroom => classroom?._id || classroom;
+
+function getClassForStudent(classrooms, studentId, result) {
+  return result?.class || classroomId(classrooms.find(classroom =>
+    classroom.students?.some(student => classroomId(student) === studentId)
+  ));
+}
+
+function ExamGrade({ id, requestedClassId, requestedStudentId }) {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('grade');
   const [exam, setExam] = useState(null);
+  const [classrooms, setClassrooms] = useState([]);
   const [students, setStudents] = useState([]);
   const [results, setResults] = useState({});
   const [selectedStudent, setSelectedStudent] = useState(null);
@@ -259,54 +274,78 @@ export default function AdminExamGrade() {
   const [teacherNote, setTeacherNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
   const [uploadingImages, setUploadingImages] = useState(false);
   const [aiGrading, setAiGrading] = useState(false);
   const [previewImage, setPreviewImage] = useState(null);
-  // Load exam + students + existing results
   useEffect(() => {
+    let cancelled = false;
     const loadAll = async () => {
       try {
-        const { data: examData } = await api.get(`/exams/${id}`);
-        const firstScheduledClass = examData.classSchedules?.find(s => s.class)?.class || null;
-        const examClass = examData.class || firstScheduledClass;
-        setExam({ ...examData, class: examClass || null });
+        const [{ data: examData }, { data: resultList }] = await Promise.all([
+          api.get(`/exams/${id}`),
+          api.get(`/exams/${id}/results`),
+        ]);
+        if (cancelled) return;
+
+        const assignedClasses = [...new Map(
+          (examData.classSchedules || []).map(schedule => schedule.class).filter(Boolean)
+            .map(classroom => [classroomId(classroom), classroom])
+        ).values()];
+        const resultMap = Object.fromEntries(resultList.filter(result => result.student)
+          .map(result => [result.student._id, result]));
+        const classId = requestedClassId
+          || (requestedStudentId && getClassForStudent(assignedClasses, requestedStudentId, resultMap[requestedStudentId]))
+          || classroomId(assignedClasses[0]);
+        const examClass = assignedClasses.find(classroom => classroomId(classroom) === classId);
+        setClassrooms(assignedClasses);
+        if (requestedClassId && !examClass) {
+          setLoadError('Đề kiểm tra chưa được giao cho lớp này.');
+          return;
+        }
+        const activeClassId = classroomId(examClass || assignedClasses[0]);
+        const { data: roster } = activeClassId ? await api.get(`/classes/${activeClassId}`) : { data: null };
+        if (cancelled) return;
+
+        const belongsToClass = studentId =>
+          !activeClassId || getClassForStudent(assignedClasses, studentId, resultMap[studentId]) === activeClassId;
+        const scopedResults = Object.fromEntries(Object.entries(resultMap)
+          .filter(([studentId]) => belongsToClass(studentId)));
+        const classStudents = new Map((roster?.students || [])
+          .filter(student => belongsToClass(student._id))
+          .map(student => [student._id, student]));
+        Object.values(scopedResults).forEach(({ student }) => {
+          if (!classStudents.has(student._id)) classStudents.set(student._id, student);
+        });
+
+        setExam({
+          ...examData,
+          class: roster,
+          sharedPractice: activeClassId
+            ? examData.classPractices?.[activeClassId] || (assignedClasses.length === 1 ? examData.sharedPractice : '')
+            : examData.sharedPractice,
+        });
+        setStudents([...classStudents.values()]);
+        setResults(scopedResults);
         setAnswerContent(examData.solutionContent || '');
         setAnswerImages(examData.solutionImages || []);
-
-        // Load students from every class assigned to this exam.
-        const classIds = [
-          ...(examData.classSchedules || []).map(s => s.class?._id || s.class).filter(Boolean),
-          examClass?._id || examClass,
-        ].filter(Boolean);
-        const uniqueClassIds = [...new Set(classIds.map(String))];
-        if (uniqueClassIds.length > 0) {
-          const classResponses = await Promise.all(
-            uniqueClassIds.map(classId => api.get(`/classes/${classId}`).catch(() => null))
-          );
-          const studentMap = {};
-          classResponses.forEach(response => {
-            (response?.data?.students || []).forEach(student => {
-              studentMap[student._id] = student;
-            });
-          });
-          setStudents(Object.values(studentMap));
+        const linkedStudent = classStudents.get(requestedStudentId);
+        if (linkedStudent) {
+          const result = scopedResults[requestedStudentId];
+          setSelectedStudent(linkedStudent);
+          setManualScore(result?.status === 'graded' ? result.totalScore : '');
+          setTeacherNote(result?.teacherNote || '');
         }
-
-        // Load existing results
-        const { data: resultList } = await api.get(`/exams/${id}/results`);
-        const resultMap = {};
-        resultList.forEach(r => { resultMap[r.student._id || r.student] = r; });
-        setResults(resultMap);
-
       } catch {
-        toast.error('Không tải được dữ liệu');
+        if (!cancelled) setLoadError('Không tải được dữ liệu chấm đề.');
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
     loadAll();
-  }, [id]);
+    return () => { cancelled = true; };
+  }, [id, requestedClassId, requestedStudentId]);
 
   const selectStudent = (student) => {
     if (saving || aiGrading || uploadingImages) return;
@@ -315,16 +354,6 @@ export default function AdminExamGrade() {
     setManualScore(existing?.status === 'graded' ? existing.totalScore : '');
     setTeacherNote(existing?.teacherNote || '');
   };
-
-  useEffect(() => {
-    if (loading || !requestedStudentId) return;
-    const student = students.find(item => item._id === requestedStudentId);
-    if (!student) return;
-    setSelectedStudent(student);
-    const result = results[student._id];
-    setManualScore(result?.status === 'graded' ? result.totalScore : '');
-    setTeacherNote(result?.teacherNote || '');
-  }, [loading, students, requestedStudentId]);
 
   const maxScore = Number(exam?.examPackage?.totals?.totalPoints)
     || [...(exam?.examPackage?.questions?.multipleChoice || []), ...(exam?.examPackage?.questions?.essay || [])].reduce((sum, q) => sum + (Number(q.points) || 0), 0)
@@ -459,6 +488,13 @@ export default function AdminExamGrade() {
     </div>
   );
 
+  if (loadError) return (
+    <div className="space-y-3 rounded-xl bg-white p-6">
+      <p className="text-red-600">{loadError}</p>
+      <Link to="/admin/exam-grading" className="text-sm text-blue-600">Danh sách chấm đề</Link>
+    </div>
+  );
+
   if (!exam) return null;
 
   const TABS = [
@@ -485,6 +521,20 @@ export default function AdminExamGrade() {
         </div>
       </div>
 
+      {classrooms.length > 1 && (
+        <label className="flex w-fit items-center gap-3 text-sm text-gray-700">
+          Lớp học
+          <select
+            value={exam.class?._id || ''}
+            disabled={saving || aiGrading || uploadingImages || savingAnswers}
+            onChange={event => navigate(`?classId=${encodeURIComponent(event.target.value)}`)}
+            className="rounded-lg border border-gray-300 bg-white px-3 py-2"
+          >
+            {classrooms.map(classroom => <option key={classroomId(classroom)} value={classroomId(classroom)}>{classroom.name}</option>)}
+          </select>
+        </label>
+      )}
+
       {/* Tab navigation */}
       <div className="flex gap-1 bg-white rounded-xl shadow-sm p-1.5 w-fit">
         {TABS.map(({ key, label, icon: Icon }) => (
@@ -505,7 +555,7 @@ export default function AdminExamGrade() {
       {activeTab === 'grade' && <details className="rounded-xl border border-blue-100 bg-white p-4">
         <summary className="cursor-pointer font-semibold text-blue-900">Đáp án và hướng dẫn chấm của thầy</summary>
         <p className="my-3 text-sm text-gray-500">AI ưu tiên nội dung và ảnh đáp án bên dưới, giữ cách chia câu/ý và thang điểm của thầy. Khi chưa có, AI dùng đáp án đã lưu trong đề; nếu vẫn chưa có thì tự lập đáp án trước khi chấm.</p>
-        <RichTextEditor value={answerContent} onChange={setAnswerContent} />
+        <RichTextEditor allowTables value={answerContent} onChange={setAnswerContent} />
         <div className="my-3 flex flex-wrap gap-2">{answerImages.map((image, index) => <div key={image.url} className="relative">
           <img src={getUploadUrl(image.url)} alt={`Đáp án ${index + 1}`} className="h-28 w-28 rounded border object-cover" />
           <button type="button" disabled={savingAnswers || aiGrading} onClick={() => setAnswerImages(prev => prev.filter((_, i) => i !== index))} className="absolute right-0 top-0 rounded bg-red-600 p-1 text-white" title="Bỏ ảnh đáp án"><FiX /></button>
@@ -725,6 +775,7 @@ export default function AdminExamGrade() {
       {activeTab === 'practice' && (
         <PracticeTab
           exam={exam}
+          classId={exam.class?._id}
           results={results}
           onPracticeGenerated={(practice) =>
             setExam(prev => ({ ...prev, sharedPractice: JSON.stringify(practice) }))

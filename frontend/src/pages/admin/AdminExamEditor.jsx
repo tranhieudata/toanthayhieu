@@ -653,7 +653,7 @@ export default function AdminExamEditor() {
         }));
         toast.success(`Đã thêm vào phần Bài tập cho ${form.homeworkClasses.length} lớp`);
       }
-      navigate('/admin/exams');
+      navigate('/admin/exams', { state: { savedExamId: sourceExamId } });
     } catch (err) {
       toast.error(err.response?.data?.message || 'Lỗi lưu đề');
     } finally {
@@ -1016,6 +1016,7 @@ export default function AdminExamEditor() {
             </div>
           ) : (
           <RichTextEditor
+            allowTables
             value={form.content}
             onChange={html => setForm(f => ({ ...f, content: html }))}
             placeholder="Nhập nội dung đề kiểm tra. Dùng nút ƒx để chèn công thức toán..."
@@ -1034,6 +1035,7 @@ export default function AdminExamEditor() {
         <div className="space-y-3 rounded-xl bg-white p-6 shadow-sm">
           <h2 className="font-semibold text-gray-800">Lời giải / đáp án cho admin</h2>
           <RichTextEditor
+            allowTables
             value={form.solutionContent}
             onChange={html => setForm(f => ({ ...f, solutionContent: html }))}
             placeholder="Nhập lời giải, đáp án hoặc hướng dẫn chấm. Phần này chỉ hiển thị cho admin, không hiện trong link phụ huynh."

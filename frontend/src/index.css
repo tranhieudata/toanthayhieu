@@ -66,8 +66,8 @@
 .exam-content .ql-editor strong { font-weight: bold; }
 .exam-content .ql-editor em { font-style: italic; }
 .exam-content .ql-editor img { max-width: 100%; height: auto; margin: 0.5em 0; border-radius: 4px; }
-.exam-content .ql-editor table { border-collapse: collapse; width: 100%; margin: 1em 0; }
-.exam-content .ql-editor table td, .exam-content .ql-editor table th { border: 1px solid #d1d5db; padding: 8px 12px; }
+.exam-content table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+.exam-content :is(td, th) { border: 1px solid #9ca3af; padding: 8px 12px; }
 .exam-content .ql-formula { display: inline; }
 .exam-content .katex { font-size: 1.1em; }
 .exam-content .katex-display { overflow-x: auto; overflow-y: hidden; padding: 0.5rem 0; }

@@ -33,9 +33,13 @@ export default function AdminExamGrading() {
     return [...items.values()].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'vi'));
   }, [exams]);
 
-  const filteredExams = useMemo(() => exams.filter(exam => {
-    const matchesClass = !classId || exam.classSchedules?.some(schedule => (schedule.class?._id || schedule.class) === classId);
-    return matchesClass && (exam.title || '').toLocaleLowerCase('vi').includes(search.trim().toLocaleLowerCase('vi'));
+  const assignments = useMemo(() => exams.flatMap(exam => {
+    if (!(exam.title || '').toLocaleLowerCase('vi').includes(search.trim().toLocaleLowerCase('vi'))) return [];
+    const classrooms = new Map(exam.classSchedules.filter(schedule => schedule.class)
+      .map(({ class: classroom }) => [classroom._id || classroom, classroom]));
+    return [...classrooms.entries()]
+      .filter(([id]) => !classId || id === classId)
+      .map(([id, classroom]) => ({ exam, classId: id, className: classroom.name || 'Lớp học' }));
   }), [exams, classId, search]);
 
   return (
@@ -58,21 +62,21 @@ export default function AdminExamGrading() {
             {classes.map(classroom => <option key={classroom._id} value={classroom._id}>{classroom.name}</option>)}
           </select>
         </label>
-        {!loading && !error && <span className="pb-2 text-sm text-gray-500">{filteredExams.length} đề kiểm tra</span>}
+        {!loading && !error && <span className="pb-2 text-sm text-gray-500">{assignments.length} lượt giao đề</span>}
       </div>
 
       {loading ? <div className="flex justify-center py-12"><div className="h-10 w-10 animate-spin rounded-full border-b-2 border-blue-600" /></div>
         : error ? <div className="rounded-xl bg-white p-8 text-center"><p className="text-red-600">{error}</p><button onClick={loadExams} className="mt-3 text-sm text-blue-600 hover:underline">Thử lại</button></div>
-        : filteredExams.length === 0 ? <div className="rounded-xl bg-white p-10 text-center text-gray-500">
+        : assignments.length === 0 ? <div className="rounded-xl bg-white p-10 text-center text-gray-500">
           <FiCheckSquare className="mx-auto mb-3 text-3xl text-gray-300" />
           <p>{exams.length ? 'Không có đề phù hợp với bộ lọc.' : 'Chưa có đề kiểm tra nào được giao cho lớp.'}</p>
           {!exams.length && <p className="mt-2 text-sm">Giao đề cho lớp trong mục Tạo Đề, sau đó quay lại đây để chấm bài.</p>}
         </div>
         : <div className="divide-y divide-gray-100 overflow-hidden rounded-xl bg-white shadow-sm">
-          {filteredExams.map(exam => <Link key={exam._id} to={`/admin/exam-grading/${exam._id}`} className="flex items-center gap-4 px-5 py-4 hover:bg-blue-50">
+          {assignments.map(({ exam, classId, className }) => <Link key={`${exam._id}:${classId}`} to={`/admin/exam-grading/${exam._id}?classId=${encodeURIComponent(classId)}`} className="flex items-center gap-4 px-5 py-4 hover:bg-blue-50">
             <div className="min-w-0 flex-1">
               <h2 className="font-semibold text-gray-900">{exam.title}</h2>
-              <div className="mt-2 flex flex-wrap gap-2">{exam.classSchedules.filter(schedule => schedule.class).map(schedule => <span key={schedule.class?._id || schedule.class} className="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700">{schedule.class?.name || 'Lớp học'}</span>)}</div>
+              <span className="mt-2 inline-block rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700">{className}</span>
             </div>
             <span className="inline-flex shrink-0 items-center gap-2 text-sm font-medium text-blue-600">Chấm bài <FiArrowRight /></span>
           </Link>)}

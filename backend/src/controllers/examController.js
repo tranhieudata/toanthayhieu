@@ -396,11 +396,11 @@ function pickClassForStudent(exam, studentId) {
     const cls = schedule.class;
     const students = cls?.students || [];
     return students.some((student) => String(student?._id || student) === String(studentId));
-  })?.class?._id || (exam.classSchedules || []).find((schedule) => schedule.class)?.class?._id || undefined;
+  })?.class?._id;
 }
 
 function normalizeExamForAdmin(examDoc) {
-  const exam = examDoc.toObject ? examDoc.toObject() : examDoc;
+  const exam = examDoc.toObject ? examDoc.toObject({ flattenMaps: true }) : examDoc;
   const firstSchedule = (exam.classSchedules || []).find((schedule) => schedule.class) || null;
   return {
     ...exam,
@@ -414,7 +414,13 @@ function normalizeExamForAdmin(examDoc) {
 const getExams = async (req, res) => {
   try {
     const filter = {};
-    if (req.query.classId) filter['classSchedules.class'] = req.query.classId;
+    if (req.query.classId) {
+      const homeworkExamIds = await Homework.distinct('sourceExam', { class: req.query.classId });
+      filter.$or = [
+        { 'classSchedules.class': req.query.classId },
+        { _id: { $in: homeworkExamIds.filter(Boolean) } },
+      ];
+    }
     if (req.query.lessonId) filter.lesson = req.query.lessonId;
     if (req.query.levelId) filter.level = req.query.levelId;
     if (req.query.isTemplate === 'true') filter.isTemplate = true;
@@ -427,7 +433,22 @@ const getExams = async (req, res) => {
       .populate('level', 'name bgColor textColor')
       .populate('createdBy', 'name')
       .sort({ createdAt: -1 });
-    res.json(exams.map(normalizeExamForAdmin));
+    const homeworks = await Homework.find({ sourceExam: { $in: exams.map(exam => exam._id) } })
+      .select('sourceExam class')
+      .populate('class', 'name')
+      .lean();
+    const homeworkClasses = new Map();
+    homeworks.forEach(homework => {
+      if (!homework.class) return;
+      const key = String(homework.sourceExam);
+      const linked = homeworkClasses.get(key) || [];
+      if (!linked.some(cls => String(cls._id) === String(homework.class._id))) linked.push(homework.class);
+      homeworkClasses.set(key, linked);
+    });
+    res.json(exams.map(exam => ({
+      ...normalizeExamForAdmin(exam),
+      homeworkClasses: homeworkClasses.get(String(exam._id)) || [],
+    })));
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -534,10 +555,10 @@ const saveExamResult = async (req, res) => {
       }
       const result = await ExamResult.findOneAndUpdate(
         { exam: req.params.id, student: studentId },
-        { $set: { class: pickClassForStudent(exam, studentId), totalScore, maxScore,
+        { $set: { totalScore, maxScore,
           scores: [], gradingReport: null, gradingMethod: 'manual', autoFeedback: '',
           teacherNote: teacherNote || '', gradedBy: req.user._id, gradedAt: new Date(), status: 'graded' },
-          $setOnInsert: { exam: req.params.id, student: studentId } },
+          $setOnInsert: { exam: req.params.id, student: studentId, class: pickClassForStudent(exam, studentId) } },
         { upsert: true, new: true, runValidators: true }
       ).populate('student', 'name email').populate('gradedBy', 'name');
       return res.json(result);
@@ -568,7 +589,6 @@ const saveExamResult = async (req, res) => {
       { exam: req.params.id, student: studentId },
       {
         $set: {
-          class: pickClassForStudent(exam, studentId),
           scores: normalizedScores,
           totalScore,
           maxScore,
@@ -581,6 +601,7 @@ const saveExamResult = async (req, res) => {
         $setOnInsert: {
           exam: req.params.id,
           student: studentId,
+          class: pickClassForStudent(exam, studentId),
         },
       },
       { upsert: true, new: true, runValidators: true }
@@ -627,7 +648,6 @@ const adminSubmitExamImages = async (req, res) => {
       { exam: req.params.id, student: studentId },
       {
         $set: {
-          class: pickClassForStudent(exam, studentId),
           submissionImages: normalizedImages,
           submittedAt: normalizedImages.length > 0 ? new Date() : undefined,
           status: 'pending',
@@ -635,6 +655,7 @@ const adminSubmitExamImages = async (req, res) => {
         $setOnInsert: {
           exam: req.params.id,
           student: studentId,
+          class: pickClassForStudent(exam, studentId),
         },
       },
       { upsert: true, new: true, runValidators: false }
@@ -655,9 +676,7 @@ const aiGradeExamResult = async (req, res) => {
       return res.status(400).json({ message: 'GEMINI_API_KEY chưa được cấu hình' });
     }
 
-    const exam = await Exam.findById(req.params.id)
-      .populate('lesson', 'title')
-      .populate('classSchedules.class', 'students');
+    const exam = await Exam.findById(req.params.id).populate('lesson', 'title');
     if (!exam) return res.status(404).json({ message: 'Không tìm thấy đề kiểm tra' });
 
     const resultDoc = await ExamResult.findOne({ exam: req.params.id, student: req.params.studentId });
@@ -704,7 +723,6 @@ const aiGradeExamResult = async (req, res) => {
       { exam: req.params.id, student: req.params.studentId },
       {
         $set: {
-          class: pickClassForStudent(exam, req.params.studentId),
           scores,
           totalScore,
           maxScore,
@@ -765,6 +783,7 @@ const submitExamImages = async (req, res) => {
 
     let result = await ExamResult.findOne({ exam: req.params.id, student: req.user._id });
     if (result) {
+      if (!result.class && myClassId) result.class = myClassId;
       result.submissionImages = images;
       result.submittedAt = new Date();
       if (result.status !== 'graded') result.status = 'pending';
@@ -796,7 +815,7 @@ const getStudentExams = async (req, res) => {
       .populate('lesson', 'title')
       .populate('classSchedules.class', 'name')
       .sort({ createdAt: -1 })
-      .select('-content -solutionImages'); // không gửi nội dung ở danh sách
+      .select('-content -solutionImages -classPractices'); // không gửi nội dung ở danh sách
 
     const examIds = exams.map(e => e._id);
     const results = await ExamResult.find({ exam: { $in: examIds }, student: req.user._id })
@@ -857,9 +876,16 @@ const getStudentExamDetail = async (req, res) => {
     }
 
     const result = await ExamResult.findOne({ exam: exam._id, student: req.user._id });
+    const { classPractices, sharedPractice, ...examData } = exam.toObject();
+    const assignedClassIds = new Set(exam.classSchedules.filter(schedule => schedule.class)
+      .map(schedule => String(schedule.class._id)));
+    const resultClassId = String(result?.class);
+    const practiceClassId = assignedClassIds.has(resultClassId) && myClassIds.includes(resultClassId)
+      ? resultClassId : String(mySchedule?.class?._id);
     res.json({
-      ...exam.toObject(),
+      ...examData,
       class: mySchedule?.class || null,
+      sharedPractice: classPractices?.get(practiceClassId) || (assignedClassIds.size <= 1 ? sharedPractice : ''),
       startDate: mySchedule?.startDate || null,
       endDate: mySchedule?.endDate || null,
       myResult: result ? result.toObject() : null,
@@ -872,10 +898,23 @@ const getStudentExamDetail = async (req, res) => {
 // POST /api/exams/:id/generate-practice  (admin only)
 const generateSharedPractice = async (req, res) => {
   try {
-    const exam = await Exam.findById(req.params.id).populate('lesson', 'title');
+    const exam = await Exam.findById(req.params.id)
+      .populate('lesson', 'title')
+      .populate('classSchedules.class', 'students');
     if (!exam) return res.status(404).json({ message: 'Không tìm thấy đề kiểm tra' });
 
-    const results = await ExamResult.find({ exam: req.params.id, status: 'graded' });
+    const assignedClassIds = [...new Set(exam.classSchedules.filter(schedule => schedule.class)
+      .map(schedule => String(schedule.class._id)))];
+    const classId = req.body?.classId || (assignedClassIds.length === 1 ? assignedClassIds[0] : null);
+    if ((classId && !assignedClassIds.includes(classId)) || (!classId && assignedClassIds.length > 1)) {
+      return res.status(400).json({ message: 'Chọn lớp đã được giao đề để tạo đề ôn tập.' });
+    }
+    const resultQuery = { exam: req.params.id, status: 'graded' };
+    if (classId) resultQuery.$or = [{ class: classId }, { class: null }];
+    const gradedResults = await ExamResult.find(resultQuery);
+    const results = classId ? gradedResults.filter(result =>
+      String(result.class || pickClassForStudent(exam, result.student)) === classId
+    ) : gradedResults;
     if (results.length === 0)
       return res.status(400).json({ message: 'Chưa có học sinh nào được chấm điểm' });
 
@@ -942,8 +981,8 @@ Yêu cầu:
     parsed.generatedAt = new Date().toISOString();
     parsed.stats = { totalGraded: results.length, levelStats, questionStats };
 
-    exam.sharedPractice = JSON.stringify(parsed);
-    await exam.save();
+    const practicePath = classId ? `classPractices.${classId}` : 'sharedPractice';
+    await Exam.updateOne({ _id: exam._id }, { $set: { [practicePath]: JSON.stringify(parsed) } });
 
     res.json({ sharedPractice: parsed });
   } catch (err) {

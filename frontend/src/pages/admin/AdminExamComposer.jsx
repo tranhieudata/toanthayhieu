@@ -370,7 +370,7 @@ export default function AdminExamComposer({ onSaved }) {
         toast.success(`Đã thêm vào phần Bài tập cho ${assignHomework.classIds.length} lớp`);
       }
       toast.success('Đã lưu vào ngân hàng đề');
-      onSaved?.();
+      onSaved?.(savedExam?._id);
     } catch (err) {
       toast.error(err.response?.data?.message || 'Không lưu được đề');
     } finally {

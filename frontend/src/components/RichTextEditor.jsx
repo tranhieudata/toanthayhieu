@@ -14,7 +14,13 @@ const Align = Quill.import('formats/align');
 Align.whitelist = ['', 'center', 'right', 'justify'];
 Quill.register(Align, true);
 
-export default function RichTextEditor({ value, onChange, onUploadingChange, placeholder = 'Nhập nội dung...' }) {
+function preserveTableCell(_cell, delta) {
+  const lastInsert = delta.ops.at(-1)?.insert;
+  // Quill's clipboard can omit the cell boundary for headers and empty cells.
+  return typeof lastInsert === 'string' && lastInsert.endsWith('\n') ? delta : delta.insert('\n');
+}
+
+export default function RichTextEditor({ value, onChange, onUploadingChange, allowTables = false, placeholder = 'Nhập nội dung...' }) {
   const containerRef = useRef(null);
   const quillRef = useRef(null);
   const onChangeRef = useRef(onChange);
@@ -102,6 +108,10 @@ export default function RichTextEditor({ value, onChange, onUploadingChange, pla
       modules: {
         history: { userOnly: true },
         uploader: { mimetypes: IMAGE_TYPES, handler: uploadImages },
+        ...(allowTables && {
+          table: true,
+          clipboard: { matchers: [['td, th', preserveTableCell]] },
+        }),
         toolbar: {
           container: [
             [{ header: [1, 2, 3, 4, false] }],
@@ -113,9 +123,25 @@ export default function RichTextEditor({ value, onChange, onUploadingChange, pla
             [{ color: [] }, { background: [] }],
             ['link', 'image', 'video'],
             ['formula'],
+            ...(allowTables ? [['table']] : []),
             ['clean'],
           ],
           handlers: {
+            table: () => {
+              const table = quill.getModule('table');
+              const range = quill.getSelection(true);
+              if (!range || table.getTable(range)[0]) return;
+              const size = window.prompt('Nhập số hàng × số cột (mỗi chiều tối đa 20).', '3 × 3');
+              const match = size?.match(/^\s*([1-9]|1\d|20)\s*[x×]\s*([1-9]|1\d|20)\s*$/i);
+              if (!match) return;
+              const [line, offset] = quill.getLine(range.index);
+              if (line.length() > 1) {
+                const end = range.index - offset + line.length() - 1;
+                quill.insertText(end, '\n', 'user');
+                quill.setSelection(end + 1, 0, 'silent');
+              }
+              table.insertTable(Number(match[1]), Number(match[2]));
+            },
             image: () => {
               const input = document.createElement('input');
               input.type = 'file';
@@ -133,6 +159,12 @@ export default function RichTextEditor({ value, onChange, onUploadingChange, pla
       },
     });
     quillRef.current = quill;
+    if (allowTables) {
+      const button = quill.getModule('toolbar').container.querySelector('.ql-table');
+      button.textContent = 'Bảng';
+      button.title = 'Chèn bảng';
+      button.setAttribute('aria-label', 'Chèn bảng');
+    }
 
     // Set initial content
     if (value) {
@@ -260,6 +292,7 @@ export default function RichTextEditor({ value, onChange, onUploadingChange, pla
         .rich-text-editor .editor-image-controls button:hover,
         .rich-text-editor .editor-image-controls button[aria-pressed=true] { background: #dbeafe; border-color: #2563eb; }
         .rich-text-editor .ql-editor img { cursor: pointer; }
+        .rich-text-editor .ql-toolbar button.ql-table { width: auto; }
         .ql-toolbar {
           border: 1px solid #d1d5db;
           border-bottom: none;

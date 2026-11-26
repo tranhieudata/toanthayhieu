@@ -6,7 +6,7 @@ const ExamResult = require('../src/models/ExamResult');
 const User = require('../src/models/User');
 const fs = require('fs/promises');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-const { saveExamResult, aiGradeExamResult } = require('../src/controllers/examController');
+const { saveExamResult, aiGradeExamResult, generateSharedPractice } = require('../src/controllers/examController');
 
 const report = () => ({
   objective: [{ label: '7a', studentAnswer: 'Đúng', expectedAnswer: 'Đúng', correct: true, score: 3, maxScore: 3 }],
@@ -109,4 +109,39 @@ test('unreadable images do not overwrite an existing result', async (t) => {
   assert.equal(res.statusCode, 400);
   assert.equal(res.data.message, 'Ảnh bị mờ');
   assert.equal(save.mock.callCount(), 0);
+});
+
+test('practice is generated and saved for the selected class, including legacy results for its roster', async (t) => {
+  const exam = {
+    _id: 'exam',
+    totalQuestions: 1,
+    levels: [{ name: 'Nhận biết', fromQuestion: 1, toQuestion: 1, totalPoints: 10 }],
+    classSchedules: [
+      { class: { _id: 'a', students: ['a1'] } },
+      { class: { _id: 'b', students: ['b1', 'b2'] } },
+    ],
+  };
+  const { prompts } = mockGrading(t, exam, [{ exercises: [] }]);
+  const find = t.mock.method(ExamResult, 'find', async () => [
+    { class: 'b', student: 'b1', scores: [{ questionOrder: 1, score: 4 }] },
+    { student: 'b2', scores: [{ questionOrder: 1, score: 6 }] },
+    { student: 'a1', scores: [{ questionOrder: 1, score: 10 }] },
+  ]);
+  const savePractice = t.mock.method(Exam, 'updateOne', async () => {});
+  const missingClass = response();
+  await generateSharedPractice(request, missingClass);
+  assert.equal(missingClass.statusCode, 400);
+  assert.equal(find.mock.callCount(), 0);
+
+  const res = response();
+  await generateSharedPractice({ ...request, body: { classId: 'b' } }, res);
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(find.mock.calls[0].arguments[0].$or, [{ class: 'b' }, { class: null }]);
+  assert.equal(res.data.sharedPractice.stats.totalGraded, 2);
+  assert.equal(res.data.sharedPractice.stats.levelStats[0].avg, 5);
+  assert.match(prompts[0], /Số học sinh đã chấm điểm: 2/);
+  assert.deepEqual(savePractice.mock.calls[0].arguments, [
+    { _id: 'exam' },
+    { $set: { 'classPractices.b': JSON.stringify(res.data.sharedPractice) } },
+  ]);
 });

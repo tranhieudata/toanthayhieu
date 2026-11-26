@@ -443,7 +443,7 @@ export default function PublicHomeworkPrintPage({ source = 'homework' }) {
             <FiPrinter className="text-red-500" /> Nội dung bài tập
           </h2>
           <div
-            className="prose max-w-none rounded-lg border border-gray-100 bg-white p-4 text-gray-900 print:border-0 print:p-0"
+            className="exam-content prose max-w-none overflow-x-auto rounded-lg border border-gray-100 bg-white p-4 text-gray-900 print:overflow-visible print:border-0 print:p-0"
             dangerouslySetInnerHTML={{ __html: homeworkContentHtml(homework) }}
           />
         </section>
@@ -460,7 +460,7 @@ export default function PublicHomeworkPrintPage({ source = 'homework' }) {
             </div>
             {(homework.adminSolutionContent?.trim() || homework.adminAnswerKey?.trim()) && (
               <div
-                className="prose max-w-none rounded-lg border border-emerald-100 bg-emerald-50/40 p-4 text-gray-900 print:border-0 print:bg-white print:p-0"
+                className="exam-content prose max-w-none overflow-x-auto rounded-lg border border-emerald-100 bg-emerald-50/40 p-4 text-gray-900 print:overflow-visible print:border-0 print:bg-white print:p-0"
                 dangerouslySetInnerHTML={{ __html: answerContentHtml(homework) }}
               />
             )}

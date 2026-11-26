@@ -240,7 +240,7 @@ export default function StudentExamDetailPage() {
   const processedExamContent = useMemo(() => processLatexContent(exam?.content), [exam?.content]);
   const hasExamContent = useMemo(() => {
     const body = new DOMParser().parseFromString(exam?.content || '', 'text/html').body;
-    return Boolean(body.textContent.replace(/[\s\u200b\ufeff]/g, '') || body.querySelector('img, video, iframe, .ql-formula'));
+    return Boolean(body.textContent.replace(/[\s\u200b\ufeff]/g, '') || body.querySelector('img, video, iframe, table, .ql-formula'));
   }, [exam?.content]);
 
   const handlePickImages = async (e) => {
